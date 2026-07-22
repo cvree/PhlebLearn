@@ -356,8 +356,25 @@
   .vp-swab{position:absolute;left:40%;top:6px;width:40px;height:40px;border-radius:50%;background:#fff;border:2px solid var(--line);display:grid;place-items:center;font-size:22px;box-shadow:var(--shadow)}
 
   /* uncap */
-  .vp-uncap{position:relative;height:70px;display:flex;align-items:center;justify-content:center;gap:2px;margin:14px 0}
-  .vp-pullcap{width:56px;height:30px;border-radius:6px 12px 12px 6px;background:#ffcf6a;border:2px solid #eab54a;display:grid;place-items:center;font-size:16px;box-shadow:var(--shadow)}
+  /* gather materials */
+  .vp-gather{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:8px 0}
+  .vp-supply{display:flex;align-items:center;gap:6px;border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 11px;font-family:inherit;font-weight:800;font-size:12px;color:var(--ink);cursor:pointer;box-shadow:var(--shadow);position:relative}
+  .vp-supply:hover{transform:translateY(-1px)}
+  .vp-supply .vp-supply-emoji{font-size:16px}
+  .vp-supply.vp-got{border-color:var(--mint);background:#e7f8f0;color:#1c7a52}
+  .vp-supply.vp-got::after{content:"✓";position:absolute;top:-7px;right:-5px;width:18px;height:18px;border-radius:50%;background:var(--mint);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:900;box-shadow:var(--shadow)}
+  /* uncap: needle with a big draggable cap */
+  .vp-capstage{position:relative;height:104px;margin:14px 0;display:flex;align-items:center;justify-content:center}
+  .vp-capneedle{position:relative;width:170px;height:14px;display:flex;align-items:center}
+  .vp-capneedle .vp-shaft{flex:1;height:5px;background:linear-gradient(90deg,#c9cddf,#9aa1c6);border-radius:3px}
+  .vp-capneedle .vp-bevel{width:0;height:0;border-top:7px solid transparent;border-bottom:7px solid transparent;border-left:16px solid #9aa1c6}
+  .vp-bigcap{position:absolute;left:calc(50% + 22px);top:28px;min-width:82px;height:48px;border-radius:8px 18px 18px 8px;
+    background:linear-gradient(180deg,#ffd980,#ffbf3c);border:2px solid #eab54a;display:grid;place-items:center;font-size:24px;
+    box-shadow:var(--shadow);touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;z-index:3}
+  .vp-bigcap.vp-hot{box-shadow:0 0 0 3px rgba(52,178,123,.45),var(--shadow)}
+  .vp-caparrow{position:absolute;right:-26px;top:50%;transform:translateY(-50%);font-size:20px;color:var(--plum);animation:capNudge 1.05s ease-in-out infinite;pointer-events:none}
+  @keyframes capNudge{0%,100%{transform:translateY(-50%) translateX(0)}50%{transform:translateY(-50%) translateX(7px)}}
+  body[data-reduced="on"] .vp-caparrow{animation:none}
 
   /* insert */
   .vp-anglewedge{position:absolute;left:26%;top:50%;width:60px;height:60px;border-bottom:2px dashed rgba(107,91,210,.5);
@@ -2881,19 +2898,21 @@ function destroyVantaLoad(){ if(window.__vantaLoad){ try{ window.__vantaLoad.des
 
 /* =========================================================================
    REALISTIC VENIPUNCTURE ENGINE  (the "collect" state)
-   A step-by-step, hands-on simulation of a real blood draw: assemble the
-   needle, apply the tourniquet, palpate & choose the vein, clean the site,
-   uncap, drag-to-insert at the right angle, fill & switch tubes in order of
-   draw, release the tourniquet, withdraw, activate the safety device, hold
-   pressure, bandage, dispose in sharps, and invert to mix. Study simulation
-   only — real technique is learned with an instructor and supervised practice.
+   A step-by-step, hands-on simulation of a real blood draw, in clinical order:
+   hand hygiene, gather materials, apply the tourniquet, palpate & choose the
+   vein, clean the site, assemble the needle while the alcohol dries, uncap,
+   drag-to-insert at the right angle, fill & switch tubes in order of draw,
+   release the tourniquet, withdraw, activate the safety device, hold pressure,
+   bandage, dispose in sharps, and invert to mix. Study simulation only — real
+   technique is learned with an instructor and supervised practice.
    ========================================================================= */
 const VP_TIPS={
   hygiene:{t:"Hand hygiene & PPE",tip:"Wash or sanitize your hands and put on gloves before every patient — standard precautions protect you both.",why:"Prevents transmission of bloodborne pathogens."},
-  assemble:{t:"Assemble the equipment",tip:"Thread the multi-sample needle into the tube holder until it's secure, and inspect it. Keep the cap on until you're ready to stick.",why:"A loose or defective needle can leak, fail to engage the vacuum, or injure the patient."},
+  gather:{t:"Gather your materials",tip:"Stage everything BEFORE you start: gloves, tourniquet, alcohol prep pad, the correct tubes for this order (in order of draw), a multi-sample needle + holder, gauze, tape/bandage, and a sharps container within reach.",why:"Fully stocked means you never have to leave a needle in the arm to grab a forgotten tube."},
+  assemble:{t:"Assemble the needle (while the alcohol dries)",tip:"While the cleaned site air-dries, thread the multi-sample needle into the holder until it's secure and inspect it. Keep the cap on until you're ready to stick.",why:"Assembling during the 30-second dry time is efficient, and a secure needle won't leak or fail the vacuum."},
   tourniquet:{t:"Apply the tourniquet",tip:"Place it 3–4 inches ABOVE the site, snug but not painful. Ask the patient to make a fist (no pumping). Keep it on ≤ 1 minute total.",why:"Too long or too tight causes hemoconcentration and skews results."},
   palpate:{t:"Palpate & select the vein",tip:"Feel with your index finger. The median cubital vein is the first choice — well-anchored, away from the artery and nerve. A good vein feels bouncy and springy, not hard (tendon) or pulsing (artery).",why:"The right vein means a safer, cleaner, first-stick draw."},
-  clean:{t:"Clean the site",tip:"Scrub with 70% alcohol using friction, then let it AIR-dry ~30s. Don't fan it or re-touch the cleaned skin — if you must re-palpate, clean again.",why:"A wet or re-touched site contaminates the sample and stings on entry."},
+  clean:{t:"Clean the site",tip:"Scrub with 70% alcohol using friction, then let it AIR-dry ~30s — assemble your needle while it dries. Don't fan it or re-touch the cleaned skin (if you must re-palpate, clean again).",why:"A wet or re-touched site contaminates the sample and stings on entry."},
   uncap:{t:"Uncap & warn the patient",tip:"Pull the cap straight off, confirm the bevel is UP, and tell the patient 'small poke coming.' Never recap a needle by hand.",why:"Bevel-up entry is smoother; a heads-up keeps the patient still."},
   insert:{t:"Anchor & insert",tip:"Anchor the vein by pulling the skin taut with your thumb 1–2 inches below. Enter bevel-up at a shallow 15–30° angle in one smooth motion, and watch for the flash of blood.",why:"Too steep goes through the vein and risks a nerve; too shallow misses it."},
   fill:{t:"Engage & fill the tube",tip:"Seat the tube firmly to break the vacuum, hold the needle perfectly still, and let it fill to the line for the correct blood-to-additive ratio.",why:"An under-filled additive tube (e.g. light blue) gives inaccurate results."},
@@ -2906,12 +2925,13 @@ const VP_TIPS={
   dispose:{t:"Dispose in sharps",tip:"Drop the whole needle-and-holder unit straight into the sharps container at the point of use. Never recap or detach the needle by hand.",why:"Point-of-use disposal is the single biggest preventer of needlestick injuries."},
   invert:{t:"Invert to mix",tip:"Gently invert each additive tube 5–10 times right after collecting it. NEVER shake — that hemolyzes the sample and ruins it.",why:"Even mixing activates the additive; shaking bursts the red cells."}
 };
-const VP_ICON={hygiene:"🧼",assemble:"🔧",tourniquet:"🎀",palpate:"🫳",clean:"🧴",uncap:"🎯",insert:"💉",fill:"🩸",switch:"🔁",release:"🎈",withdraw:"↩️",safety:"🛡️",pressure:"🩹",bandage:"🩹",dispose:"🗑️",invert:"🔄"};
+const VP_ICON={hygiene:"🧼",gather:"🧺",tourniquet:"🎀",palpate:"🫳",clean:"🧴",assemble:"🔧",uncap:"🎯",insert:"💉",fill:"🩸",switch:"🔁",release:"🎈",withdraw:"↩️",safety:"🛡️",pressure:"🩹",bandage:"🩹",dispose:"🗑️",invert:"🔄"};
 
 function vpTubeDot(k){ return `<span class="vp-dot" style="background:#${TUBES[k].color.toString(16).padStart(6,'0')}"></span>`; }
 function vpBuild(){
   const tubes=[...new Set(ENC.selected)].sort((a,b)=>TUBES[a].order-TUBES[b].order);
-  const steps=["hygiene","assemble","tourniquet","palpate","clean","uncap","insert","fill"];
+  // real-life order: hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → stick
+  const steps=["hygiene","gather","tourniquet","palpate","clean","assemble","uncap","insert","fill"];
   if(tubes.length>1) steps.push("switch");
   steps.push("release","withdraw","safety","pressure","bandage","dispose","invert");
   return {steps,tubes};
@@ -2967,7 +2987,7 @@ function vpBtn(label,cls){ return `<button class="btn ${cls||''} vp-tap" id="vpA
 function vpFinish(){
   stopCollectAnim();
   const c=ENC.collect;
-  const items=[["assembleOk","Needle assembled"],["veinOk","Vein selected"],["cleanOk","Site cleaned"],["uncapOk","Uncapped"],
+  const items=[["gatherOk","Supplies gathered"],["veinOk","Vein selected"],["cleanOk","Site cleaned"],["assembleOk","Needle assembled"],["uncapOk","Uncapped"],
     ["insertOk","Clean insertion"],["fillGood","Filled to line"],["tqGood","Tourniquet timing"],["tubeOrderOk","Order of draw"],
     ["pressureOk","Pressure held"],["disposeOk","Sharps disposed"],["mixOk","Tubes inverted"]];
   const got=items.filter(([k])=>c[k]);
@@ -2979,7 +2999,7 @@ function vpFinish(){
     <h2>✅ Draw complete — ${ENC.p.first}</h2>
     <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
     <div class="vp-scorewrap">${items.map(([k,l])=>`<span class="vp-chip ${c[k]?'ok':'mid'}">${c[k]?'✓':'•'} ${l}</span>`).join("")}</div>
-    ${MODE==="teach"?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Assemble → tourniquet → palpate → clean → uncap → insert → fill & switch in order of draw → release → withdraw → safety → pressure → bandage → sharps → invert. Every step protects the patient and the specimen.</div>`:""}
+    ${MODE==="teach"?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → pressure → bandage → sharps → invert. Every step protects the patient and the specimen.</div>`:""}
     <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
   $("vpToLabel").onclick=()=>{ sfx("tap"); go(hasPostDraw?"drawresp":"label"); };
 }
@@ -3001,13 +3021,40 @@ const VP_STEPS={
       setTimeout(vpNext,360);
     };
   },
+  gather(c,stage){
+    const supplies=[
+      {k:"gloves",emoji:"🧤",name:"Gloves"},{k:"tq",emoji:"🎀",name:"Tourniquet"},
+      {k:"alcohol",emoji:"🧴",name:"Alcohol pad"},{k:"needle",emoji:"💉",name:"Needle"},
+      {k:"holder",emoji:"🔧",name:"Holder"},{k:"gauze",emoji:"🩹",name:"Gauze"},
+      {k:"bandage",emoji:"🩹",name:"Bandage"},{k:"sharps",emoji:"🗑️",name:"Sharps bin"}
+    ];
+    const tubeItems=c.tubes.map(k=>({k:"tube_"+k,name:TUBES[k].name,color:"#"+TUBES[k].color.toString(16).padStart(6,'0')}));
+    const all=[...supplies,...tubeItems];
+    c.gathered=c.gathered||{};
+    stage.innerHTML=`
+      <div class="vp-gather">
+        ${all.map(it=>`<button class="vp-supply${c.gathered[it.k]?' vp-got':''}" data-k="${it.k}">${it.color?`<span class="vp-dot" style="background:${it.color}"></span>`:`<span class="vp-supply-emoji">${it.emoji}</span>`}<span class="vp-supply-name">${it.name}</span></button>`).join("")}
+      </div>
+      <div class="vp-status" id="vpMsg">Tap each item to load your tray. The tubes for this order appear in order of draw.</div>
+      <button class="btn vp-tap" id="vpGatherDone" style="opacity:.5" disabled>Tray ready ▶</button>`;
+    const msg=$("vpMsg"), doneBtn=$("vpGatherDone");
+    const check=()=>{ if(all.every(it=>c.gathered[it.k])){ c.gatherOk=true; doneBtn.disabled=false; doneBtn.style.opacity=1;
+      msg.innerHTML="✅ Tray fully stocked — nothing to run back for."; } };
+    stage.querySelectorAll(".vp-supply").forEach(b=>{
+      const k=b.dataset.k;
+      b.onclick=()=>{ if(c.gathered[k])return; c.gathered[k]=true; b.classList.add("vp-got"); sfx("click");
+        if(FX.gsap) FX.gsap.fromTo(b,{scale:.88},{scale:1,duration:.25,ease:"back.out(2.6)"}); check(); };
+    });
+    doneBtn.onclick=()=>{ if(doneBtn.disabled)return; sfx("tap"); vpNext(); };
+    check();
+  },
   assemble(c,stage){
     stage.innerHTML=`
       <div class="vp-assemble">
         <div class="vp-holder" id="vpHolder"><div class="vp-hub"></div><span class="vp-lbl">tube holder</span></div>
         <div class="vp-needle" id="vpNeedle"><div class="vp-cap"></div><div class="vp-shaft"></div><span class="vp-lbl">needle — drag onto holder</span></div>
       </div>
-      <div class="vp-status" id="vpMsg">Drag the capped needle onto the holder until it threads in.</div>`;
+      <div class="vp-status" id="vpMsg">The site is air-drying — assemble now. Drag the capped needle onto the holder until it threads in.</div>`;
     const needle=$("vpNeedle"), holder=$("vpHolder"), msg=$("vpMsg");
     vpDraggable(needle,{
       onMove(dx,dy){ needle.style.transform=`translate(${dx}px,${dy}px)`; needle.classList.toggle("vp-hot", vpNear(needle,holder,90)); },
@@ -3096,7 +3143,7 @@ const VP_STEPS={
           last={x:e.clientX,y:e.clientY};
           const pct=Math.min(100,path/240*100); if(fill) fill.style.width=pct+"%";
           if(pct>=100 && !done){ done=true; c.cleanOk=true; sfx("good"); zone.classList.add("vp-cleaned");
-            msg.innerHTML="✅ Scrubbed — now let it air-dry (don't re-touch)."; setTimeout(vpNext,700); }
+            msg.innerHTML="✅ Scrubbed — let it air-dry while you assemble the needle (don't re-touch)."; setTimeout(vpNext,700); }
         } else last=null;
       },
       onDrop(){ if(FX.gsap){ FX.gsap.to(swab,{x:0,y:0,duration:.3,onComplete:()=>{swab.style.transform="";}});}else swab.style.transform="";
@@ -3105,21 +3152,29 @@ const VP_STEPS={
   },
   uncap(c,stage){
     stage.innerHTML=`
-      <div class="vp-uncap">
-        <div class="vp-needle vp-assembledneedle"><div class="vp-shaft"></div><div class="vp-bevel"></div></div>
-        <div class="vp-cap vp-pullcap" id="vpCap">🎯<span class="vp-lbl">pull the cap off →</span></div>
+      <div class="vp-capstage">
+        <div class="vp-capneedle"><div class="vp-shaft"></div><div class="vp-bevel"></div></div>
+        <div class="vp-bigcap" id="vpCap"><span class="vp-caparrow">➜</span><span class="vp-lbl">grab &amp; pull off</span></div>
       </div>
-      <div class="vp-status" id="vpMsg">Pull the safety cap straight off the needle.</div>`;
-    const cap=$("vpCap"), msg=$("vpMsg");
+      <div class="vp-status" id="vpMsg">Grab the orange cap and drag it straight off to the side.</div>`;
+    const cap=$("vpCap"), msg=$("vpMsg"); let done=false;
     vpDraggable(cap,{
-      onMove(dx,dy){ const x=Math.max(0,dx); cap.style.transform=`translateX(${x}px)`; cap.style.opacity=Math.max(0.2,1-x/160); },
+      onStart(){ cap.querySelector(".vp-caparrow") && (cap.querySelector(".vp-caparrow").style.opacity="0"); },
+      onMove(dx){ const x=Math.max(-16,dx); cap.style.transform=`translateX(${x}px)`; cap.style.opacity=Math.max(0.25,1-Math.max(0,x)/150);
+        cap.classList.toggle("vp-hot", x>50); },
       onDrop(dx){
-        if(dx>90){ c.uncapOk=true; sfx("good");
-          if(FX.gsap) FX.gsap.to(cap,{x:220,opacity:0,duration:.3,ease:"power2.in"});
-          else { cap.style.transform="translateX(220px)"; cap.style.opacity=0; }
-          msg.innerHTML="✅ Bevel up, ready. “Small poke coming!”"; setTimeout(vpNext,520);
-        }else{ if(FX.gsap) FX.gsap.to(cap,{x:0,opacity:1,duration:.35,ease:"back.out(2)",onComplete:()=>{cap.style.transform="";}}); else {cap.style.transform="";cap.style.opacity=1;}
-          msg.innerHTML="Pull it further — straight off, never twist toward your hand."; }
+        if(done) return;
+        if(dx>50){ done=true; c.uncapOk=true; sfx("good"); cap.classList.remove("vp-hot");
+          if(FX.gsap) FX.gsap.to(cap,{x:250,opacity:0,rotate:14,duration:.34,ease:"power2.in"});
+          else { cap.style.transform="translateX(250px)"; cap.style.opacity=0; }
+          msg.innerHTML="✅ Cap off, bevel up. “Small poke coming!”"; setTimeout(vpNext,560);
+        }else{
+          if(FX.gsap) FX.gsap.to(cap,{x:0,opacity:1,duration:.35,ease:"back.out(2)",onComplete:()=>{cap.style.transform="";cap.style.opacity=1;}});
+          else { cap.style.transform=""; cap.style.opacity=1; }
+          cap.classList.remove("vp-hot");
+          const ar=cap.querySelector(".vp-caparrow"); if(ar) ar.style.opacity="";
+          msg.innerHTML="Give it a bigger pull to the side — straight off, never toward your hand.";
+        }
       }
     });
   },
