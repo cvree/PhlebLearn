@@ -1,10 +1,15 @@
 /* =========================================================================
-   The 2D DOM fallback driver: walks the step sequence from procedureState.js,
-   rendering each one via steps.js. This is the "temporary gameplay fallback /
-   accessibility mode / regression reference" the Phase 0 requirements ask to
-   preserve — a future 3D procedure driver would implement the same shape
-   (advance through buildStepSequence(), rendering each step id) and can
-   consume the exact same clinicalRules.js + questions.js.
+   PROCEDURE DRIVER: walks the step sequence from procedureState.js and picks
+   an implementation for each step id.
+
+     1. physicalSteps.js  — the real, object-manipulation gameplay (preferred)
+     2. steps.js          — the 2D DOM fallback / accessibility path
+
+   Both implementations share the identical signature, the identical
+   procedure state and the identical clinicalRules.js gates, so swapping a
+   step from (2) to (1) never changes sequencing or scoring semantics. Each
+   later branch converts one more id from the fallback list to the physical
+   list without touching this file.
 
    This module intentionally does NOT import ui/panels.js or game state's
    `go()` — the caller (ui/panels.js's renderCollect) supplies callbacks for
@@ -13,17 +18,29 @@
    ========================================================================= */
 import { buildStepSequence } from "./procedureState.js";
 import { VP_STEPS } from "./steps.js";
+import { PHYSICAL_STEPS } from "./physicalSteps.js";
+import { createEncounterState } from "./encounterState.js";
 import { VP_TIPS, VP_ICON } from "./questions.js";
 
-// Fresh procedure state for one encounter's draw.
-export function createProcedureState(tubeKeys){
+// Fresh procedure state for one encounter's draw. `opts.patient` seeds the
+// persistent encounter object every physical step reads and writes.
+export function createProcedureState(tubeKeys, opts){
+  const o = opts||{};
   const tubes=[...new Set(tubeKeys)];
+  const patient = o.patient || null;
   return {
     step: 0,
     steps: buildStepSequence(tubes.length),
     tubes,
     filled: [],
+    patientName: patient ? patient.name : null,
+    encounter: createEncounterState({ tubes, patient, handedness:o.handedness }),
   };
+}
+
+/** True when the physical (3D) implementation of a step id exists. */
+export function isPhysicalStep(id){
+  return Object.prototype.hasOwnProperty.call(PHYSICAL_STEPS, id);
 }
 
 // Renders the current step into `stage`, wiring an `advance` callback that
@@ -32,7 +49,7 @@ export function createProcedureState(tubeKeys){
 // one) that the caller should invoke before re-rendering.
 export function renderCurrentStep(c, stage, hooks){
   const id = c.steps[c.step];
-  const fn = VP_STEPS[id] || VP_STEPS.hygiene;
+  const fn = PHYSICAL_STEPS[id] || VP_STEPS[id] || VP_STEPS.hygiene;
   const advance = (stayOnStep)=>{
     if(hooks.onCleanup) hooks.onCleanup();
     if(stayOnStep){ hooks.rerender(); return; }

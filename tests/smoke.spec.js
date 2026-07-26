@@ -91,7 +91,11 @@ test("camera receives pointer input (orbit drag changes the room framing)", asyn
   await page.goto("/");
   const canvas = page.locator("canvas");
   await expect(canvas).toBeVisible({ timeout: 15000 });
-  const box = await canvas.boundingBox();
+  // boundingBox() can momentarily return null while the compositor is busy;
+  // poll rather than dereferencing it straight away.
+  let box = null;
+  for(let i=0;i<20 && !box;i++){ box = await canvas.boundingBox(); if(!box) await page.waitForTimeout(100); }
+  expect(box, "canvas never reported a bounding box").not.toBeNull();
   const cx = box.x + box.width/2, cy = box.y + box.height/2;
   const before = await page.screenshot();
   await page.mouse.move(cx, cy);

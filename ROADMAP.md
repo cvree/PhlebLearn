@@ -16,16 +16,16 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Renderer | three.js **0.185** (npm dependency, ESM, bundled by Vite) |
 | Other libs | GSAP 3.12, Lenis, Vanta fog — still CDN, still with `onerror` fallbacks (progressive enhancement, unchanged) |
 | 3D room | 100% hand-built primitives (`box`/`cyl`/`sph` in `rendering/materials.js`). Desk, chair, supply stand, tube rack, sharps bin |
-| Model registry | `rendering/modelRegistry.js` — real API, no real `.glb` assets yet (see `docs/ASSET_PIPELINE.md`) |
+| Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`). **No arms at all** — Phase 1b |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent), **all 2D DOM still** — now driven by a typed procedure-state + explicit clinical-rule gates instead of implicit ordering. `.vp-arm` is still a CSS div; tourniquet is still 🎀, needle still 💉 |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is now a real 3D supply cart (`staging/`); the other 15 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** the 3D room is still scenery — the venipuncture
-interactions are still the 2D DOM panel (now on solid architecture instead
-of implicit ordering, but visually unchanged). Phase 1a starts converting
-real interactions into the 3D room.
+**The gap that remains:** 15 of the 16 venipuncture steps are still the 2D DOM
+panel. Supply staging (Phase 1a, below) proved the object-interaction pipeline
+end to end; each branch after it converts one more step, in order, using the
+same pipeline.
 
 ---
 
@@ -66,30 +66,42 @@ real interactions into the 3D room.
 - The old 2D venipuncture interactions are preserved as-is (now the
   accessibility-fallback path) — nothing was thrown away.
 
-## Phase 1a — `feature/physical-supply-staging` (first visible gameplay slice)
+## Phase 1a — `feature/physical-supply-staging` ✅ complete
 
-Converts the `gather` step from tapping 8 emoji buttons to picking real
-items off the 3D supply stand into a real tray. Deliberately chosen as the
-**first** converted interaction (before the arm/veins) because it exercises
-almost every piece of new Phase 0 infrastructure at once without needing new
-anatomy geometry first:
+The `gather` step no longer exists as a grid of tappable emoji. It is a
+close-up supply cart the learner works at: 23 recognisable objects, picked up,
+turned over to read their labels, dragged onto a working tray, seated into a
+numbered tube rack in order of draw, with a sharps container that has to be
+moved into an immediate-reach pad beside the chair before anything can start.
 
-- The model registry (real `registerModel()` calls, first real preload list)
-- GLB loading (or procedural fallback if assets aren't ready yet — the whole
-  point of the registry)
-- Drag-and-drop picking items off a 3D surface
-- Touch input (the same `input/touchInput.js` primitives, extended to 3D)
-- Snapping items into tray slots
-- Handedness / grabbing from either side of the supply stand
-- Correct vs. incorrect item selection (gloves/tourniquet/alcohol/needle/
-  holder/gauze/bandage/sharps bin — same set `steps.js`'s `gather()` already
-  enumerates)
-- Tube pull order interaction with the *existing* tube rack (already 3D and
-  pickable)
-- Shared procedure state (`venipuncture/procedureState.js`'s `gather` step
-  def, unchanged — only the *rendering* of that step changes)
-- The 2D fallback stays selectable as an accessibility mode, consuming the
-  exact same procedure state
+What it teaches, mechanically rather than by quizzing:
+
+- **Tool selection under ambiguity.** Two tubes of the same cap colour; only one
+  is in date. Two 21G needles; one pouch is split. Three sharps containers; one
+  is locked and one is above the fill line.
+- **Verification before commitment.** Expiry dates, gauge bands and patient
+  labels are printed on the *back* of each object. A tap lifts an item into an
+  inspect pose; only actual rotation past ~115° reveals what it says, and
+  whether the learner checked *before* staging is measured.
+- **Sequence.** Tubes seat into numbered wells; the rack has to read in order of
+  draw before the tray unlocks.
+- **Spatial placement and handedness.** The tray, the arm, the reach pad and the
+  "past the arm" zone are real rectangles in metres. Right-handed stages on the
+  left; left-handed is an exact mirror — of the geometry, not of a label.
+- **Consequence and recovery.** Nothing snaps back. An object released off the
+  counter falls and is contaminated. A wrong item sits there until the learner
+  removes it, with a specific clinical explanation of why it can't be used.
+
+Delivered alongside: the first real `registerModel()` calls (13 ids, all with
+procedural fallbacks), a persistent `encounterState` carried through the whole
+draw, a `supplyStaging` scoring category that reports actual measurements, a
+portrait cart layout for phones, an accessible list view driven by the *same*
+rules and measurements, 31 unit tests and 12 browser tests.
+
+Deliberately chosen as the first converted interaction (before the arm/veins)
+because it proves the whole object-interaction pipeline — registry → mesh →
+pick → drag → zone → shared state → rules → measurement → feedback — without
+needing new anatomy geometry first. Every branch below reuses it.
 
 ## Phase 1b — The real arm
 
@@ -110,10 +122,16 @@ Each step converts from DOM widget → 3D interaction, reusing the existing rayc
 The DOM panel stays as the **coach layer** (tips, why-it-matters, teach mode) — it
 stops being the interaction surface.
 
+Branch order (one branch each, verified and deployed before the next starts):
+`feature/real-tourniquet` → `feature/tactile-palpation` →
+`feature/aseptic-site-cleaning` → `feature/needle-holder-assembly` →
+`feature/anchor-and-insert` → `feature/tube-collection` →
+`feature/withdraw-safety-sharps` → `feature/post-draw-care`.
+
 | Step | Today | Becomes |
 |---|---|---|
-| gather | tap 8 emoji buttons | pick real items off the supply stand into a real tray |
-| tourniquet | drag a 🎀 div | drag a real band up the arm; snaps 3–4″ above the site |
+| gather | ✅ **done** — a real supply cart | — |
+| tourniquet | drag a 🎀 div | route it under the arm, wrap, tension, cross, tuck, leave a releasable tail; the same strap stays in the scene until it is released after first blood |
 | palpate | tap labeled buttons | press the real arm — veins highlight under the fingertip, artery pulses back |
 | clean | drag 🧽 | scrub a real swab; coverage painted to a decal texture; real 30s dry timer |
 | assemble | div onto div | thread a real needle into a real holder (snap + click) |

@@ -4,7 +4,7 @@
    for the full module-boundary rationale. */
 import { $ } from "../dom.js";
 import { UPGRADES, STICKER_MILESTONES, STICKER_COINS } from "../config.js";
-import { SS, DARK, REDUCED, setReduced } from "../game/gameState.js";
+import { SS, DARK, REDUCED, setReduced, saveSS } from "../game/gameState.js";
 import { sfx } from "../audio/audioManager.js";
 import { musicOn, toggleMusic, setMusicVol, musicVolNow, updateMusicBtn } from "../audio/audioManager.js";
 import { toast } from "./notifications.js";
@@ -22,8 +22,14 @@ export function syncSettingsLabels(){
   const m=$("setMotion"); if(m){ const on=!REDUCED; m.textContent=on?"On":"Off"; m.classList.toggle("on",on); }
   const u=$("setMusic"); if(u){ u.textContent=musicOn?"On":"Off"; u.classList.toggle("on",musicOn); }
   const sv=$("setMusicVol"); if(sv){ sv.value=Math.round(musicVolNow()*100); }
+  const h=$("setHand"); if(h){ const left=SS.handedness==="left"; h.textContent=left?"Left":"Right"; h.classList.toggle("on",left); }
+  const sn=$("setSnap"); if(sn){ const on=!!SS.assistedSnapping; sn.textContent=on?"On":"Off"; sn.classList.toggle("on",on); }
 }
 export function toggleReduced(){ setReduced(!REDUCED); syncSettingsLabels(); sfx("tap"); }
+// Handedness is not cosmetic: it mirrors the staging zones, the tray and the
+// sharps reach zone (see venipuncture/staging/stagingLayout.js).
+export function toggleHandedness(){ SS.handedness = SS.handedness==="left"?"right":"left"; saveSS(); syncSettingsLabels(); sfx("tap"); }
+export function toggleAssistedSnapping(){ SS.assistedSnapping = !SS.assistedSnapping; saveSS(); syncSettingsLabels(); sfx("tap"); }
 export function openSettings(){ const o=$("settings"); if(o){ o.classList.add("show"); syncSettingsLabels(); } }
 export function closeSettings(){ const o=$("settings"); if(o) o.classList.remove("show"); }
 export function toggleSettings(){ const o=$("settings"); if(!o)return; o.classList.contains("show")?closeSettings():openSettings(); }

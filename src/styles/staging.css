@@ -1,0 +1,122 @@
+/* ============ PHYSICAL SUPPLY STAGING — coach / status layer ============ */
+/* The panel is deliberately quiet here: the gameplay is on the cart. This
+   file styles status, coaching and the accessible list view only.        */
+
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+.stg-coach{display:flex;flex-direction:column;gap:9px}
+
+/* While staging, the cart needs the screen more than the coaching prose does.
+   On phones the panel is a bottom sheet — cap it so the work area stays
+   visible and let the coach text scroll inside what's left. */
+@media(max-width:759px){
+  body[data-staging="on"] .panel{max-height:42vh}
+  body[data-staging="on"] .vp-progress,
+  body[data-staging="on"] .vp-hint,
+  body[data-staging="on"] .stg-help{display:none}
+}
+/* The meta buttons float over the cart and would sit on top of grabbable
+   objects. Recentring does nothing here (staging frames itself), and the shop
+   and sticker book are between-patient screens — Settings stays, because
+   handedness and assisted snapping live there. */
+body[data-staging="on"] #resetCam,
+body[data-staging="on"] #shopBtn,
+body[data-staging="on"] #stickerBtn{display:none}
+body[data-staging="on"] #settingsBtn{top:54px}
+
+.stg-topline{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.stg-mode{font-size:11px;font-weight:900;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-soft)}
+.stg-toggles{display:flex;gap:6px}
+.stg-toggle{font-family:inherit;font-size:11.5px;font-weight:800;color:var(--plum);background:#f7f3ff;
+  border:1.5px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer}
+.stg-toggle:hover{background:#efe8ff}
+.stg-toggle:focus-visible{outline:3px solid var(--plum);outline-offset:2px}
+
+/* ---- readiness checklist: glyph + text carry the state, not colour ---- */
+.stg-checks{display:flex;flex-wrap:wrap;gap:5px}
+.stg-chk{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;
+  border:1.5px solid var(--line);border-radius:999px;padding:3px 9px;background:#fff;color:var(--ink-soft)}
+.stg-chk.ok{border-color:var(--mint);background:#e9f8f1;color:#186a48}
+.stg-glyph{font-weight:900;font-size:12px}
+
+/* ---- order of draw strip ---- */
+.stg-order{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#fbf8ff;
+  border:1px solid var(--line);border-radius:12px;padding:7px 9px}
+.stg-order-lab{font-size:10.5px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft)}
+.stg-slot{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;
+  border:1.5px dashed var(--line);border-radius:10px;padding:3px 8px;background:#fff}
+.stg-slot.ok{border-style:solid;border-color:var(--mint);background:#eefaf4}
+.stg-slot.wrong{border-style:solid;border-color:var(--bad);background:#fdf0f4}
+.stg-slotn{font-size:10px;font-weight:900;color:var(--ink-soft)}
+.stg-dot{width:11px;height:11px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.18)}
+.stg-slotstate{font-weight:900}
+
+/* ---- what a turned-over package says ---- */
+.stg-inspect{border:1px solid var(--line);border-left:4px solid var(--plum);border-radius:12px;
+  padding:8px 11px;background:#f9f6ff;font-size:12.5px;line-height:1.45}
+.stg-inspect.flagged{border-left-color:var(--bad);background:#fdf3f6}
+.stg-inspect.clear{border-left-color:var(--mint);background:#f2fbf7}
+.stg-inspect.turning{border-left-color:var(--gold);background:#fffaf0}
+.stg-inspect b{display:block;margin-bottom:3px;color:var(--ink)}
+.stg-inspect ul{margin:4px 0 0;padding-left:18px;color:var(--ink-soft);font-weight:700}
+.stg-inspect li{margin:1px 0}
+.stg-inspect p{margin:6px 0 0;font-weight:700;color:var(--ink-soft)}
+.stg-inspect .stg-why{color:#9c3552}
+.stg-inspect .stg-ok{color:#186a48}
+
+/* ---- the single most useful correction right now ---- */
+.stg-msg{border:1px solid var(--line);border-radius:12px;padding:9px 11px;font-size:12.5px;
+  font-weight:700;line-height:1.45;background:#fbf7ff;color:var(--ink-soft)}
+.stg-msg b{color:var(--ink)}
+.stg-msg.block{border-left:4px solid var(--bad)}
+.stg-msg.warn{border-left:4px solid var(--gold)}
+.stg-msg.ready{border-left:4px solid var(--mint);background:#f1fbf6}
+
+.stg-help{margin:0;font-size:12px;font-weight:700;color:var(--ink-soft);line-height:1.5}
+.stg-help b{color:var(--plum)}
+
+/* ---- accessible list view ---- */
+.stg-list{max-height:min(46vh,340px);overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+.stg-list table{width:100%;border-collapse:collapse;font-size:11.5px}
+.stg-list thead th{position:sticky;top:0;background:#f6f2ff;text-align:left;font-size:10px;
+  text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft);padding:5px 8px;border-bottom:1px solid var(--line)}
+.stg-list tbody th{font-weight:800;text-align:left;padding:6px 8px;color:var(--ink);vertical-align:top}
+.stg-list td{padding:6px 8px;vertical-align:top;border-top:1px solid #f2edf9}
+.stg-list tbody th{border-top:1px solid #f2edf9}
+.stg-list tr.contam th{text-decoration:line-through}
+.stg-where{color:var(--ink-soft);font-weight:700;white-space:nowrap}
+.stg-actions{display:flex;flex-wrap:wrap;gap:4px}
+.stg-mini{font-family:inherit;font-size:11px;font-weight:800;color:var(--plum);background:#f7f3ff;
+  border:1.5px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer;min-width:30px;min-height:28px}
+.stg-mini.ghost{color:var(--ink-soft);background:#fff}
+.stg-mini:hover{background:#efe8ff}
+.stg-mini:focus-visible{outline:3px solid var(--plum);outline-offset:2px}
+.stg-tag{font-size:9.5px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;
+  border:1px solid var(--mint);color:#186a48;background:#eefaf4;border-radius:999px;padding:1px 6px;margin-left:5px}
+.stg-tag.bad{border-color:var(--bad);color:#9c3552;background:#fdf0f4}
+
+/* ---- technique report on the draw-complete screen ---- */
+.vp-technique{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fbf8ff;margin:10px 0}
+.vt-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.vt-title{font-size:12.5px;font-weight:900;color:var(--plum)}
+.vt-score{font-size:12px;font-weight:900;color:var(--ink);background:#fff;border:1.5px solid var(--line);
+  border-radius:999px;padding:2px 9px}
+.vt-narrative{margin:6px 0 8px;font-size:12.5px;font-weight:700;line-height:1.5;color:var(--ink-soft)}
+.vt-metrics{display:flex;flex-wrap:wrap;gap:5px}
+.vt-metrics span{font-size:10.5px;font-weight:800;color:var(--ink-soft);background:#fff;
+  border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.vt-metrics b{color:var(--ink)}
+
+/* larger touch targets on coarse pointers */
+@media (pointer:coarse){
+  .stg-mini{min-height:34px;padding:6px 10px;font-size:12px}
+  .stg-toggle{padding:7px 12px;font-size:12.5px}
+}
+
+/* high contrast: borders and text, never colour alone */
+@media (prefers-contrast:more){
+  .stg-chk,.stg-slot,.stg-mini,.stg-toggle{border-width:2px;border-color:#000;color:#000}
+  .stg-chk.ok,.stg-slot.ok{background:#fff}
+  .stg-msg,.stg-inspect{border-width:2px;border-color:#000;color:#000}
+}

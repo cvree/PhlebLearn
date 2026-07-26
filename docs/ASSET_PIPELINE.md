@@ -5,14 +5,25 @@ needs per-patient variation or physics-relevant collision, and (eventually)
 authored GLB models for static hand-held instruments where visual fidelity
 matters more than parametric control.
 
-## Phase 0 status: no real GLB assets exist yet
+## Status: 13 real registrations, all still on procedural builders
 
 `rendering/modelRegistry.js` implements the full load → cache → fallback →
-instance pipeline, but every model currently registered uses a trivial
-procedural placeholder (see `main.js`'s `__phase0Probe`). This is
-deliberate — Phase 0's job was to prove the *architecture* works
-end-to-end without committing to final art assets. Phase 1 (physical supply
-staging) is where real registrations start.
+instance pipeline. `src/venipuncture/staging/supplyModels.js` registers the
+13 `supply.*` ids the venipuncture gameplay actually uses — glove box,
+tourniquet, alcohol prep packet, multisample needle, tube holder, gauze,
+bandage, collection tube, sharps container, cotton balls, syringe, urine
+container, tray — each with `url: null` and a detailed procedural builder.
+
+That means the game currently ships zero third-party geometry and still shows
+recognisable clinical equipment. Adding a licence-cleared `.glb` is a one-line
+change (fill in the `url`); the fallback stays in place and takes over
+automatically if the file is ever missing or corrupt. See
+`docs/ASSET_SOURCES.md` for what has to be recorded before any external file
+enters the repository.
+
+Everything is modelled at real clinical scale in metres (a 13 × 75 mm tube is
+`0.013 × 0.075`), so these props can be reused next to a full-size arm in later
+branches without rescaling.
 
 ## The registry API
 

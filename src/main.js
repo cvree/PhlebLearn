@@ -13,7 +13,8 @@ import { createScene } from "./rendering/scene.js";
 import { createLighting } from "./rendering/lighting.js";
 import { createCamera, orbit, setDefaultOrbit, updateCamera, tickCamTween, wallOpacityForSide } from "./rendering/camera.js";
 import { applyTheme } from "./rendering/materials.js";
-import { registerModel, preloadModels } from "./rendering/modelRegistry.js";
+import { preloadModels } from "./rendering/modelRegistry.js";
+import { registerSupplyModels, SUPPLY_MODEL_IDS } from "./venipuncture/staging/supplyModels.js";
 
 import {
   buildRoom, setRoomScene, updateRoomUpgrades, updateRoomWallVisibility, tickWallFade,
@@ -27,6 +28,10 @@ import { isInteractableNow } from "./world/interactables.js";
 import { pickAt } from "./input/raycasting.js";
 import { createOrbitControls } from "./input/cameraControls.js";
 import { createArrangeDragHandlers } from "./input/pointerInput.js";
+import {
+  isStagingActive, renderStaging,
+  stagingPointerDown, stagingPointerMove, stagingPointerUp, stagingPointerCancel,
+} from "./venipuncture/staging/stagingRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -34,22 +39,11 @@ import { updateMusicBtn, setMusicVol, playLobby, armAudioUnlock } from "./audio/
 import { toast, confetti } from "./ui/notifications.js";
 import {
   openSettings, closeSettings, toggleSettings, toggleReduced, toggleThemeAndSync, toggleMusicAndSync,
+  toggleHandedness, toggleAssistedSnapping,
   renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen
 } from "./ui/settings.js";
 import { go, onTubePicked, syncTop } from "./ui/panels.js";
 import { initReactBits, initLenis, initVanta, destroyVantaLoad } from "./ui/dynamicEffects.js";
-
-/* ---------- Phase 0 model-registry scaffolding ----------------------------
-   No real .glb assets exist yet (see docs/ASSET_PIPELINE.md) — this proves
-   the load -> cache -> fallback -> instance pipeline end-to-end using a
-   trivial procedural placeholder, without touching any visible gameplay.
-   Phase 1 registers the real venipuncture props here. */
-function createPlaceholderFallback(){
-  const g = new THREE.Group();
-  g.name = "model-registry-placeholder";
-  return g;
-}
-registerModel({ id:"__phase0Probe", url:null, fallback:createPlaceholderFallback });
 
 let scene, camera;
 const DOT_LINES=["Dot: You've got this! 🩷","Dot: Tubes are ready when you are 🧪","Dot: Breathe — you're doing great ✨","Dot: I believe in you! 🌟","Dot: Order of draw? Easy for you 😎","Dot: Let's make it a cozy shift 🩷"];
@@ -71,7 +65,10 @@ function startThree(){
   updateRoomUpgrades();
   applyTheme(DARK);
 
-  preloadModels(["__phase0Probe"]).catch(()=>{});
+  // Warm the supply-cart models during the menu so the first staging step
+  // opens instantly instead of building 23 objects on the frame it appears.
+  registerSupplyModels();
+  preloadModels(SUPPLY_MODEL_IDS).catch(()=>{});
 
   setupInput(canvasEl);
   setDefaultOrbit();
@@ -87,20 +84,29 @@ function setupInput(canvasEl){
   const orbitControls = createOrbitControls(canvasEl, refreshCamera);
   const arrangeDrag = createArrangeDragHandlers(canvasEl, ()=>upgradeGroup);
 
+  // Physical supply staging owns the canvas outright while it is running:
+  // its own scene, its own camera, its own drag semantics. Orbit and arrange
+  // are suppressed so a pick-up gesture can never be read as a camera drag.
   canvasEl.addEventListener("pointerdown", e=>{
+    if(isStagingActive()){ stagingPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
   canvasEl.addEventListener("pointermove", e=>{
+    if(isStagingActive()){ stagingPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
   canvasEl.addEventListener("pointerup", e=>{
+    if(isStagingActive()){ stagingPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
     orbitControls.onPointerUp(e);
     if(wasDragging && !moved && !arrangeIsOpen()) handlePick(e, canvasEl);
+  });
+  canvasEl.addEventListener("pointercancel", e=>{
+    if(isStagingActive()) stagingPointerCancel(e, canvasEl);
   });
 
   const rc=document.getElementById("resetCam"); if(rc) rc.onclick=()=>{ setDefaultOrbit(); refreshCamera(); sfx("tap"); };
@@ -114,6 +120,8 @@ function setupInput(canvasEl){
   const st=document.getElementById("setTheme"); if(st) st.onclick=()=>toggleThemeAndSync();
   const sm=document.getElementById("setMotion"); if(sm) sm.onclick=()=>toggleReduced();
   const su=document.getElementById("setMusic"); if(su) su.onclick=()=>toggleMusicAndSync();
+  const sha=document.getElementById("setHand"); if(sha) sha.onclick=()=>toggleHandedness();
+  const snp=document.getElementById("setSnap"); if(snp) snp.onclick=()=>toggleAssistedSnapping();
   const sv=document.getElementById("setMusicVol"); if(sv) sv.oninput=()=>{ setMusicVol((+sv.value||0)/100); };
   const ss=document.getElementById("openShopSettings"); if(ss) ss.onclick=()=>{ sfx("tap"); closeSettings(); renderUpgradeShop(); };
   const sc=document.getElementById("setClose"); if(sc) sc.onclick=()=>{ sfx("tap"); closeSettings(); };
@@ -154,6 +162,14 @@ function flashPanel(){ const p=document.getElementById("panel"); p.style.transfo
 let clock;
 function animate(){
   requestAnimationFrame(animate);
+  if(!clock) clock=new THREE.Clock();
+  const t=clock.getElapsedTime();
+  const dt=Math.min(0.05, t-(animate._last||t)); animate._last=t;
+
+  // While the learner is staging supplies, the canvas shows the supply cart
+  // instead of the room — same renderer, different scene.
+  if(isStagingActive()){ renderStaging(getRenderer(), dt); return; }
+
   updateRoomWallVisibility();
   tickWallFade();
   if(arrangeIsOpen()){
@@ -163,9 +179,6 @@ function animate(){
       grid.children.forEach(c=>{ if(c.userData&&c.userData.wallGuide) c.visible = wallOpacityForSide(c.userData.wallSide,th) >= 0.45; });
     }
   }
-  if(!clock) clock=new THREE.Clock();
-  const t=clock.getElapsedTime();
-  const dt=Math.min(0.05, t-(animate._last||t)); animate._last=t;
   tickCamTween(dt);
   const onMenu=(state==="idle"||state==="summary") && !arrangeIsOpen();
   const renderer=getRenderer();
@@ -241,8 +254,89 @@ function boot(){
   try{ initLenis(); }catch(e){}
   try{ destroyVantaLoad(); }catch(e){}
   armAudioUnlock();
+  installTestSeam();
   go("idle");
 }
+/* ---------- test seam ------------------------------------------------------
+   Opt-in via ?e2e=1 only. Playwright uses this to jump straight to a step
+   with a fixed patient instead of clicking a 15-screen path whose content is
+   randomised per run — the alternative is a flaky test that spends most of
+   its time not testing the thing it is named after. Nothing here is reachable
+   in normal play, and the flag is absent from every link the game itself
+   renders. */
+function installTestSeam(){
+  let e2e = false;
+  try{ e2e = new URLSearchParams(location.search).get("e2e")==="1"; }catch(_){}
+  if(!e2e) return;
+  window.__phlebTest = {
+    /** Jumps into the venipuncture procedure at a given step id. */
+    async gotoProcedureStep(stepId, tubes){
+      const [{ setEnc, SHIFT, setShift, setMode }, { makePatient }, { go }] = await Promise.all([
+        import("./game/gameState.js"), import("./game/encounter.js"), import("./ui/panels.js"),
+      ]);
+      setMode("play");
+      setShift({ len:1, index:0, patients:[], ratings:[], orderAllOk:true, safetyAllOk:true, coins:0, startMs:Date.now(), patientTimes:[], missed:[] });
+      const p = makePatient();
+      const selected = tubes || ["lightblue","lavender"];
+      setEnc({ p, selected, ordered:selected.slice(), idChoice:true, reqChoice:true, siteChoice:true,
+        labelFields:{name:false,iddob:false,datetime:false,initials:false},
+        handlingChoice:null, respondChoice:null, scores:{}, startedAt:Date.now() });
+      p.site = null; p.drawEvent = null;
+      go("collect");
+      const { ENC } = await import("./game/gameState.js");
+      const idx = ENC.collect ? ENC.collect.steps.indexOf(stepId) : -1;
+      if(idx > 0){ ENC.collect.step = idx; go("collect"); }
+      return true;
+    },
+    async stagingSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.supplies;
+      if(!s) return null;
+      const { evaluateStaging } = await import("./venipuncture/staging/stagingRules.js");
+      const r = evaluateStaging(s.state, s.catalog);
+      return {
+        ready: r.ready,
+        blocking: r.issues.filter(i=>i.severity==="block").map(i=>i.code),
+        zones: Object.fromEntries(Object.keys(s.state.items).map(k=>[k, s.state.items[k].zone])),
+        positions: Object.fromEntries(Object.entries(s.state.items).filter(([,v])=>v.pos).map(([k,v])=>[k, v.pos])),
+        handedness: s.state.handedness,
+        catalog: s.catalog.map(d=>({ id:d.id, category:d.category, tubeKey:d.tubeKey, flaws:d.flaws })),
+        requiredTubes: s.state.requiredTubes,
+      };
+    },
+    async screenPointFor(itemId){
+      const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
+      const ctx = getStagingContext();
+      if(!ctx) return null;
+      const mesh = ctx.view.itemMeshes.get(itemId);
+      if(!mesh) return null;
+      const THREE = await import("three");
+      const v = new THREE.Vector3();
+      mesh.getWorldPosition(v);
+      v.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height };
+    },
+    async screenPointForZone(zone){
+      const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
+      const ctx = getStagingContext();
+      if(!ctx) return null;
+      const target = zone==="rack0"
+        ? (await import("./venipuncture/staging/stagingLayout.js")).rackSlotPosition(ctx.layout, 0, ctx.requiredTubes.length)
+        : { x: ctx.layout[zone].cx, z: ctx.layout[zone].cz };
+      const THREE = await import("three");
+      // project on the drop plane itself (y=0); a point above it maps to a
+      // different world position once the ray is cast back down
+      const v = new THREE.Vector3(target.x, 0, target.z);
+      v.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height };
+    },
+  };
+}
+
 function prefersReduced(){ try{return matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(e){return false;} }
 function applyReducedFlag(){
   const b=document.getElementById("motionBtn"); if(b)b.textContent=REDUCED?"🎬 Motion: off":"🎬 Motion: on";
