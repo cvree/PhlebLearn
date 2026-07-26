@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eaf3ff">
+<title>Tiny Vials</title>
+<meta name="description" content="Tiny Vials: a cozy 3D phlebotomy practice game with a realistic, step-by-step venipuncture simulation.">
+  <script type="module" crossorigin src="/PhlebLearn/assets/build/index-QWv7Yklh.js"></script>
+  <link rel="modulepreload" crossorigin href="/PhlebLearn/assets/build/three-j7o-vHsQ.js">
+  <link rel="stylesheet" crossorigin href="/PhlebLearn/assets/build/index-CjkSbFXz.css">
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="badgechip titlechip"><span class="shiny-text">🩸 Tiny Vials</span></div>
+    <div class="badgechip" id="coinChip" title="Open the cozy office upgrade shop">
+      <span id="tPatient">Patient 0/5</span>
+      <span>⭐ <b id="tXp">0</b></span>
+      <span>🪙 <b id="tCoins">0</b></span>
+    </div>
+  </div>
+  <button class="floatbtn" id="resetCam" style="top:54px;right:12px">🔄 Recenter</button>
+  <button class="floatbtn" id="settingsBtn" style="top:92px;right:12px">⚙️ Settings</button>
+  <button class="floatbtn" id="shopBtn" style="top:130px;right:12px">🏠 Shop</button>
+  <button class="floatbtn" id="stickerBtn" style="top:168px;right:12px">📔 Stickers</button>
+  <div class="panel" id="panel"></div>
+  <div class="disclaimer">Study simulation only. Real blood collection requires approved training, instructor supervision, clinical practice, and employer policy.</div>
+
+  <div class="settings-overlay" id="settings">
+    <div class="settings-card">
+      <h3>⚙️ Settings</h3>
+      <div class="ssub">Press <b>Esc</b> any time to open or close this.</div>
+      <div class="setrow"><span>🌗 Dark mode</span><button id="setTheme">Off</button></div>
+      <div class="setrow"><span>🎬 Animations</span><button id="setMotion">On</button></div>
+      <div class="setrow"><span>🎵 Lobby music</span><button id="setMusic">On</button></div>
+      <div class="setrow"><span>🔊 Music volume</span><input type="range" id="setMusicVol" min="0" max="100" value="55" style="flex:1;max-width:140px;accent-color:#ff9cc0"></div>
+      <button class="btn ghost" id="openShopSettings">🏠 Office upgrades</button>
+      <button class="btn closebtn" id="setClose">Done</button>
+      <div class="credits">Tiny Vials · a Tiny Clinic game</div>
+    </div>
+  </div>
+
+  <div class="shop-overlay" id="shopOverlay">
+    <div class="shop-card">
+      <div id="shopContent"></div>
+    </div>
+  </div>
+
+  <div class="sticker-overlay" id="stickerOverlay">
+    <div class="sticker-card">
+      <div id="stickerContent"></div>
+    </div>
+  </div>
+
+  <div class="arrange-bar" id="arrangeBar">
+    <span class="ab-hint">🧩 Drag to move · tap a piece to turn it 90° · chair & vials stay put</span>
+    <button class="ab-done" id="arrangeDone">✓ Done</button>
+  </div>
+
+  <div class="loading" id="loading">
+    <div>
+      <h1>🩸 Tiny Vials</h1>
+      <p style="margin:2px 0 10px;color:var(--plum);font-weight:800">a cozy phlebotomy practice game</p>
+      <p id="loadingMsg">Loading the cozy lab… (needs an internet connection the first time to load 3D libraries)</p>
+    </div>
+  </div>
+</div>
+
+<script>
+window.tinyVialsLoadNote=function(msg,isError){
+  var el=document.getElementById("loadingMsg");
+  if(el) el.innerHTML=(isError?'<span class="err">':'')+msg+(isError?'</span>':'');
+};
+window.tinyVialsLibError=function(name){ window.tinyVialsLoadNote(name+' failed to load. The 3D room may need an internet connection the first time.',true); };
+setTimeout(function(){ if(!window.__tinyVialsBooted && !window.THREE){ window.tinyVialsLoadNote('Still waiting for the 3D library. If this stays here, check your internet/CDN blockers or run the HTML through a local server (module scripts need http/https, not file://).',true); } },7000);
+</script>
+<!-- Dynamic UI layer (progressive enhancement — the game runs without these if a CDN is blocked) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('GSAP motion')"></script>
+<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('Lenis smooth-scroll')"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vanta/0.5.24/vanta.fog.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('Vanta backdrop')"></script>
+</body>
+</html>
