@@ -1,0 +1,62 @@
+/* ================= LAB: sticker book + room-arrange overlay ============== */
+.sticker-overlay{position:fixed;inset:0;z-index:32;display:none;align-items:center;justify-content:center;background:rgba(30,20,40,.5);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);padding:16px}
+.sticker-overlay.show{display:flex;animation:fadeIn .2s ease both}
+.sticker-card{position:relative;width:min(480px,95vw);max-height:90vh;overflow:auto;padding:0;border-radius:26px;
+  background:linear-gradient(160deg,#fff6fb 0%,#fdf0f6 48%,#fbe8f2 100%);
+  border:3px solid #ffd0e4;box-shadow:0 22px 60px rgba(120,40,90,.34),inset 0 0 0 6px rgba(255,255,255,.5);
+  animation:bookPop .34s cubic-bezier(.2,.9,.3,1.3) both}
+@keyframes bookPop{from{transform:scale(.9) translateY(14px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+.sb-cover{position:relative;padding:20px 20px 14px;border-radius:23px 23px 0 0;
+  background:linear-gradient(135deg,#ff9cc0,#ff7eb0 60%,#f06595);color:#fff;overflow:hidden}
+.sb-cover::after{content:"";position:absolute;inset:0;background:
+  radial-gradient(circle at 18% 22%,rgba(255,255,255,.4) 0 7px,transparent 8px),
+  radial-gradient(circle at 78% 16%,rgba(255,255,255,.28) 0 5px,transparent 6px),
+  radial-gradient(circle at 88% 64%,rgba(255,255,255,.22) 0 9px,transparent 10px),
+  radial-gradient(circle at 40% 84%,rgba(255,255,255,.18) 0 6px,transparent 7px);pointer-events:none}
+.sb-cover h3{margin:0;font-size:23px;font-weight:900;letter-spacing:.3px;display:flex;align-items:center;gap:9px;text-shadow:0 2px 6px rgba(170,40,90,.35);position:relative;z-index:1}
+.sb-tagline{margin:3px 0 0;font-size:13px;font-weight:800;opacity:.95;position:relative;z-index:1}
+.sb-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;position:relative;z-index:1}
+.sb-stat{background:rgba(255,255,255,.92);color:#c43d72;border-radius:999px;padding:5px 12px;font-weight:900;font-size:13px;box-shadow:0 4px 12px rgba(150,40,80,.2)}
+.sb-close{position:absolute;top:14px;right:14px;z-index:3;width:34px;height:34px;border-radius:50%;border:none;cursor:pointer;
+  background:rgba(255,255,255,.92);color:#c43d72;font-weight:900;font-size:17px;line-height:1;box-shadow:0 4px 12px rgba(150,40,80,.25)}
+.sb-close:hover{filter:brightness(1.04)}
+.sb-section{padding:14px 18px 4px;font-weight:900;font-size:13px;color:#b8567f;letter-spacing:.5px;text-transform:uppercase;display:flex;align-items:center;gap:7px}
+.sb-grid{padding:6px 16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:430px){.sb-grid{grid-template-columns:1fr}}
+.sb-tile{position:relative;border-radius:18px;background:#fff;border:2.5px solid #ffe0ee;padding:13px 13px 12px;
+  box-shadow:0 6px 16px rgba(160,60,110,.1);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;overflow:hidden}
+.sb-tile:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(160,60,110,.18)}
+.sb-tile:active{transform:translateY(0) scale(.99)}
+.sb-tile.locked{filter:grayscale(.7);opacity:.62}
+.sb-tile.maxed{border-color:#ffd76a;background:linear-gradient(160deg,#fffaf0,#fff3d6)}
+.sb-tile.special{border-color:#d9b8ff;background:linear-gradient(160deg,#fdf8ff,#f6ecff)}
+.sb-tile.special.maxed{border-color:#ffd76a;background:linear-gradient(160deg,#fffaf0,#fff3d6)}
+.sb-ribbon{position:absolute;top:9px;right:-26px;transform:rotate(38deg);background:#b07be8;color:#fff;font-size:9.5px;font-weight:900;letter-spacing:.5px;padding:2px 28px;box-shadow:0 2px 6px rgba(120,70,180,.3)}
+.sb-tile.maxed .sb-ribbon{background:#f3b53c}
+.sb-emoji{font-size:34px;line-height:1;filter:drop-shadow(0 3px 5px rgba(160,60,110,.25))}
+.sb-name{font-weight:900;font-size:14.5px;color:var(--ink);margin:7px 0 1px;line-height:1.15}
+.sb-count{font-weight:900;font-size:12.5px;color:#c43d72}
+.sb-count .lbl{color:var(--ink-soft);font-weight:800}
+.sb-blurb{font-size:11.5px;font-weight:700;color:var(--ink-soft);line-height:1.4;margin:6px 0 0;max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease,opacity .2s ease,margin .2s ease}
+.sb-tile.open .sb-blurb{max-height:120px;opacity:1;margin-top:8px}
+.sb-bar{position:relative;height:9px;border-radius:999px;background:#fbe3ef;overflow:hidden;margin-top:9px}
+.sb-bar span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ff9cc0,#f06595);transition:width .5s cubic-bezier(.2,.9,.3,1)}
+.sb-tile.maxed .sb-bar span{background:linear-gradient(90deg,#ffd76a,#f3b53c)}
+.sb-pips{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.sb-pip{font-size:10px;font-weight:900;border-radius:999px;padding:2px 7px;border:1.5px solid #ffe0ee;color:var(--ink-soft);background:#fff;white-space:nowrap}
+.sb-pip.done{background:#fff3d6;border-color:#ffd76a;color:#a9760c}
+.sb-pip.next{background:#ffeaf3;border-color:#ff9cc0;color:#c43d72;animation:pipGlow 1.6s ease-in-out infinite}
+@keyframes pipGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,124,176,.5)}50%{box-shadow:0 0 0 4px rgba(255,124,176,0)}}
+.sb-next{font-size:11px;font-weight:800;color:#b8567f;margin-top:7px}
+.sb-foot{text-align:center;font-size:11px;font-weight:800;color:var(--ink-soft);padding:0 18px 18px;opacity:.85}
+body[data-reduced="on"] .sb-tile,body[data-reduced="on"] .sb-bar span,body[data-reduced="on"] .sb-blurb{transition:none}
+body[data-reduced="on"] .sticker-card{animation:none}
+body[data-reduced="on"] .sb-pip.next{animation:none}
+
+/* ---- room-arrange floating bar (drag furniture mode) ---- */
+.arrange-bar{position:fixed;left:50%;transform:translateX(-50%) translateY(-120%);top:14px;z-index:33;display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.96);border:2px solid var(--line);border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:8px 8px 8px 16px;transition:transform .25s cubic-bezier(.2,.9,.3,1.2);max-width:94vw}
+.arrange-bar.show{transform:translateX(-50%) translateY(0)}
+.arrange-bar .ab-hint{font-weight:800;font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arrange-bar .ab-done{flex:0 0 auto;border:none;border-radius:999px;padding:9px 16px;font-family:inherit;font-weight:900;font-size:13px;color:#fff;background:linear-gradient(135deg,#34b27b,#2f9d8a);cursor:pointer}
+.arrange-bar .ab-done:hover{filter:brightness(1.05)}
+@media(max-width:520px){.arrange-bar .ab-hint{font-size:11.5px;max-width:60vw;white-space:normal}}
