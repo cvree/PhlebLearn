@@ -21,7 +21,9 @@ rendering/  (scene, renderer, lighting, camera, materials, assetLoader, modelReg
         │
 world/  (room, furniture, patient, tubeRack, sharpsBin, interactables)
         │
-venipuncture/  (procedureState, questions, clinicalRules, steps, accessibilityFallback)
+venipuncture/  (procedureState, questions, clinicalRules, steps,
+               accessibilityFallback = the driver, physicalSteps,
+               encounterState, staging/*)
         │
 input/  (raycasting, cameraControls, pointerInput, touchInput)
         │
@@ -64,6 +66,51 @@ toast/confetti/floatXP *are* a UI concern, but it's treated as a dependency
 leaf (like `dom.js`) — it must never import from `panels.js`/`settings.js`/
 `coachLayer.js`, precisely so that `game/`, `world/`, and `venipuncture/`
 modules can call `toast()` for user feedback without an upward import.
+
+## Physical gameplay: how a step becomes a real interaction
+
+`venipuncture/accessibilityFallback.js` is the **driver**. For each step id in
+the sequence it picks an implementation:
+
+1. `physicalSteps.js` → `PHYSICAL_STEPS[id]` — the real, object-manipulation
+   gameplay. Preferred whenever it exists.
+2. `steps.js` → `VP_STEPS[id]` — the 2D DOM fallback.
+
+Both have the identical signature (`fn(c, stage, advance) → cleanup?`), read the
+identical procedure state, and are gated by the identical `clinicalRules.js`
+functions. Converting a step from (2) to (1) therefore changes *how the learner
+performs the action* and nothing about sequencing, gating or scoring semantics.
+Each future branch adds one id to `PHYSICAL_STEPS` and touches nothing else in
+this layer.
+
+`venipuncture/encounterState.js` is the persistent physical encounter — one
+object per patient, carried across every step, so the tourniquet that gets
+staged is the tourniquet that later gets applied and released. Branch 1 fills in
+`supplies` and `measurements.supplyStaging`; the remaining slots (`tourniquet`,
+`site`, `assembly`, `access`, `collection`, `disposal`) are declared so later
+branches extend the same object rather than inventing parallel state.
+
+### `venipuncture/staging/` — physical supply staging
+
+Split by *what kind of thing it is*, so the rules can be unit-tested without a
+browser and the visuals can change without touching the rules:
+
+| Module | Imports THREE / DOM? | Responsibility |
+|---|---|---|
+| `supplyCatalog.js` | no | What objects exist this encounter, which are flawed, and why each flaw matters |
+| `stagingState.js` | no | Where every object is, what has been done to it, and the single write path (`placeItem` / `inspectItem`) every input mode goes through |
+| `stagingLayout.js` | no | The work area's real geometry in metres: zone rectangles, handedness mirroring, portrait vs. landscape carts, `zoneAt()` |
+| `stagingRules.js` | no | Is the tray safe to start a draw from — the only place that answers it |
+| `stagingScoring.js` | no | Measurements and the behaviour-citing feedback narrative |
+| `supplyModels.js` | THREE | Procedural builders registered into the shared model registry, plus per-instance decoration |
+| `stagingScene.js` | THREE | Meshes, camera framing, hover/held/ghost feedback. Owns no rules |
+| `stagingRuntime.js` | THREE + DOM | Pick up, turn over, put down. Writes through `stagingState`, asks `stagingRules` |
+| `stagingCoach.js` | DOM | Status, coaching, and the accessible list view |
+
+`main.js` couples to exactly four runtime hooks (`isStagingActive`,
+`renderStaging`, `stagingPointer*`) — the composition root's usual job. While
+staging is active the canvas renders the staging scene instead of the room,
+through the same renderer, so there is only ever one WebGL context.
 
 ## Application startup
 

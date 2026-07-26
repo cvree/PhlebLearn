@@ -13,6 +13,7 @@ export const CARD_LINKS = {
   tubeSelect:  {cardId:"tube-01",topic:"Tube Colors & Additives",       section:"Tubes"},
   orderOfDraw: {cardId:"od-05", topic:"Order of Draw",                 section:"Tubes"},
   siteSelect:  {cardId:"saf-02", topic:"Site Selection & Vein Assessment",section:"Safety"},
+  supplyStaging:{cardId:"qa-02", topic:"Equipment Preparation & Work Area", section:"Specimen Handling"},
   labeling:    {cardId:"id-01", topic:"Patient ID & Labeling",         section:"Patient ID"},
   handling:    {cardId:"qa-04", topic:"Pre-Analytical & Specimen Handling", section:"Specimen Handling"},
   professional:{cardId:null,    topic:"Professional communication",    section:"Safety"},

@@ -4,9 +4,14 @@ Three layers, fastest-to-slowest:
 
 | Layer | Command | What it covers |
 |---|---|---|
-| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`. No browser, no DOM — runs on Node's built-in test runner. |
-| Playwright smoke tests | `npm run test:e2e` | The production build, served via `vite preview`, driven in a real Chromium instance. |
+| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, and the whole `venipuncture/staging/` rule + scoring layer. No browser, no DOM — runs on Node's built-in test runner. |
+| Playwright tests | `npm run test:e2e` | The production build, served via `vite preview`, driven in a real Chromium instance. |
 | Full verification | `npm run verify` | Unit tests → build → Playwright, in order. Run this before merging any phase branch. |
+
+Playwright runs with `workers: 1`. Every test in this suite drives a live
+WebGL context, and two headless Chromium instances competing for the same
+software renderer make screenshots and bounding-box reads fail intermittently —
+a GPU-contention artifact, not app behaviour.
 
 ## Unit tests (`tests/procedure.spec.js`)
 
@@ -14,6 +19,39 @@ Runs directly against `src/venipuncture/clinicalRules.js` and
 `procedureState.js` — both are pure functions with zero imports, so no
 mocking or DOM shimming is needed. These are the regression tests for the
 sequencing bugs fixed in Phase 0 (see the table below).
+
+## Supply-staging unit tests (`tests/staging.spec.js`)
+
+31 tests covering the physical supply-staging branch. They drive
+`stagingState.js`'s mutators directly — the *same* write path the 3D drag
+controller and the accessible list view both use — so a pass here means both
+input modes are governed identically. Grouped as:
+
+- **Completion**: a correct tray is ready; a missing item blocks; a usable item
+  left on the counter instead of the tray blocks with its own message.
+- **Wrong and unsafe items**: unordered tube, expired tube, cracked tube,
+  damaged needle pouch, wrong-gauge needle, a tube pre-labelled for another
+  patient (its own issue code, flagged `safety: true`), syringe, urine
+  container, cotton balls.
+- **Order of draw**: wrong order blocks and names the correct sequence; correct
+  order unlocks; a required tube loose on the tray rather than seated in the
+  rack blocks.
+- **Sharps container**: out of reach, past the patient's arm, overfilled, and
+  locked each block readiness.
+- **Object permanence**: an item stays exactly where it was released; a later
+  placement never moves it; a wrong item does not vanish and can be removed and
+  replaced; an item dropped off the counter is contaminated and stays that way.
+- **Handedness**: `createLayout()` mirrors exactly, `zoneAt()` classifies the
+  same world point differently per handedness, and switching mid-staging
+  mirrors what is already on the counter without invalidating it.
+- **Measurement**: a clean tray scores ≥ 90; an unsafe item costs far more than
+  an untidy one; inspecting before staging is measured and rewarded; the
+  narrative cites the specific correction the learner made.
+- **Catalog integrity**: every item resolves through the model registry, no
+  label depends on an emoji, every wrong item carries an explanation and
+  inspectable detail, and exactly one usable item exists per required category.
+- **Registry fallback**: a model whose GLB fails to load still produces a
+  usable instance from its procedural builder.
 
 ## Playwright smoke tests (`tests/smoke.spec.js`)
 
@@ -55,6 +93,51 @@ x-positions across the tube rack's approximate screen region and passes if
 *any* of them selects a tube. This is deliberately loose: the goal is
 proving the raycaster pipeline works end-to-end, not asserting exact visual
 layout.
+
+## Supply-staging browser tests (`tests/staging.e2e.spec.js`)
+
+12 tests against the production build, covering what unit tests cannot: that
+the objects are really in the scene, that a mouse drag and a touch drag both
+move the *right* object into the *right* zone, and that the old activity is
+gone.
+
+- The `.vp-gather` / `.vp-supply` emoji grid no longer exists anywhere.
+- No emoji appears in any staged supply object's name.
+- Mouse drag: a specific object moves to the tray and stays put while other
+  objects are dragged around it.
+- A tube seats into a numbered rack well only when dropped on it — dropped
+  mid-tray it stays loose on the tray.
+- A wrong item stays where it is put, is explained in the coach layer, and can
+  be removed and replaced.
+- Touch drag (`pointerType: "touch"`) behaves identically, including for a
+  13 mm tube — the pick-proxy path.
+- Left-handed mode mirrors the zones on screen (tray left of the reach zone
+  becomes tray right of it).
+- "Tray ready" stays disabled until every condition is met, then advances the
+  procedure to the next step.
+- An unreachable sharps container blocks readiness until it is moved.
+- Every catalog object projects to a real on-screen point (i.e. it actually got
+  an instance, procedural or otherwise).
+- Reloading mid-staging leaves the app usable and gives a clean staging state.
+- The accessible list view is fully keyboard operable.
+
+### The `?e2e=1` test seam
+
+`main.js` installs `window.__phlebTest` **only** when the URL carries `e2e=1`.
+It exposes `gotoProcedureStep()`, `stagingSnapshot()`, `screenPointFor(itemId)`
+and `screenPointForZone(zone)`.
+
+Why it exists: reaching the supply step through normal play means clicking a
+15-screen path whose patient, requisition flaw, site scenario and draw event are
+all randomised per run. A test that spends 90% of its time navigating past
+random content, and fails when the dice differ, tests the dice. The seam is
+unreachable in normal play, absent from every link the game renders, and adds no
+behaviour of its own — it only reads state and reports screen coordinates.
+
+`screenPointFor*` project onto the drop plane (`y = 0`), not slightly above it:
+a point 2 cm above the counter maps to a *different* world position once the
+ray is cast back down, and the error grows with the wide field of view used on
+narrow screens.
 
 ## The 8 "urgent sequencing bugs" — what was actually wrong
 

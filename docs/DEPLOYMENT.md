@@ -5,9 +5,13 @@
 - Repo: `cvree/PhlebLearn`, a **project page** (not a user/org root page), so
   it's served from `https://cvree.github.io/PhlebLearn/` — every path
   underneath that prefix.
-- Pages config: legacy build, branch `main`, path `/` (serves whatever is
-  committed at the repo root — currently that means we commit the **built**
-  `dist/` output to the repo root, not source files).
+- Pages config: legacy build, branch **`gh-pages`**, path `/`. `main` holds
+  source only; the built `dist/` output is published to the root of the
+  orphan-style `gh-pages` branch. Verify with:
+
+  ```bash
+  gh api repos/cvree/PhlebLearn/pages
+  ```
 
 ## Build
 
@@ -55,18 +59,24 @@ Runs, in order: unit tests → production build → Playwright smoke tests
 
 ## Publishing to GitHub Pages
 
-The Pages source is `main` branch, `/` path — meaning the **built** files
-need to live at the repo root on `main`, not `src/`. The workflow:
+The Pages source is the `gh-pages` branch at `/`, so the **built** files live
+at the root of `gh-pages` while `main` keeps source only. The workflow:
 
-1. On the feature/refactor branch: `npm run verify` passes.
-2. Merge to `main`.
-3. Build (`npm run build`) and copy `dist/*` to the repo root, replacing the
-   previous build output. (A future improvement would be a GitHub Actions
-   workflow that does this on push to `main` — deliberately not added in
-   Phase 0, since a prior commit on this repo explicitly removed an
-   Actions-based Pages deploy in favor of the simpler legacy static build;
-   changing that decision again is out of scope here.)
-4. Push `main`.
+1. On the feature branch: `npm run verify` passes.
+2. Merge to `main` and push.
+3. `npm run build`, then publish `dist/*` to the root of `gh-pages`:
+
+   ```bash
+   npm run build
+   git worktree add ../phleblearn-pages gh-pages
+   # replace the tracked files at the worktree root with dist/*, keep .nojekyll
+   ```
+
+   (A GitHub Actions workflow doing this on push to `main` would be an
+   improvement, but a prior commit on this repo explicitly removed an
+   Actions-based Pages deploy in favour of the simpler legacy static build;
+   re-litigating that is out of scope for a gameplay branch.)
+4. Push `gh-pages`.
 5. Poll `gh api repos/cvree/PhlebLearn/pages/builds/latest` until
    `status: "built"`.
 6. Load `https://cvree.github.io/PhlebLearn/` in a real browser and confirm

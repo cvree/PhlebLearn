@@ -13,6 +13,7 @@ export const FEEDBACK = {
   tubeSelect:{label:"Tube selection",why:"Each test needs a specific additive/tube.",tip:"CBC→lavender, PT/INR→light blue, glucose→gray."},
   orderOfDraw:{label:"Order of draw",why:"The fixed order prevents additive carryover between tubes.",tip:"Cultures → light blue → red → SST → PST → green → lavender → gray."},
   siteSelect:{label:"Site selection",why:"The right site protects the patient and keeps the sample usable.",tip:"Median cubital (antecubital) first; avoid IV/mastectomy/fistula/hematoma/scarred/edematous areas."},
+  supplyStaging:{label:"Work-area prep",why:"A tray you have to leave mid-draw is how needles get set down and tubes get grabbed in the wrong order.",tip:"Check every package before it goes on the tray, rack the tubes in order of draw, and put the sharps container in reach before you touch the patient."},
   labeling:{label:"Labeling",why:"Unlabeled/mislabeled specimens can harm patients.",tip:"Name, ID/DOB, date & time, your initials, at the bedside."},
   handling:{label:"Handling",why:"Some analytes need cold or light protection.",tip:"Most are routine; ammonia→chilled, bilirubin→protect from light."},
   professional:{label:"Professionalism",why:"Calm, clear communication builds trust.",tip:"Explain simply; reassure nervous patients."},
@@ -61,7 +62,12 @@ export function scoreEncounter(){
   const lf=ENC.labelFields; s.labeling = lf.name&&lf.iddob&&lf.datetime&&lf.initials;
   s.handling = (ENC.handlingChoice===p.handling);
   s.professional = (p.event.type==="respond") ? !!ENC.respondChoice : true;
+  // Work-area preparation is scored from what the learner physically did on
+  // the supply cart, not from whether a checklist got ticked.
+  const sm = ENC.collect && ENC.collect.stagingMeasurements;
+  if(sm) s.supplyStaging = sm.unsafeItems===0 && sm.score>=75;
   let safetyOk = s.patientId;
+  if(sm && sm.unsafeItems>0) safetyOk = false;
   if(p.event.type==="respond" && p.event.safety) safetyOk = safetyOk && !!ENC.respondChoice;
   if(p.drawEvent) safetyOk = safetyOk && !!ENC.drawChoice;
   s.safety = safetyOk;
@@ -78,6 +84,13 @@ export function scoreEncounter(){
   const testList = p.orders.map(o=>`${o} (${TUBES[TESTS[o].tube].name})`).join(", ");
   A.tubeSelect = {your: tn(ENC.selected), correct: tn([...p.reqSet]), ctx:"Tests ordered: "+testList};
   if(p.reqSet.length>=2) A.orderOfDraw = {your: tn(ENC.ordered), correct: tn(correctOrder), ctx:"Tests ordered: "+testList};
+  if(sm){
+    A.supplyStaging = {
+      ctx: `Staged in ${fmtDuration(sm.timeMs)} · ${sm.correctItems} correct, ${sm.incorrectItems} wrong (${sm.unsafeItems} unsafe) · order of draw ${Math.round(sm.tubeOrderAccuracy*100)}% · ${sm.inspectionsBeforeStaging}/${sm.stagedCount} packages checked before staging`,
+      your: sm.narrative,
+      correct: "Every required item checked and staged, tubes racked in order of draw, sharps container within immediate reach on your dominant side.",
+    };
+  }
   const lfds=[["name","Patient name"],["iddob","ID / DOB"],["datetime","Date and time"],["initials","Your initials"]];
   A.labeling = {your:(lfds.filter(([k])=>lf[k]).map(f=>f[1]).join(", ")||"(none checked)"), correct:"Patient name, ID / DOB, Date and time, Your initials"};
   if(A.handling){

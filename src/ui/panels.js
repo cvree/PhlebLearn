@@ -295,7 +295,7 @@ function renderSite(){
 
 /* ---------- collect: the venipuncture procedure (2D fallback) ------------------ */
 function renderCollect(){
-  if(!ENC.collect){ ENC.collect = createProcedureState(ENC.selected); }
+  if(!ENC.collect){ ENC.collect = createProcedureState(ENC.selected, { patient: ENC.p, handedness: SS.handedness }); }
   const c=ENC.collect;
   if(c.step>=c.steps.length){ return vpFinish(); }
   const id=c.steps[c.step];
@@ -331,9 +331,26 @@ function vpFinish(){
   if(!c.awarded){ addXP(bonus*2); addCoins(bonus); c.awarded=true; saveSS(); syncTop();
     floatXP("+"+(bonus*2)+" XP"); if(got.length>=9){ sfx("win"); confetti(40); } else sfx("coin"); }
   const hasPostDraw = !!ENC.p.drawEvent && ENC.p.drawEvent.when!=="mid" && !ENC.drawEventHandled;
+  const sm = c.stagingMeasurements;
+  const stagingBlock = sm ? `
+    <div class="vp-technique">
+      <div class="vt-head"><span class="vt-title">🧺 Work-area preparation</span><span class="vt-score">${sm.score}/100</span></div>
+      <p class="vt-narrative">${sm.narrative}</p>
+      <div class="vt-metrics">
+        <span>Correct items <b>${sm.correctItems}</b></span>
+        <span>Wrong items <b>${sm.incorrectItems}</b></span>
+        <span>Unsafe items <b>${sm.unsafeItems}</b></span>
+        <span>Order of draw <b>${Math.round(sm.tubeOrderAccuracy*100)}%</b></span>
+        <span>Packages checked <b>${sm.inspectionsBeforeStaging}/${sm.stagedCount}</b></span>
+        <span>Replacements <b>${sm.replacements}</b></span>
+        <span>Sharps reachable <b>${sm.sharpsAccessible?"yes":"no"}</b></span>
+        <span>Staging time <b>${fmtDuration(sm.timeMs)}</b></span>
+      </div>
+    </div>` : "";
   panel.innerHTML=`
     <h2>✅ Draw complete — ${ENC.p.first}</h2>
     <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
+    ${stagingBlock}
     <div class="vp-scorewrap">${items.map(([k,l])=>`<span class="vp-chip ${c[k]?'ok':'mid'}">${c[k]?'✓':'•'} ${l}</span>`).join("")}</div>
     ${MODE==="teach"?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}
     <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
