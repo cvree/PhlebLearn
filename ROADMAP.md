@@ -7,46 +7,91 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 
 ---
 
-## Where the code stands today
+## Where the code stands today (post-Phase 0)
 
 | Thing | Reality |
 |---|---|
-| `phlebshift3dlab.html` | 3,888 lines / 1.07 MB — **line 992 alone is 810 KB of base64 MP3** (76% of the file) |
-| Renderer | three.js **r128** global build (2021) from CDN, plus `examples/js/GLTFLoader` |
-| Other libs | GSAP 3.12, Lenis, Vanta fog — all CDN, all with `onerror` fallbacks |
-| 3D room | 100% hand-built primitives (`box`/`cyl`/`sph` helpers). Desk, chair, supply stand, tube rack, sharps bin |
-| `MODELS = {}` (line 1888) | **Empty.** `loadModel()` helper already written and unused — a hook left for real assets |
-| Patient | Cylinder body + sphere head, hair/glasses/beard variants. **No arms at all** |
-| Real pickable objects | 13 rack tubes, sharps bin, monitor, patient — via raycast `handlePick` → `onPick` |
-| Venipuncture (`VP_STEPS`, L3008–3402) | 17 steps, **all 2D DOM**. `.vp-arm` is a 132px CSS div; tourniquet is 🎀, needle is 💉, swab is 🧽 |
-| State machine | 13 states through `go()`, each rewriting `panel.innerHTML` |
+| Entry point | `index.html` (Vite), built via `npm run build` → `dist/` |
+| Source | `src/` — see `docs/ARCHITECTURE.md` for the full module layering |
+| Renderer | three.js **0.185** (npm dependency, ESM, bundled by Vite) |
+| Other libs | GSAP 3.12, Lenis, Vanta fog — still CDN, still with `onerror` fallbacks (progressive enhancement, unchanged) |
+| 3D room | 100% hand-built primitives (`box`/`cyl`/`sph` in `rendering/materials.js`). Desk, chair, supply stand, tube rack, sharps bin |
+| Model registry | `rendering/modelRegistry.js` — real API, no real `.glb` assets yet (see `docs/ASSET_PIPELINE.md`) |
+| Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`). **No arms at all** — Phase 1b |
+| Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent), **all 2D DOM still** — now driven by a typed procedure-state + explicit clinical-rule gates instead of implicit ordering. `.vp-arm` is still a CSS div; tourniquet is still 🎀, needle still 💉 |
+| State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap:** the 3D room is scenery. The actual learning happens in a flat panel with
-emoji. Everything below closes that gap.
+**The gap that remains:** the 3D room is still scenery — the venipuncture
+interactions are still the 2D DOM panel (now on solid architecture instead
+of implicit ordering, but visually unchanged). Phase 1a starts converting
+real interactions into the 3D room.
 
 ---
 
-## Phase 0 — Foundations (unblocks everything else)
+## Phase 0 — Foundations ✅ complete (`refactor/phase0-foundation`)
 
-0.1 **Evict the audio blob.** Move the base64 lobby track to `assets/lobby.mp3`.
-    File drops 1.07 MB → ~260 KB. Every subsequent diff becomes readable.
+- **Audio externalized.** The 810KB base64 lobby track moved to
+  `public/assets/audio/lobby.mp3`. Game file dropped 1.07MB → ~260KB before the
+  module split even started.
+- **three.js r128 (2021 CDN UMD) → three.js 0.185 ESM**, installed as a real
+  npm dependency and bundled by Vite. `GLTFLoader` migrated from the old
+  `THREE.GLTFLoader` UMD-namespace pattern to a proper named import.
+- **Monolith split** into ~35 ES modules under `src/` (`config`/`game`/
+  `rendering`/`world`/`venipuncture`/`input`/`ui`, plus `main.js` as the
+  composition root) with an acyclic dependency layering — see
+  `docs/ARCHITECTURE.md`.
+- **CSS extracted** into `src/styles/{base,panels,lab,venipuncture}.css`,
+  grouped by responsibility rather than split arbitrarily.
+- **Vite build** added (`npm run dev|build|preview`), correctly emitting the
+  `/PhlebLearn/` base path GitHub Pages needs — see `docs/DEPLOYMENT.md` for
+  a base-path bug that shipped partway through and how it was caught.
+- **Model registry** (`rendering/modelRegistry.js`) built with the
+  register → preload → instantiate → dispose API, procedural-fallback
+  support, and progress reporting — see `docs/ASSET_PIPELINE.md`. No real
+  `.glb` assets yet; Phase 1 (physical supply staging) is where real
+  registrations start.
+- **Venipuncture procedure extracted** from DOM rendering into
+  `venipuncture/{procedureState,questions,clinicalRules,steps,accessibilityFallback}.js`
+  with a typed step interface (stable id, phase, trigger, requiredState) and
+  explicit sequencing gates — see `docs/TESTING.md` for the full bug-by-bug
+  writeup. Two real, active sequencing bugs were found and fixed (sharps
+  disposal was happening *after* pressure/bandage instead of before; the
+  alcohol swab reset position on every pointer release instead of keeping
+  its last dropped spot).
+- **Automated tests**: 13 unit tests (`npm test`, node's test runner) for the
+  clinical-rule gates and step ordering; 7 Playwright smoke tests
+  (`npm run test:e2e`) against the production build; `npm run verify` chains
+  both plus the build itself.
+- The old 2D venipuncture interactions are preserved as-is (now the
+  accessibility-fallback path) — nothing was thrown away.
 
-0.2 **Split the monolith** into `index.html` + ordered `js/` files (scene, room,
-    patient, venipuncture, economy, ui). No build step — Pages stays static.
+## Phase 1a — `feature/physical-supply-staging` (first visible gameplay slice)
 
-0.3 **three.js r128 → modern ESM + importmap.** Only 66 `THREE.*` call sites, so this
-    is a contained migration. Buys us a maintained `GLTFLoader`, DRACO/KTX2, and
-    better materials. r128's `examples/js` loader path is the most fragile dependency
-    in the file.
+Converts the `gather` step from tapping 8 emoji buttons to picking real
+items off the 3D supply stand into a real tray. Deliberately chosen as the
+**first** converted interaction (before the arm/veins) because it exercises
+almost every piece of new Phase 0 infrastructure at once without needing new
+anatomy geometry first:
 
-0.4 **Asset pipeline.** Fill the `MODELS` registry, upgrade `loadModel()` with a
-    preloader and a **guaranteed fallback to the existing primitive builders** — a
-    404'd GLB must never break the game.
+- The model registry (real `registerModel()` calls, first real preload list)
+- GLB loading (or procedural fallback if assets aren't ready yet — the whole
+  point of the registry)
+- Drag-and-drop picking items off a 3D surface
+- Touch input (the same `input/touchInput.js` primitives, extended to 3D)
+- Snapping items into tray slots
+- Handedness / grabbing from either side of the supply stand
+- Correct vs. incorrect item selection (gloves/tourniquet/alcohol/needle/
+  holder/gauze/bandage/sharps bin — same set `steps.js`'s `gather()` already
+  enumerates)
+- Tube pull order interaction with the *existing* tube rack (already 3D and
+  pickable)
+- Shared procedure state (`venipuncture/procedureState.js`'s `gather` step
+  def, unchanged — only the *rendering* of that step changes)
+- The 2D fallback stays selectable as an accessibility mode, consuming the
+  exact same procedure state
 
-0.5 **Deploy guardrail.** A `?selftest=1` boot mode plus a Playwright smoke check that
-    runs before anything merges to `main`, since Pages serves `main` root directly.
-
-## Phase 1 — The real arm (highest impact)
+## Phase 1b — The real arm
 
 - A proper 3D forearm attached to the patient, resting on the chair armrest.
 - **Real vein geometry** under a translucent skin layer: median cubital, cephalic,
@@ -55,6 +100,9 @@ emoji. Everything below closes that gap.
 - `makeSiteScenario(dl)` stops being labels and becomes **geometry**: deep veins sit
   lower, rolling veins physically slide under pressure, small veins are thinner.
 - New `tweenCamera` "draw close-up" preset docking over the antecubital fossa.
+- See `docs/ASSET_PIPELINE.md` for which parts of the arm are procedural
+  (must be — they vary per patient and need real collision) vs. which
+  instruments become GLB assets.
 
 ## Phase 2 — Real instruments
 
@@ -102,13 +150,6 @@ touch, low-end GPUs, and reduced-motion. Nothing is thrown away.
 - Mobile touch, reduced-motion path, dark-theme registration for every new mesh
   (`regTheme` / `THEMED` already handle this).
 - Perf budget: instanced meshes, model LODs, 60fps on integrated graphics.
-- Ship phase by phase to `main`; Pages rebuilds; verify the live URL each time.
-
----
-
-## Open decisions
-
-1. **Model source** — procedural primitives (matches the cozy look, zero deps) vs.
-   authored/generated GLB assets.
-2. **three.js upgrade** — now (Phase 0) or stay on r128 and defer the risk.
-3. **File structure** — split the monolith or keep one file.
+- Ship phase by phase: scoped branch → `npm run verify` → merge to `main` →
+  confirm GitHub Pages rebuild → live-site smoke test. No unfinished phase
+  work goes to `main` directly.
