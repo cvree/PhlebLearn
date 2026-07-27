@@ -109,6 +109,7 @@ function setupInput(canvasEl){
     if(isStagingActive()) stagingPointerCancel(e, canvasEl);
   });
 
+  const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
   const rc=document.getElementById("resetCam"); if(rc) rc.onclick=()=>{ setDefaultOrbit(); refreshCamera(); sfx("tap"); };
   const tb=document.getElementById("themeBtn"); if(tb) tb.onclick=()=>toggleThemeAndSync();
   const mo=document.getElementById("motionBtn"); if(mo) mo.onclick=()=>toggleReduced();
@@ -158,6 +159,22 @@ function handlePick(e, canvasEl){
   if(data.pickType==="stickerbook"){ sfx("coin"); confetti(14); openStickerBook(); return; }
 }
 function flashPanel(){ const p=document.getElementById("panel"); p.style.transform="scale(1.01)"; setTimeout(()=>p.style.transform="",120); }
+
+/* Collapses the coach panel so the 3D work area has the whole canvas. Session-
+   only on purpose: a hidden panel persisted across launches reads as a broken
+   game. The staging camera re-frames itself automatically, since it measures
+   the panel's real bounding box. */
+function togglePanel(){
+  const hidden = document.body.dataset.panel === "hidden";
+  if(hidden) delete document.body.dataset.panel;
+  else document.body.dataset.panel = "hidden";
+  const b = document.getElementById("panelToggle");
+  if(b){
+    b.textContent = hidden ? "🗔 Hide panel" : "🗔 Show panel";
+    b.setAttribute("aria-expanded", hidden ? "true" : "false");
+  }
+  sfx("tap");
+}
 
 let clock;
 function animate(){
@@ -270,11 +287,11 @@ function installTestSeam(){
   if(!e2e) return;
   window.__phlebTest = {
     /** Jumps into the venipuncture procedure at a given step id. */
-    async gotoProcedureStep(stepId, tubes){
+    async gotoProcedureStep(stepId, tubes, mode){
       const [{ setEnc, SHIFT, setShift, setMode }, { makePatient }, { go }] = await Promise.all([
         import("./game/gameState.js"), import("./game/encounter.js"), import("./ui/panels.js"),
       ]);
-      setMode("play");
+      setMode(mode==="teach" ? "teach" : "play");
       setShift({ len:1, index:0, patients:[], ratings:[], orderAllOk:true, safetyAllOk:true, coins:0, startMs:Date.now(), patientTimes:[], missed:[] });
       const p = makePatient();
       const selected = tubes || ["lightblue","lavender"];
@@ -302,6 +319,7 @@ function installTestSeam(){
         handedness: s.state.handedness,
         catalog: s.catalog.map(d=>({ id:d.id, category:d.category, tubeKey:d.tubeKey, flaws:d.flaws })),
         requiredTubes: s.state.requiredTubes,
+        trayOffset: s.state.trayOffset,
       };
     },
     async screenPointFor(itemId){

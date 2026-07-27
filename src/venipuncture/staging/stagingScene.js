@@ -144,17 +144,37 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
   armTag.position.set(layout.arm.cx, 0.0035, layout.arm.maxZ - 0.018);
   root.add(armTag);
 
-  /* ---- working tray + tube rack ----------------------------------------- */
+  /* ---- working tray + tube rack ------------------------------------------
+     Grouped so the learner can shove the whole work area around the counter.
+     The group sits at the origin and its children hold their default absolute
+     positions, so moving the group is exactly the tray offset the layout and
+     the staged items are kept in sync with. */
+  const trayGroup = new THREE.Group();
+  trayGroup.name = "trayGroup";
+  trayGroup.userData.trayHandle = true;
+  root.add(trayGroup);
+
   const tray = createModelInstance("supply.tray") || new THREE.Group();
-  tray.position.set(layout.tray.cx, COUNTER_Y, layout.tray.cz);
-  root.add(tray);
-  const trayTag = surfaceLabel("working tray", 0.14, 0.024, { bg:"#e6ecf4", ink:"#586372", opacity:0.8 });
-  trayTag.position.set(layout.tray.cx, 0.014, layout.tray.maxZ - 0.022);
-  root.add(trayTag);
+  tray.position.set(layout.tray.cx - layout.trayOffset.x, COUNTER_Y, layout.tray.cz - layout.trayOffset.z);
+  trayGroup.add(tray);
+  const trayTag = surfaceLabel("working tray — drag to move", 0.20, 0.026, { bg:"#e6ecf4", ink:"#586372", opacity:0.8, tw:340 });
+  trayTag.position.set(tray.position.x, 0.014, tray.position.z + layout.tray.d/2 - 0.022);
+  trayGroup.add(trayTag);
 
   const rack = buildTubeRack(requiredTubes.length);
-  rack.position.set(layout.rack.cx, 0.012, layout.rack.cz);
-  root.add(rack);
+  rack.position.set(layout.rack.cx - layout.trayOffset.x, 0.012, layout.rack.cz - layout.trayOffset.z);
+  trayGroup.add(rack);
+  trayGroup.position.set(layout.trayOffset.x, 0, layout.trayOffset.z);
+
+  // an invisible grab slab covering the tray footprint, so the tray can be
+  // picked up by its empty surface as well as by its rim
+  const trayGrab = new THREE.Mesh(
+    new THREE.BoxGeometry(layout.tray.w, 0.014, layout.tray.d),
+    new THREE.MeshBasicMaterial({ colorWrite:false, depthWrite:false, transparent:true, opacity:0 })
+  );
+  trayGrab.position.set(tray.position.x, 0.007, tray.position.z);
+  trayGrab.name = "trayGrab";
+  trayGroup.add(trayGrab);
 
   /* ---- sharps reach zone -------------------------------------------------- */
   const reachPad = new THREE.Mesh(
@@ -417,10 +437,15 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
     scene.clear();
   }
 
+  /** Moves the whole work area. `offset` is absolute, relative to the tray's default spot. */
+  function setTrayOffset(offset){
+    trayGroup.position.set(offset.x, 0, offset.z);
+  }
+
   return {
-    scene, camera, root, itemMeshes, rack, tray, armGroup,
+    scene, camera, root, itemMeshes, rack, tray, trayGroup, armGroup,
     setHover, setInvalid, showHeldShadow, hideHeldShadow, showGhost, hideGhost,
-    fitCamera, refreshFromState, dispose,
+    fitCamera, refreshFromState, setTrayOffset, dispose,
     COUNTER_Y,
   };
 }

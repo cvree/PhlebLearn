@@ -64,7 +64,12 @@ function tubeOrderHTML(state, result){
 }
 
 /* ---------- inspection readout --------------------------------------------- */
-function inspectHTML(inspecting){
+/**
+ * What the object itself says is always shown — that is the learner reading a
+ * printed label, not a hint. Whether the label means the item is UNUSABLE is
+ * the judgement being assessed, so the verdict only appears in teaching mode.
+ */
+function inspectHTML(inspecting, guided){
   if(!inspecting || !inspecting.def) return "";
   const { def, revealed } = inspecting;
   if(!revealed){
@@ -74,10 +79,45 @@ function inspectHTML(inspecting){
     </div>`;
   }
   const flawed = !isUsable(def);
-  return `<div class="stg-inspect ${flawed?'flagged':'clear'}">
+  return `<div class="stg-inspect ${guided?(flawed?'flagged':'clear'):''}">
     <b>${esc(def.label)}</b>
     <ul>${(def.inspect||[]).map(l=>`<li>${esc(l)}</li>`).join("")}</ul>
-    ${flawed?`<p class="stg-why">${esc(def.reason)}</p>`:`<p class="stg-ok">Checks out — safe to stage.</p>`}
+    ${guided
+      ? (flawed?`<p class="stg-why">${esc(def.reason)}</p>`:`<p class="stg-ok">Checks out — safe to stage.</p>`)
+      : `<p class="stg-neutral">Double-tap it to put it straight on the tray, or tap once to set it back down.</p>`}
+  </div>`;
+}
+
+/* ---------- scored mode: inventory, not judgement -------------------------- */
+function inventoryHTML(state, catalog){
+  const map = new Map(catalog.map(d=>[d.id, d]));
+  const onTray = [], racked = [], inReach = [], onFloor = [];
+  Object.keys(state.items).forEach(id=>{
+    const st = state.items[id], def = map.get(id);
+    if(!def) return;
+    if(st.zone===ZONE.RACK) racked[st.slot] = def;
+    else if(st.zone===ZONE.TRAY) onTray.push(def);
+    else if(st.zone===ZONE.REACH) inReach.push(def);
+    else if(st.zone===ZONE.FLOOR) onFloor.push(def);
+  });
+  const rackCells = state.requiredTubes.map((_,i)=>{
+    const d = racked[i];
+    const col = d && TUBES[d.tubeKey] ? "#"+TUBES[d.tubeKey].color.toString(16).padStart(6,'0') : "transparent";
+    return `<span class="stg-slot ${d?'filled':'empty'}">
+      <span class="stg-slotn">${i+1}</span>
+      <span class="stg-dot" style="background:${col}"></span>
+      <span class="stg-slotname">${d?esc(tubeName(d.tubeKey)):"empty"}</span></span>`;
+  }).join("");
+
+  return `<div class="stg-inventory">
+    <div class="stg-invrow"><span class="stg-invlab">On the tray</span>
+      <span class="stg-invval">${onTray.length ? onTray.map(d=>esc(d.short||d.label)).join(", ") : "nothing yet"}</span></div>
+    ${state.requiredTubes.length ? `<div class="stg-invrow"><span class="stg-invlab">Rack</span>
+      <span class="stg-invslots">${rackCells}</span></div>` : ""}
+    <div class="stg-invrow"><span class="stg-invlab">Reach zone</span>
+      <span class="stg-invval">${inReach.length ? inReach.map(d=>esc(d.short||d.label)).join(", ") : "empty"}</span></div>
+    ${onFloor.length ? `<div class="stg-invrow"><span class="stg-invlab">On the floor</span>
+      <span class="stg-invval">${onFloor.map(d=>esc(d.short||d.label)).join(", ")}</span></div>` : ""}
   </div>`;
 }
 
@@ -137,6 +177,10 @@ function listHTML(state, catalog){
  */
 export function renderStagingCoach(host, o){
   const { state, catalog, result, inspecting, listView } = o;
+  // Teaching mode coaches as you go. A scored shift does not: you decide when
+  // the tray is ready, you are allowed to be wrong, and what you got wrong is
+  // reported after the patient.
+  const guided = !!o.guided;
   const issue = nextIssue(result);
   const ready = result.ready;
 
@@ -152,24 +196,28 @@ export function renderStagingCoach(host, o){
         </div>
       </div>
 
-      ${checklistHTML(result)}
-      ${tubeOrderHTML(state, result)}
-      ${inspectHTML(inspecting)}
+      ${guided ? checklistHTML(result) + tubeOrderHTML(state, result) : inventoryHTML(state, catalog)}
+      ${inspectHTML(inspecting, guided)}
 
-      <div class="stg-msg ${ready?'ready':(issue&&issue.severity==='block'?'block':'warn')}" role="status" aria-live="polite">
-        ${ready
-          ? "<b>Work area ready.</b> Everything you need is on the tray, the tubes are in order of draw, and the sharps container is beside the chair."
-          : issue ? `<b>${issue.severity==='block'?'Not ready yet.':'Worth fixing.'}</b> ${esc(issue.message)}`
-                  : "Stage the equipment this draw needs."}
-      </div>
+      ${guided
+        ? `<div class="stg-msg ${ready?'ready':(issue&&issue.severity==='block'?'block':'warn')}" role="status" aria-live="polite">
+            ${ready
+              ? "<b>Work area ready.</b> Everything you need is on the tray, the tubes are in order of draw, and the sharps container is beside the chair."
+              : issue ? `<b>${issue.severity==='block'?'Not ready yet.':'Worth fixing.'}</b> ${esc(issue.message)}`
+                      : "Stage the equipment this draw needs."}
+          </div>`
+        : `<div class="stg-msg neutral" role="status" aria-live="polite">
+            Stage what this draw needs, then continue whenever you're satisfied. Your preparation is assessed after the patient.
+          </div>`}
 
       ${listView ? listHTML(state, catalog) : `<p class="stg-help">
-        Drag an item from the cart onto the tray. <b>Tap an item to turn it over</b> and read its label before you commit to it.
-        Tubes seat into the numbered rack in order of draw. The sharps container goes on the marked pad beside the chair.
+        Drag an item from the cart onto the tray, and drag the tray itself to move your whole work area.
+        <b>Tap an item to turn it over</b> and read its label; <b>double-tap it</b> to send it straight to the tray.
+        Tubes seat into the numbered rack. The sharps container goes on the marked pad beside the chair.
       </p>`}
 
-      <button class="btn vp-tap" id="stgReady" ${ready?"":"disabled"} style="${ready?"":"opacity:.5"}">
-        ${ready?"Tray ready ▶":"Tray not ready yet"}
+      <button class="btn vp-tap" id="stgReady" ${(guided && !ready)?"disabled":""} style="${(guided && !ready)?"opacity:.5":""}">
+        ${guided ? (ready ? "Tray ready ▶" : "Tray not ready yet") : "I'm ready — begin the draw ▶"}
       </button>
     </div>`;
 
@@ -177,7 +225,7 @@ export function renderStagingCoach(host, o){
   const bind = (id, fn)=>{ const el = host.querySelector("#"+id); if(el && fn) el.onclick = fn; };
   bind("stgHand", h.onToggleHandedness);
   bind("stgView", h.onToggleView);
-  bind("stgReady", ()=>{ if(result.ready && h.onReady) h.onReady(); });
+  bind("stgReady", ()=>{ if((!guided || result.ready) && h.onReady) h.onReady(); });
 
   host.querySelectorAll("[data-inspect]").forEach(b=>{
     b.onclick = ()=>h.onInspect && h.onInspect(b.dataset.inspect);

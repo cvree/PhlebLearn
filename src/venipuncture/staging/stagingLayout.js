@@ -71,6 +71,7 @@ export function createLayout({ handedness, tubeCount, shelfCount, orientation })
   return {
     handedness: left?HAND.LEFT:HAND.RIGHT, sign, orientation:orient,
     tray, rack, arm, reach, across, store, shelf, counter,
+    trayOffset: { x:0, z:0 },
   };
 }
 
@@ -88,6 +89,52 @@ export function shelfSlots(count, orientation){
     out.push({ x: x0 + c*dx, z: rowZ[r] });
   }
   return out;
+}
+
+/**
+ * Slides the tray (and the tube rack that sits on it) to a new position on the
+ * counter. The learner can shove the whole work area to wherever they actually
+ * want to work, so the tray's zone has to move with the object rather than
+ * being a fixed region the tray happens to start in.
+ *
+ * Mutates `layout` in place and returns the clamped offset actually applied.
+ */
+export function applyTrayOffset(layout, offset){
+  const off = offset || { x:0, z:0 };
+  const base = layout.trayBase || (layout.trayBase = {
+    tray:{ cx:layout.tray.cx, cz:layout.tray.cz },
+    rack:{ cx:layout.rack.cx, cz:layout.rack.cz },
+  });
+  const c = layout.counter;
+  const halfW = layout.tray.w/2, halfD = layout.tray.d/2;
+  const clampX = v=>Math.max(c.minX+halfW, Math.min(c.maxX-halfW, v));
+  const clampZ = v=>Math.max(c.minZ+halfD, Math.min(c.maxZ-halfD, v));
+  let targetX = clampX(base.tray.cx + off.x);
+  let targetZ = clampZ(base.tray.cz + off.z);
+
+  // You cannot put a tray down on top of the patient's arm. Without this the
+  // tray slides under the arm mesh and everything staged on it disappears from
+  // view — the player can bury their own work area.
+  const a = layout.arm;
+  for(let pass=0; pass<2; pass++){
+    const overX = Math.min(targetX+halfW, a.maxX) - Math.max(targetX-halfW, a.minX);
+    const overZ = Math.min(targetZ+halfD, a.maxZ) - Math.max(targetZ-halfD, a.minZ);
+    if(overX<=0 || overZ<=0) break;
+    if(overX <= overZ) targetX = clampX(targetX + (targetX < a.cx ? -overX : overX));
+    else               targetZ = clampZ(targetZ + (targetZ < a.cz ? -overZ : overZ));
+  }
+
+  const dx = targetX - base.tray.cx, dz = targetZ - base.tray.cz;
+
+  const move = (r, cx, cz)=>{
+    r.cx = cx; r.cz = cz;
+    r.minX = cx - r.w/2; r.maxX = cx + r.w/2;
+    r.minZ = cz - r.d/2; r.maxZ = cz + r.d/2;
+  };
+  move(layout.tray, base.tray.cx + dx, base.tray.cz + dz);
+  move(layout.rack, base.rack.cx + dx, base.rack.cz + dz);
+  layout.trayOffset = { x:dx, z:dz };
+  return layout.trayOffset;
 }
 
 /** Where the three sharps containers stand before the learner moves one. */

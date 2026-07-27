@@ -16,7 +16,8 @@
    the two moments that need to leave the venipuncture screen entirely:
    finishing the whole procedure, or a mid-draw complication interrupting it.
    ========================================================================= */
-import { buildStepSequence } from "./procedureState.js";
+import { TUBES } from "../config.js";
+import { buildStepSequence, canonicalTubeOrder } from "./procedureState.js";
 import { VP_STEPS } from "./steps.js";
 import { PHYSICAL_STEPS } from "./physicalSteps.js";
 import { createEncounterState } from "./encounterState.js";
@@ -26,7 +27,7 @@ import { VP_TIPS, VP_ICON } from "./questions.js";
 // persistent encounter object every physical step reads and writes.
 export function createProcedureState(tubeKeys, opts){
   const o = opts||{};
-  const tubes=[...new Set(tubeKeys)];
+  const tubes = canonicalTubeOrder(tubeKeys, TUBES);
   const patient = o.patient || null;
   return {
     step: 0,

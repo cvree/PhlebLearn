@@ -123,6 +123,11 @@ export function measureStaging(state, catalog, evalResult, now){
     wrongPatientStaged: wrongPatientCaught,
     trayUsableWithoutCrossing: state.reachedAcrossField===0 && sharpsAccessible,
     ready: evalResult.ready,
+    // What was still wrong at the moment the learner chose to begin the draw.
+    // In a scored shift nothing stops them proceeding, so this is the report.
+    mistakes: evalResult.issues
+      .filter(i=>i.severity==="block")
+      .map(i=>({ code:i.code, message:i.message, item:i.itemId ? (map.get(i.itemId)||{}).label : null })),
   };
   m.score = stagingScore(m);
   m.narrative = stagingNarrative(state, catalog, evalResult, m);
@@ -146,6 +151,9 @@ export function stagingScore(m){
   else if(m.sharpsCorrected) s -= 4;      // corrected before starting: small ding, not a failure
   s -= Math.round((1 - m.handednessCompliance) * 8);
   s -= Math.round((1 - m.placementEfficiency) * 8);
+  // beginning a draw from a work area that isn't ready is its own failure,
+  // separate from whatever specific items were wrong
+  if(!m.ready) s -= Math.min(24, 6 + (m.mistakes ? m.mistakes.length : 1) * 6);
   s += Math.round(m.inspectionRate * 6);  // checking packages earns back a little
   return Math.max(0, Math.min(100, Math.round(s)));
 }
@@ -157,6 +165,13 @@ export function stagingScore(m){
 export function stagingNarrative(state, catalog, evalResult, m){
   const map = catalogById(catalog);
   const parts = [];
+
+  /* what the learner began the draw without — stated first, because it is the
+     thing they most need to know and they were never told at the time */
+  if(!evalResult.ready){
+    const blocking = evalResult.issues.filter(i=>i.severity==="block");
+    parts.push(`You began the draw with ${blocking.length===1?"one problem":`${blocking.length} problems`} on the work area. ${blocking.slice(0,3).map(i=>i.message).join(" ")}`);
+  }
 
   /* what went right */
   if(m.incorrectItems===0){
