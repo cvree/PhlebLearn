@@ -48,7 +48,26 @@ import {
   startPalpation, stopPalpation, isPalpationActive, currentTouch,
   markCurrentSite, unmarkSite, palpateVesselById, chooseVesselById,
 } from "./palpation/palpationRuntime.js";
-import { createCleaningState, openSwab, applySpiral, applyBackAndForth } from "./cleaning/cleaningState.js";
+import { createCleaningState, openSwab, applySpiral, applyBackAndForth, markRetouched } from "./cleaning/cleaningState.js";
+import { secondsDrying } from "./cleaning/cleaningRules.js";
+import { FLAW } from "./staging/supplyCatalog.js";
+import {
+  createAssemblyState, CAP_PLACE,
+  peelOpen, tearOpen, liftNeedle, threadIn, backOut, freshNeedle,
+  pullCapStraight, wiggleCapOff, pullCap, placeCap, recap, touchNeedle,
+  rollBevel, inspectBevel, discardUnit, warnPatient, beginUncap,
+} from "./assembly/assemblyState.js";
+import { evaluateAssembly, evaluateUncap } from "./assembly/assemblyRules.js";
+import {
+  measureAssembly, measureUncap, applyAssemblyOutcome, applyUncapOutcome,
+} from "./assembly/assemblyScoring.js";
+import { renderAssemblyCoach, renderUncapCoach } from "./assembly/assemblyCoach.js";
+import {
+  startAssembly, stopAssembly, isAssemblyActive, currentUnit,
+  peelPouchOpen, liftNeedleBy, threadNeedle, backOutNeedle, takeFreshNeedle,
+  pullSheath, placeSheath, recapNeedle, setDownUnit, rollUnit, lookAtBevel,
+  discardAndReplace, tellPatient,
+} from "./assembly/assemblyRuntime.js";
 import { evaluateCleaning } from "./cleaning/cleaningRules.js";
 import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
 import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
@@ -136,6 +155,41 @@ export function ensureCleaningSession(c){
   if(c.cleaning) return c.cleaning;
   c.cleaning = createCleaningState();
   return c.cleaning;
+}
+
+/** The catalog entry for whatever the learner actually staged in a category. */
+function stagedDef(c, category){
+  if(!c.supplies || !c.encounter) return null;
+  const id = stagedItemId(c.encounter, category);
+  if(!id) return null;
+  return c.supplies.catalog.find(d=>d.id === id) || null;
+}
+
+/**
+ * The needle + holder as one unit, created once and carried for the rest of
+ * the encounter. The uncap step inherits THIS object — including where the
+ * bevel ended up pointing when the threading stopped — and the insert step
+ * after it inherits the same one again.
+ *
+ * The needle it is built from is the needle they actually staged: a split
+ * pouch or a 25G chosen back at the cart turns up here, in the hand, rather
+ * than as a line in a report afterwards.
+ */
+export function ensureAssemblySession(c){
+  if(c.needleUnit) return c.needleUnit;
+  const needle = stagedDef(c, CATEGORY.NEEDLE);
+  const holder = stagedDef(c, CATEGORY.HOLDER);
+  c.needleUnit = createAssemblyState({
+    needleItemId: needle ? needle.id : null,
+    holderItemId: holder ? holder.id : null,
+    gauge: needle && needle.gauge ? needle.gauge : 21,
+    pouchCompromised: !!(needle && needle.flaws && needle.flaws.indexOf(FLAW.DAMAGED) >= 0),
+    // how long the alcohol had already been evaporating when they started —
+    // the whole reason this step happens here rather than earlier
+    dryElapsedAtStart: c.cleaning && c.cleaning.strokes ? secondsDrying(c.cleaning) : null,
+  });
+  if(c.encounter) c.encounter.assembly = c.needleUnit;
+  return c.needleUnit;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -588,6 +642,248 @@ export const PHYSICAL_STEPS = {
     function cleanupOnly(){
       disposed = true;
       stopCleaning();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
+  },
+
+  /* ---------------------------------------------------------------------------
+     ASSEMBLE — thread the needle they staged into the holder they staged, at
+     the bench, while the site they just cleaned air-dries in the same frame.
+     The unit built here is carried onward: uncap takes the sheath off THIS
+     needle, and where its bevel points was decided by where this threading
+     stopped.
+     ------------------------------------------------------------------------ */
+  assemble(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const unit = ensureAssemblySession(c);
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.assemblyListView;
+    let disposed = false;
+
+    const evaluate = ()=>evaluateAssembly(unit);
+
+    function draw(result){
+      if(disposed) return;
+      renderAssemblyCoach(stage, {
+        state: unit,
+        result: result || evaluate(),
+        unit: isAssemblyActive() ? currentUnit() : null,
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onAction: (kind)=>draw(doAction(kind)),
+        },
+      });
+    }
+
+    // The controls tear the 3D scene down, so these cannot go through the
+    // runtime — but they run the SAME pure technique helpers it does, so the
+    // turns, the alignment and the sterility that come out are identical.
+    function doAction(kind){
+      if(isAssemblyActive()){
+        switch(kind){
+          case "peel": return peelPouchOpen(false) || evaluate();
+          case "tear": return peelPouchOpen(true) || evaluate();
+          case "lift-sheath": return liftNeedleBy("sheath") || evaluate();
+          case "lift-thread": return liftNeedleBy("threadEnd") || evaluate();
+          case "thread-snug": return threadNeedle(2.5, 0) || evaluate();
+          case "thread-light": return threadNeedle(1.5, 0) || evaluate();
+          case "thread-hard": return threadNeedle(5.2, 0) || evaluate();
+          case "thread-cross": return threadNeedle(2.5, 22) || evaluate();
+          case "backout": return backOutNeedle() || evaluate();
+          case "fresh": return takeFreshNeedle() || evaluate();
+          default: return evaluate();
+        }
+      }
+      switch(kind){
+        case "peel": peelOpen(unit); break;
+        case "tear": tearOpen(unit); break;
+        case "lift-sheath": liftNeedle(unit, "sheath"); break;
+        case "lift-thread": liftNeedle(unit, "threadEnd"); break;
+        case "thread-snug": threadIn(unit, 2.5, 0); break;
+        case "thread-light": threadIn(unit, 1.5, 0); break;
+        case "thread-hard": threadIn(unit, 5.2, 0); break;
+        case "thread-cross": threadIn(unit, 2.5, 22); break;
+        case "backout": backOut(unit); break;
+        case "fresh": freshNeedle(unit); break;
+        default: break;
+      }
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      await startAssembly({
+        mode: "assemble",
+        state: unit,
+        arm,
+        tourniquet: c.tourniquet,
+        cleaning: c.cleaning,
+        site: c.site,
+        onChange: (result)=>draw(result),
+      });
+      if(disposed){ stopAssembly(); return; }
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.assemblyListView = listView; saveSS();
+      if(listView){ stopAssembly(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = evaluate();
+      if(guided() && !result.ready) return;
+      const measurements = measureAssembly(unit, result);
+      applyAssemblyOutcome(c, measurements);
+      if(c.encounter){
+        c.encounter.assembly = unit;
+        c.encounter.measurements.assembly = measurements;
+      }
+      cleanupOnly();
+      advance();
+    }
+
+    // Leaving the step must not un-build the unit — it is on the bench from
+    // here until it goes in the sharps container. Only the scene is torn down.
+    function cleanupOnly(){
+      disposed = true;
+      stopAssembly();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
+  },
+
+  /* ---------------------------------------------------------------------------
+     UNCAP — the sheath comes off the unit that was just built, along the
+     needle's own axis, and then the bevel has to be found and rolled up.
+     Nothing here is a fresh object: this is the same needle, at the angle the
+     threading left it.
+     ------------------------------------------------------------------------ */
+  uncap(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const unit = ensureAssemblySession(c);
+    // Arriving here without an assembled unit at all (a resumed draw, or the
+    // test seam jumping straight in) means one was built off-screen — but a
+    // unit that WAS assembled keeps whatever the learner did to it, loose or
+    // cross-threaded included.
+    if(!unit.engaged){ peelOpen(unit); liftNeedle(unit, "sheath"); threadIn(unit, 2.5, 0); }
+    beginUncap(unit);
+
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.uncapListView;
+    let disposed = false;
+
+    const evaluate = ()=>evaluateUncap(unit);
+
+    function draw(result){
+      if(disposed) return;
+      renderUncapCoach(stage, {
+        state: unit,
+        result: result || evaluate(),
+        unit: isAssemblyActive() ? currentUnit() : null,
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onAction: (kind)=>draw(doAction(kind)),
+        },
+      });
+    }
+
+    /** Putting the sheath down on the prepped field re-contaminates it. */
+    function retouchSite(){
+      if(c.cleaning) markRetouched(c.cleaning);
+    }
+
+    function doAction(kind){
+      const roll = /^roll([+-])(\d+)$/.exec(kind);
+      if(isAssemblyActive()){
+        if(roll) return rollUnit((roll[1] === "-" ? -1 : 1)*(+roll[2])) || evaluate();
+        switch(kind){
+          case "pull": return pullSheath("straight") || evaluate();
+          case "wiggle": return pullSheath("wiggle") || evaluate();
+          case "twist": return pullSheath("twist") || evaluate();
+          case "look": return lookAtBevel() || evaluate();
+          case "cap-tray": return placeSheath(CAP_PLACE.TRAY) || evaluate();
+          case "cap-site": { const r = placeSheath(CAP_PLACE.SITE); retouchSite(); return r || evaluate(); }
+          case "recap": return recapNeedle() || evaluate();
+          case "setdown": return setDownUnit() || evaluate();
+          case "discard": return discardAndReplace() || evaluate();
+          case "warn": return tellPatient() || evaluate();
+          default: return evaluate();
+        }
+      }
+      if(roll){ rollBevel(unit, (roll[1] === "-" ? -1 : 1)*(+roll[2])); return evaluate(); }
+      switch(kind){
+        case "pull": pullCapStraight(unit); break;
+        case "wiggle": wiggleCapOff(unit); break;
+        case "twist": pullCap(unit, 0.032, 0, 0, 40); break;
+        case "look": inspectBevel(unit); break;
+        case "cap-tray": placeCap(unit, CAP_PLACE.TRAY); break;
+        case "cap-site": placeCap(unit, CAP_PLACE.SITE); retouchSite(); break;
+        case "recap": recap(unit); break;
+        case "setdown": touchNeedle(unit, "the bench"); break;
+        case "discard": discardUnit(unit); break;
+        case "warn": warnPatient(unit); break;
+        default: break;
+      }
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      await startAssembly({
+        mode: "uncap",
+        state: unit,
+        arm,
+        tourniquet: c.tourniquet,
+        cleaning: c.cleaning,
+        site: c.site,
+        onChange: (result)=>draw(result),
+        onSiteRetouched: retouchSite,
+      });
+      if(disposed){ stopAssembly(); return; }
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.uncapListView = listView; saveSS();
+      if(listView){ stopAssembly(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = evaluate();
+      if(guided() && !result.ready) return;
+      const measurements = measureUncap(unit, result);
+      applyUncapOutcome(c, measurements);
+      if(c.encounter){
+        c.encounter.assembly = unit;
+        c.encounter.measurements.uncap = measurements;
+      }
+      cleanupOnly();
+      advance();
+    }
+
+    function cleanupOnly(){
+      disposed = true;
+      stopAssembly();
       try{ delete document.body.dataset.staging; }catch(_){}
     }
 

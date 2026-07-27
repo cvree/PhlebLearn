@@ -4,7 +4,7 @@ Three layers, fastest-to-slowest:
 
 | Layer | Command | What it covers |
 |---|---|---|
-| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, and the whole `venipuncture/staging/` rule + scoring layer. No browser, no DOM — runs on Node's built-in test runner. |
+| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, and every converted step's rule + scoring + technique layer (`staging/`, `tourniquet/`, `palpation/`, `cleaning/`, `assembly/`). No browser, no DOM — runs on Node's built-in test runner. |
 | Playwright tests | `npm run test:e2e` | The production build, served via `vite preview`, driven in a real Chromium instance. |
 | Full verification | `npm run verify` | Unit tests → build → Playwright, in order. Run this before merging any phase branch. |
 
@@ -140,6 +140,34 @@ gone.
 - The coach panel collapses and the cart re-frames into the freed space.
 - Leaving a draw takes two clicks and scores the encounter on what was done.
 
+## Needle + holder browser tests (`tests/assembly.e2e.spec.js`)
+
+19 tests against the production build. The unit tests
+(`tests/assembly.spec.js`, 35 of them) prove the rules; these prove the step is
+a real object rather than a widget:
+
+- The `.vp-assemble` / `#vpNeedle` / `#vpHolder` divs no longer exist anywhere.
+- Dragging along the pouch's seam opens it; wandering off the seam tears it;
+  stopping half way leaves it shut.
+- Picking the needle up by the grey sleeved end contaminates it — and a
+  contaminated needle is blocked no matter how well it is then threaded.
+- Carrying the needle in along the hub's axis engages the threads square;
+  coming at the hub 35° off cross-threads it, and turning then gets nowhere.
+- Circling the pointer round the hub really turns it: 2.6 revolutions reads as
+  2.6 turns, 1.3 is blocked as loose, and circling the other way backs it off.
+- The unit the uncap step opens is the unit the assemble step built, with the
+  bevel at the angle that threading left it.
+- Pulling the sheath along the needle leaves it intact; levering it off
+  sideways barbs the bevel and blocks the step.
+- Rolling the holder brings the bevel up; holding still on the holder leans in
+  and inspects it.
+- Dragging the sheath back onto the needle is caught as a hand recap; dropping
+  it on the prepped field is caught as re-contamination.
+- The accessible controls build the same unit with the 3D scene torn down,
+  including backing a cross-threaded needle out and starting again.
+- **Scored shift**: no verdicts, no explanation, and the learner can commit
+  with nothing built.
+
 ### The `?e2e=1` test seam
 
 `main.js` installs `window.__phlebTest` **only** when the URL carries `e2e=1`.
@@ -160,6 +188,28 @@ behaviour of its own — it only reads state and reports screen coordinates.
 a point 2 cm above the counter maps to a *different* world position once the
 ray is cast back down, and the error grows with the wide field of view used on
 narrow screens.
+
+Each converted step adds its own reader and its own projector to the seam
+(`tourniquetSnapshot` / `screenPointsOnLimb`, `palpationSnapshot` /
+`screenPointOverVessel`, `cleaningSnapshot` / `screenPointOnField`,
+`assemblySnapshot` / `benchAnchors` / `screenPointsOnBench`). The rule they all
+follow: **a test drives the gesture in the same coordinates the runtime
+measures it in**, never in guessed pixels.
+
+`hubScreenPoint()` is the one that looks redundant and is not. Threading a
+needle is measured as the pointer's angle about the holder's hub *as drawn* —
+screwing something in is a wrist rotation, and on a pointer the honest
+equivalent is a circular drag round the thing being turned. A test therefore
+has to circle that exact projected centre; a centre re-derived from the bench
+plane would be circling something else.
+
+**Drags are interpolated driver-side.** A gesture needs roughly forty samples
+before it is a gesture, and forty separate `mouse.move` calls cost more than
+the whole per-test budget once a live WebGL context is in the loop — the first
+version of the assembly suite timed out on exactly that. Straight legs go
+through one `mouse.move(x, y, { steps })` each, and a full revolution of the
+threading gesture is eight interpolated chords, which keeps every angular step
+well inside the half-turn the runtime unwraps at.
 
 ## The 8 "urgent sequencing bugs" — what was actually wrong
 
