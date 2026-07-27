@@ -48,6 +48,14 @@ import {
   startPalpation, stopPalpation, isPalpationActive, currentTouch,
   markCurrentSite, unmarkSite, palpateVesselById, chooseVesselById,
 } from "./palpation/palpationRuntime.js";
+import { createCleaningState, openSwab, applySpiral, applyBackAndForth } from "./cleaning/cleaningState.js";
+import { evaluateCleaning } from "./cleaning/cleaningRules.js";
+import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
+import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
+import {
+  startCleaning, stopCleaning, isCleaningActive,
+  openSwabPack, scrubSpiral, scrubBackAndForth,
+} from "./cleaning/cleaningRuntime.js";
 
 const ZONE_BY_NAME = { tray:ZONE.TRAY, rack:ZONE.RACK, reach:ZONE.REACH, across:ZONE.ACROSS, counter:ZONE.COUNTER };
 
@@ -121,6 +129,13 @@ export function ensureTourniquetSession(c){
   });
   if(c.encounter) c.encounter.tourniquet = c.tourniquet;
   return c.tourniquet;
+}
+
+/** The prepped field for this encounter — created once, carried onward. */
+export function ensureCleaningSession(c){
+  if(c.cleaning) return c.cleaning;
+  c.cleaning = createCleaningState();
+  return c.cleaning;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -480,6 +495,99 @@ export const PHYSICAL_STEPS = {
     function cleanupOnly(){
       disposed = true;
       stopPalpation();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
+  },
+
+  /* ---------------------------------------------------------------------------
+     CLEAN — scrub the site the fingers just found, on the same arm. Coverage
+     is painted onto the skin as it happens, so what has actually been
+     disinfected is visible rather than inferred from a distance travelled.
+     ------------------------------------------------------------------------ */
+  clean(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const clean = ensureCleaningSession(c);
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.cleaningListView;
+    let disposed = false;
+
+    const evaluate = ()=>evaluateCleaning(clean);
+
+    function draw(result){
+      if(disposed) return;
+      renderCleaningCoach(stage, {
+        state: clean,
+        result: result || evaluate(),
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onOpen: ()=>draw(doOpen()),
+          onScrub: (kind)=>draw(doScrub(kind)),
+        },
+      });
+    }
+
+    function doOpen(){
+      if(isCleaningActive()) return openSwabPack() || evaluate();
+      openSwab(clean);
+      return evaluate();
+    }
+    // The controls tear the 3D scene down, so these cannot go through the
+    // runtime — but they run the SAME pure technique helpers it does, so the
+    // coverage, direction and friction that come out are identical.
+    function doScrub(kind){
+      const spec = kind === "backforth" ? null
+                 : kind === "spiral-small" ? { turns:3, frac:0.55 }
+                 : { turns:5, frac:1 };
+      if(isCleaningActive()){
+        return (spec ? scrubSpiral(spec.turns, spec.frac) : scrubBackAndForth(1)) || evaluate();
+      }
+      if(spec) applySpiral(clean, spec.turns, spec.frac);
+      else applyBackAndForth(clean, 1);
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      await startCleaning({
+        state: clean,
+        arm,
+        tourniquet: c.tourniquet,
+        // the field is centred on the vein the fingers actually marked
+        site: c.site,
+        onChange: (result)=>draw(result),
+      });
+      if(disposed){ stopCleaning(); return; }
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.cleaningListView = listView; saveSS();
+      if(listView){ stopCleaning(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = evaluate();
+      if(guided() && !result.ready) return;
+      const measurements = measureCleaning(clean, result);
+      applyCleaningOutcome(c, measurements);
+      if(c.encounter) c.encounter.measurements.cleaning = measurements;
+      cleanupOnly();
+      advance();
+    }
+
+    function cleanupOnly(){
+      disposed = true;
+      stopCleaning();
       try{ delete document.body.dataset.staging; }catch(_){}
     }
 
