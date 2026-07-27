@@ -19,17 +19,18 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`) and `clean` is a scrubbed prep field on it (`cleaning/`); the other 12 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`) and `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`); the other 10 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 12 of the 16 venipuncture steps are still the 2D DOM
+**The gap that remains:** 10 of the 16 venipuncture steps are still the 2D DOM
 panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
 first mechanic where the patient's body answers back; palpation (Phase 2b) is
 the first where the learner has to interpret what the body is telling them;
 cleaning (Phase 2c) is the first where the work itself is visible on the skin
-and can be undone by carelessness. Each branch after it converts one more
-step, in order, on that same arm.
+and can be undone by carelessness; the needle-and-holder unit (Phase 2d) is the
+first where one step's technique physically determines the next step's problem.
+Each branch after it converts one more step, in order, on that same arm.
 
 ---
 
@@ -248,6 +249,66 @@ patch IS the measurement, not a decoration of a progress bar.
 
 Delivered alongside: 22 unit tests and 11 browser tests.
 
+## Phase 2d — `feature/needle-holder-assembly` ✅ complete
+
+Two steps, one object. `assemble` was a div dragged within 90 pixels of
+another div; `uncap` was a third, unrelated div dragged 50 pixels to the
+right. They are now **one unit, built at the bench beside the patient while
+the site the fingers found air-dries in the same frame** — and the unit the
+first step threads together is the unit the second step uncaps.
+
+- **The bench is not the limb, on purpose.** Everything on the arm goes
+  through `pointerToLimb()`'s cross-section solve and carries its front/back
+  ambiguity. A bench is a known horizontal plane, so a pointer ray crossing it
+  gives one exact world point (`pointerToPlane`). Alignment, turns and cap
+  travel are measured in real metres and real degrees with nothing inferred.
+  `fitCamera()` grew an optional `focus`, so the same scene frames the bench
+  without moving the pitch or the yaw that make the limb solvable.
+- **Sterility is a place, not a checkbox.** The pouch is opened by dragging
+  along its seam; wander off it and the pack is torn, not peeled. The needle
+  is picked up wherever you actually grab it, and the grey sleeved end — the
+  end that goes inside the holder and into every tube — contaminates it. A
+  contaminated needle is blocked no matter how well it is subsequently
+  threaded, and taking a fresh one is the recovery, counted.
+- **Alignment decides everything, once.** The needle is carried by the point
+  it was picked up at and points the way it is being carried. More than 12°
+  off the hub's axis when the threads meet and it cross-threads: it binds at
+  three-quarters of a turn and forcing it gets nowhere. The way out is to back
+  it right off and line it up — which is the way out in life.
+- **Turns are turns.** Threading is a circular drag around the hub, counted as
+  real revolutions. Under two and the unit leaks vacuum and unseats during a
+  tube change (blocked); past four and a half the hub is over-torqued and will
+  not come apart for disposal (warned). Finger-tight is about 2.5.
+- **The bevel's angle is inherited from the threading.** This is the piece
+  that makes the two steps one mechanic: a multi-sample needle screws in, so
+  where the bevel points when you stop turning is wherever the thread stopped.
+  Stop at 2.5 turns and it is exactly upside down. The uncap step then has to
+  find that out and roll the holder until the opening faces up.
+- **The sheath comes off along an axis.** The pull is scored as the fraction
+  of travel that went along the needle. Lever it sideways more than 4 mm and
+  the shaft bends and the cutting edge turns over — and a barbed needle drags
+  going in and haemolyses the sample. Holding still on the holder leans in for
+  a close-up of the tip, which is the only way a barb is ever caught.
+- **Where the sheath goes down matters.** On the tray, fine. On the floor,
+  warned. On the field that was just disinfected, blocked — and it calls
+  straight back into the cleaning state and re-contaminates it. Dragged back
+  onto the needle it is a hand recap, which is blocked outright.
+- **The patient gets told**, and the timing is measured — a warning given a
+  minute early is not a warning.
+- **What was staged turns up in the hand.** A split pouch or a 25G chosen back
+  at the supply cart is discovered here, physically, rather than as a line in a
+  report afterwards.
+
+Deliberately left for `feature/tube-collection`: pre-seating the first tube to
+the holder's guideline. Pushing past the line pierces the stopper and kills the
+tube — a real and classic error, but it is a tube-handling lesson and it
+belongs with `fill` and `switch`, not here.
+
+Delivered alongside: `venipuncture/assembly/`, a persistent `needleUnit` on the
+encounter, `assembly` and `uncap` measurement categories reporting real turns,
+degrees and millimetres, an accessible control path that writes the same state
+through the same pure helpers, 35 unit tests and 19 browser tests.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -255,8 +316,8 @@ The DOM panel stays as the **coach layer** (tips, why-it-matters, teach mode) �
 stops being the interaction surface.
 
 Branch order (one branch each, verified and deployed before the next starts):
-~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ → ~~`feature/aseptic-site-cleaning`~~ ✅ →
-`feature/aseptic-site-cleaning` → `feature/needle-holder-assembly` →
+~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
+~~`feature/aseptic-site-cleaning`~~ ✅ → ~~`feature/needle-holder-assembly`~~ ✅ →
 `feature/anchor-and-insert` → `feature/tube-collection` →
 `feature/withdraw-safety-sharps` → `feature/post-draw-care`.
 
@@ -266,8 +327,8 @@ Branch order (one branch each, verified and deployed before the next starts):
 | tourniquet | ✅ **done** — a real band on a real arm | — |
 | palpate | ✅ **done** — a fingertip on the real arm | — |
 | clean | ✅ **done** — a scrubbed field on the real arm | — |
-| assemble | div onto div | thread a real needle into a real holder (snap + click) |
-| uncap | drag cap div | pull the real cap along the needle's axis |
+| assemble | ✅ **done** — a real needle threaded into a real holder | — |
+| uncap | ✅ **done** — the sheath pulled along the needle's own axis | — |
 | insert | 2D angle math | **real 3D angle + depth** vs. skin normal, 15–30° window, bevel-up roll check, flashback in the real hub |
 | fill | CSS height animation | real tube fills by volume; vacuum seat has feel |
 | switch | drag tube divs | pull tubes off the **real rack** in order of draw; needle jitter is penalised |

@@ -144,3 +144,53 @@
   .cln-val.bad{text-decoration:underline}
 }
 @media (prefers-reduced-motion:reduce){ .cln-fill{transition:none} }
+
+/* ============ ASSEMBLY — the unit on the bench ========================== */
+/* The unit itself is on the bench: how far the pouch is peeled, how far the
+   needle has gone in, whether it is canted, where the bevel points. This
+   reports only the numbers the bench cannot show.                        */
+
+.asm-coach{display:flex;flex-direction:column;gap:9px}
+.asm-panel{display:flex;flex-direction:column;gap:6px;background:#fbfaff;
+  border:1.5px solid var(--line);border-radius:12px;padding:9px 11px}
+.asm-row{display:flex;align-items:center;gap:8px}
+.asm-lab{font-size:10.5px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;
+  color:var(--ink-soft);flex:0 0 88px}
+.asm-val{font-size:12.5px;font-weight:900;color:var(--ink);min-width:56px;
+  font-variant-numeric:tabular-nums}
+.asm-val.bad{color:var(--bad)}
+.asm-val.good{color:#2f7d5b}
+.asm-val.wait{color:#b0762a}
+
+.asm-bar{position:relative;flex:1;height:8px;border-radius:999px;background:#e6e2f2;
+  border:1px solid var(--line);overflow:hidden}
+.asm-fill{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#8fb4e8,#3f5f9f);transition:width .12s linear}
+/* the turn count at which the unit stops leaking */
+.asm-mark{position:absolute;top:-2px;bottom:-2px;width:2px;background:#2f7d5b;opacity:.7}
+
+/* the bevel's angle, shown as an angle — never as a word alone */
+.asm-dial{position:relative;width:22px;height:22px;border-radius:50%;
+  border:1.5px solid var(--line);background:#fff;flex:0 0 auto}
+.asm-needleline{position:absolute;left:50%;top:2px;width:2px;height:9px;margin-left:-1px;
+  background:var(--plum);transform-origin:50% 100%;transition:transform .12s linear}
+
+.asm-controls fieldset{border:1.5px solid var(--line);border-radius:12px;padding:9px 11px;margin:0}
+.asm-controls legend{font-size:11px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;
+  color:var(--ink-soft);padding:0 5px}
+.asm-actions{display:flex;flex-direction:column;gap:5px}
+.asm-actions .stg-mini{text-align:left}
+.asm-actions .stg-mini.on{background:var(--plum);color:#fff;border-color:var(--plum)}
+.asm-roll{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+.asm-roll>span{width:100%;font-size:11.5px;font-weight:800;color:var(--ink-soft)}
+.asm-roll .stg-mini{text-align:center}
+.asm-inline{display:flex}
+.asm-inline .btn.on{background:var(--plum);color:#fff;border-color:var(--plum)}
+
+@media (pointer:coarse){ .asm-actions .stg-mini{min-height:38px} }
+@media (prefers-contrast:more){
+  .asm-panel,.asm-controls fieldset,.asm-dial{border-width:2px;border-color:#000;color:#000}
+  .asm-bar{border-width:2px;border-color:#000}
+  .asm-val.bad{text-decoration:underline}
+}
+@media (prefers-reduced-motion:reduce){ .asm-fill,.asm-needleline{transition:none} }

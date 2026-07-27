@@ -366,6 +366,27 @@ export function buildArmScene(o){
     return d;
   }
 
+  /**
+   * The pointer as a point on a horizontal plane at height `y`.
+   *
+   * None of the limb's ambiguity applies here: the bench is a known plane, so
+   * a ray crossing it gives one exact world point. Steps whose work happens on
+   * the bench rather than on the arm — threading a needle into a holder,
+   * pulling a sheath along its axis — measure in these coordinates, in metres,
+   * and get real distances and real angles without any inference at all.
+   *
+   * @returns {THREE.Vector3|null} null when the ray runs parallel to the plane
+   */
+  function pointerToPlane(screen, rect, y){
+    _ndc.set(
+      ((screen.x - rect.left)/rect.width)*2 - 1,
+      -((screen.y - rect.top)/rect.height)*2 + 1
+    );
+    _caster.setFromCamera(_ndc, camera);
+    _levelPlane.setComponents(0, 1, 0, -(y || 0));
+    return _caster.ray.intersectPlane(_levelPlane, new THREE.Vector3());
+  }
+
   /** The inverse, for placing things the learner has not grabbed. */
   function limbToWorld(x, theta, r){
     return new THREE.Vector3(x, ARM_Y + Math.cos(theta)*r, Math.sin(theta)*r);
@@ -386,18 +407,28 @@ export function buildArmScene(o){
      reads better than a flat side-on one anyway. */
   const CAM_YAW = 0.42;            // ~24° round the limb's axis
 
-  function fitCamera(aspect, obstruction){
+  /**
+   * @param {object} [focus] where the work actually is, for steps that happen
+   *   at the bench rather than on the limb. `{ lookX, lookZ, spanX, spanZ }`.
+   *   Omitted (the default) frames the whole limb exactly as before, so the
+   *   tourniquet, palpation and cleaning branches are untouched. The camera
+   *   angles — PITCH and especially CAM_YAW — are the same either way, because
+   *   they are what makes the limb's cross-section solvable and the operator's
+   *   eyeline believable; only the framing moves.
+   */
+  function fitCamera(aspect, obstruction, focus){
     const a = Math.max(0.4, aspect || 1.6);
     const ob = obstruction || { rightFrac: 0, bottomFrac: 0 };
     const rightFrac = Math.min(0.45, Math.max(0, ob.rightFrac || 0));
     const bottomFrac = Math.min(0.6, Math.max(0, ob.bottomFrac || 0));
+    const f = focus || null;
     camera.aspect = a;
 
     // The whole limb, hand included. Cropped tighter it reads as a cylinder
     // rather than an arm — and the hand has to be in shot, because a hand
     // going pale is how a band that is too tight announces itself.
-    const spanX = 0.62 / (1 - rightFrac);
-    const spanZ = 0.34 / (1 - bottomFrac);
+    const spanX = (f && f.spanX ? f.spanX : 0.62) / (1 - rightFrac);
+    const spanZ = (f && f.spanZ ? f.spanZ : 0.34) / (1 - bottomFrac);
 
     /* A long lens, deliberately. Everything the gesture measures is a small
        offset compared with the camera's distance, and a wide short-throw lens
@@ -419,17 +450,23 @@ export function buildArmScene(o){
 
     const visH = 2*dist*halfTan;
     const visW = visH*a;
-    const cx = LOOK_X + visW*rightFrac/2;
-    const cz = visH*bottomFrac/2;
+    const baseX = f && f.lookX != null ? f.lookX : LOOK_X;
+    const baseZ = f && f.lookZ != null ? f.lookZ : 0;
+    // orbit height and aim height are 8 mm apart by design: the camera sits
+    // level with the limb's axis and looks fractionally below it.
+    const orbitY = f && f.lookY != null ? f.lookY : ARM_Y;
+    const aimY = orbitY - 0.008;
+    const cx = baseX + visW*rightFrac/2;
+    const cz = baseZ + visH*bottomFrac/2;
 
     // orbit the camera round the look point: up by PITCH, along by CAM_YAW
     const horiz = Math.cos(PITCH)*dist;
     camera.position.set(
       cx + horiz*Math.sin(CAM_YAW),
-      ARM_Y + Math.sin(PITCH)*dist,
+      orbitY + Math.sin(PITCH)*dist,
       cz + horiz*Math.cos(CAM_YAW)
     );
-    camera.lookAt(cx, ARM_Y - 0.008, cz);
+    camera.lookAt(cx, aimY, cz);
     camera.updateProjectionMatrix();
   }
   fitCamera(1.6, { rightFrac: 0.27, bottomFrac: 0 });
@@ -448,7 +485,7 @@ export function buildArmScene(o){
 
   return {
     scene, camera, root, arm,
-    pointerToLimb, pointerToLimbSurface, pointerToAxis, angleDelta, limbToWorld, toScreen,
+    pointerToLimb, pointerToLimbSurface, pointerToAxis, pointerToPlane, angleDelta, limbToWorld, toScreen,
     fitCamera, setSiteVisible, tick, dispose,
     ARM_Y,
   };

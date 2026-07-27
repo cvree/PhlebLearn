@@ -23,7 +23,9 @@ world/  (room, furniture, patient, tubeRack, sharpsBin, interactables)
         │
 venipuncture/  (procedureState, questions, clinicalRules, steps,
                accessibilityFallback = the driver, physicalSteps,
-               encounterState, staging/*)
+               encounterState, and one directory per converted step:
+               staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
+               assembly/*)
         │
 input/  (raycasting, cameraControls, pointerInput, touchInput)
         │
@@ -89,6 +91,27 @@ staged is the tourniquet that later gets applied and released. Branch 1 fills in
 `supplies` and `measurements.supplyStaging`; the remaining slots (`tourniquet`,
 `site`, `assembly`, `access`, `collection`, `disposal`) are declared so later
 branches extend the same object rather than inventing parallel state.
+
+That persistence is what lets one step's technique become the next step's
+problem rather than a line in a report. The clearest case is `assembly`: a
+multi-sample needle screws into its holder, so where the bevel points when the
+learner stops turning is wherever the thread stopped — and the `uncap` step
+inherits exactly that angle and has to find it and roll it up.
+
+Every converted step directory has the same five-file shape, split by *what
+kind of thing it is* so the rules can be unit-tested without a browser and the
+visuals can change without touching the rules: `<step>State.js` (pure data,
+plus whole techniques as pure helpers), `<step>Rules.js` (pure clinical
+judgement), `<step>Runtime.js` (THREE + gestures; writes state, asks rules,
+decides nothing), `<step>Coach.js` (DOM; reports observations) and
+`<step>Scoring.js` (real measurements, not booleans). `staging/` is documented
+in full below as the worked example.
+
+**The techniques live in `<step>State.js`, not in the runtime**, because the
+accessible "controls" view calls `stop*()` and disposes the 3D scene — so any
+handler routed through a runtime function silently does nothing there. Both
+input paths call the same pure helper, and therefore get the same measurements
+and the same rules.
 
 ### `venipuncture/staging/` — physical supply staging
 

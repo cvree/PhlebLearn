@@ -44,6 +44,10 @@ import {
   isCleaningActive, renderCleaning,
   cleaningPointerDown, cleaningPointerMove, cleaningPointerUp, cleaningPointerCancel,
 } from "./venipuncture/cleaning/cleaningRuntime.js";
+import {
+  isAssemblyActive, renderAssembly,
+  assemblyPointerDown, assemblyPointerMove, assemblyPointerUp, assemblyPointerCancel,
+} from "./venipuncture/assembly/assemblyRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -104,6 +108,7 @@ function setupInput(canvasEl){
     if(isTourniquetActive()){ tourniquetPointerDown(e, canvasEl); return; }
     if(isPalpationActive()){ palpationPointerDown(e, canvasEl); return; }
     if(isCleaningActive()){ cleaningPointerDown(e, canvasEl); return; }
+    if(isAssemblyActive()){ assemblyPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -112,6 +117,7 @@ function setupInput(canvasEl){
     if(isTourniquetActive()){ tourniquetPointerMove(e, canvasEl); return; }
     if(isPalpationActive()){ palpationPointerMove(e, canvasEl); return; }
     if(isCleaningActive()){ cleaningPointerMove(e, canvasEl); return; }
+    if(isAssemblyActive()){ assemblyPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -120,6 +126,7 @@ function setupInput(canvasEl){
     if(isTourniquetActive()){ tourniquetPointerUp(e, canvasEl); return; }
     if(isPalpationActive()){ palpationPointerUp(e, canvasEl); return; }
     if(isCleaningActive()){ cleaningPointerUp(e, canvasEl); return; }
+    if(isAssemblyActive()){ assemblyPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -131,6 +138,7 @@ function setupInput(canvasEl){
     else if(isTourniquetActive()) tourniquetPointerCancel(e, canvasEl);
     else if(isPalpationActive()) palpationPointerCancel(e, canvasEl);
     else if(isCleaningActive()) cleaningPointerCancel(e, canvasEl);
+    else if(isAssemblyActive()) assemblyPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -214,6 +222,7 @@ function animate(){
   if(isTourniquetActive()){ renderTourniquet(getRenderer(), dt); return; }
   if(isPalpationActive()){ renderPalpation(getRenderer(), dt); return; }
   if(isCleaningActive()){ renderCleaning(getRenderer(), dt); return; }
+  if(isAssemblyActive()){ renderAssembly(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -561,6 +570,87 @@ function installTestSeam(){
       if(!st || !st.lastStrokeAt) return null;
       st.lastStrokeAt -= (seconds || 0)*1000;
       return true;
+    },
+    /** The needle + holder unit, as the rules see it. */
+    async assemblySnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.needleUnit;
+      if(!s) return null;
+      const { evaluateAssembly, evaluateUncap, bevelFromTurns } = await import("./venipuncture/assembly/assemblyRules.js");
+      const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
+      const ctx = getAssemblyContext();
+      const mode = ctx ? ctx.mode : "assemble";
+      const r = mode === "uncap" ? evaluateUncap(s) : evaluateAssembly(s);
+      return {
+        mode,
+        peel: s.peel, pouchOpen: s.pouchOpen, pouchTorn: s.pouchTorn,
+        needleInHand: s.needleInHand, contaminated: s.contaminated, contaminatedBy: s.contaminatedBy,
+        engaged: s.engaged, engageMisalignDeg: s.engageMisalignDeg, crossThreaded: s.crossThreaded,
+        turns: s.turns, reverseTurns: s.reverseTurns, needlesUsed: s.needlesUsed, gauge: s.gauge,
+        capOn: s.capOn, capAxialFraction: s.capAxialFraction, maxLateral: s.maxLateral,
+        needleDamaged: s.needleDamaged, needleContaminated: s.needleContaminated,
+        recapped: s.recapped, capPlacedOn: s.capPlacedOn,
+        bevelDeg: s.bevelDeg == null ? bevelFromTurns(s.turns) : s.bevelDeg,
+        bevelInspected: s.bevelInspected, warned: !!s.warnedAt,
+        ready: r.ready,
+        blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
+      };
+    },
+    /**
+     * The bench objects' real positions, in the metres the runtime measures
+     * in. A test drives the assembly the way a hand does — from the pouch's
+     * seam to the holder's hub — so it needs those two places, not pixels it
+     * guessed at.
+     */
+    async benchAnchors(){
+      const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
+      const ctx = getAssemblyContext();
+      if(!ctx) return null;
+      const n = ctx.needle.group.position;
+      return {
+        benchY: ctx.benchY,
+        pouch: ctx.anchors.pouch,
+        seam: ctx.anchors.seam,
+        hub: ctx.anchors.hub,
+        holder: ctx.anchors.holder,
+        pad: ctx.anchors.pad,
+        tipDx: ctx.anchors.tipDx,
+        engageRadius: ctx.anchors.engageRadius,
+        site: { x: ctx.site.x, z: ctx.site.z },
+        needle: { x: n.x, z: n.z },
+        capGrip: { x: n.x - 0.011, z: n.z },
+      };
+    },
+    /** Batched bench-plane points, for driving a continuous drag. */
+    async screenPointsOnBench(list){
+      const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
+      const ctx = getAssemblyContext();
+      if(!ctx) return null;
+      const THREE = await import("three");
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return list.map(([x, z])=>{
+        const v = new THREE.Vector3(x, ctx.benchY + 0.006, z);
+        v.project(ctx.view.camera);
+        return { x: rect.left + (v.x*0.5+0.5)*rect.width, y: rect.top + (-v.y*0.5+0.5)*rect.height };
+      });
+    },
+    /**
+     * Where the holder's hub is ON SCREEN. Threading is measured as the
+     * pointer's angle about this point (see assemblyRuntime), so a test has to
+     * circle this exact centre — computing one from the bench plane would be
+     * measuring a different thing.
+     */
+    async hubScreenPoint(){
+      const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
+      const ctx = getAssemblyContext();
+      if(!ctx) return null;
+      const THREE = await import("three");
+      const v = new THREE.Vector3(ctx.anchors.hub.x, ctx.anchors.hub.y, ctx.anchors.hub.z);
+      v.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + (v.x*0.5+0.5)*rect.width, y: rect.top + (-v.y*0.5+0.5)*rect.height };
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
