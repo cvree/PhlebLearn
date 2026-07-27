@@ -65,3 +65,44 @@
 @media (prefers-reduced-motion:reduce){
   .tq-meterfill{transition:none}
 }
+
+/* ============ PALPATION — sensation readout ============================= */
+/* Same rule as above: the panel reports what the fingers found, it is not
+   where the finding happens.                                             */
+
+.plp-coach{display:flex;flex-direction:column;gap:9px}
+
+.plp-touch{background:#fbfaff;border:1.5px solid var(--line);border-radius:12px;padding:9px 11px}
+/* the sensation itself, given room — it is the whole content of the step */
+.plp-feel{font-size:13px;font-weight:800;line-height:1.5;color:var(--ink)}
+.plp-feel.hurt{color:var(--bad)}
+.plp-feel.occluding{color:#b0762a}
+.plp-named{font-size:12px;font-weight:800;color:var(--plum);margin-top:4px;min-height:1em}
+
+.plp-pressrow{display:flex;align-items:center;gap:8px;margin-top:8px}
+.plp-presslab{font-size:10.5px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;color:var(--ink-soft)}
+.plp-press{position:relative;flex:1;height:8px;border-radius:999px;background:#e6e2f2;
+  border:1px solid var(--line);overflow:hidden}
+.plp-pressfill{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#8fb4e8,#3f5f9f);transition:width .08s linear}
+/* where pressing stops finding the vein and starts flattening it */
+.plp-pressmark{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad);opacity:.65}
+.plp-hint{margin:6px 0 0;font-size:11.5px;font-weight:700;color:var(--ink-soft)}
+
+.plp-controls fieldset{border:1.5px solid var(--line);border-radius:12px;padding:9px 11px;margin:0}
+.plp-controls legend{font-size:11px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;
+  color:var(--ink-soft);padding:0 5px}
+.plp-spots{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.plp-spots .stg-mini{text-align:left}
+.plp-tag{font-size:10px;font-weight:900;color:var(--mint-ink,#2f7d5b);margin-left:6px}
+.plp-commit{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
+.plp-commit>span{width:100%;font-size:11.5px;font-weight:800;color:var(--ink-soft)}
+.plp-commit .stg-mini.on{background:var(--plum);color:#fff;border-color:var(--plum)}
+
+@media (pointer:coarse){ .plp-spots .stg-mini{min-height:38px} }
+@media (prefers-contrast:more){
+  .plp-touch,.plp-controls fieldset{border-width:2px;border-color:#000;color:#000}
+  .plp-press{border-width:2px;border-color:#000}
+  .plp-feel.hurt{text-decoration:underline}
+}
+@media (prefers-reduced-motion:reduce){ .plp-pressfill{transition:none} }

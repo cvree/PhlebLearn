@@ -19,14 +19,15 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`) and `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`); the other 14 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`) and `palpate` is a fingertip on that arm (`palpation/`); the other 13 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 14 of the 16 venipuncture steps are still the 2D DOM
+**The gap that remains:** 13 of the 16 venipuncture steps are still the 2D DOM
 panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
-first mechanic where the patient's body answers back. Each branch after it
-converts one more step, in order, on that same arm.
+first mechanic where the patient's body answers back; palpation (Phase 2b) is
+the first where the learner has to interpret what the body is telling them.
+Each branch after it converts one more step, in order, on that same arm.
 
 ---
 
@@ -185,6 +186,41 @@ Delivered alongside: `venipuncture/arm/` (Phase 1b, above), a persistent
 reporting real inches and seconds, an accessible control path that writes the
 same state through the same functions, 101 unit tests and 21 browser tests.
 
+## Phase 2b — `feature/tactile-palpation` ✅ complete
+
+The `palpate` step was four buttons, one of them helpfully labelled
+"(pulsing)". That is a reading-comprehension question. It is now a fingertip
+pressed into the same arm, with the same band still on it raising the same
+veins, and **nothing on screen is named until it has been felt**.
+
+- **Pressure is a real quantity.** It builds while the finger is held still and
+  eases off the moment it slides, so the learner feels one spot at a time
+  rather than stroking the arm. Press too hard and the vein under the finger
+  is squashed flat and disappears — which is its own lesson.
+- **What comes back depends on what is under it.** A vein gives and springs
+  back. A compliant one slides sideways out from under the finger — real
+  displacement, so it has to be chased. The artery pushes back rhythmically.
+  The tendon does not give at all. The median nerve is only ever felt as the
+  patient flinching.
+- **Depth matters.** The brachial artery runs ~10 mm down: a light touch over
+  it feels of nothing in particular and only a firm press finds the pulse. A
+  "deep veins" patient's veins genuinely need a firmer press than a normal
+  one's, because they are genuinely further down.
+- **Committing is separate from feeling.** You cannot mark a vein you never
+  palpated — picking the right one by eye is caught and blocked. Feel it, take
+  your hand off the arm, then mark the spot.
+- **Recognising the artery is scored on its own.** Pressing something pulsing
+  and moving off it is recognition; pressing it and carrying on is a miss,
+  even when the vein eventually chosen was the right one.
+
+The coach reports the SENSATION and never the conclusion. Teaching mode names
+a structure only once it has been felt; a scored shift never names one at all.
+The accessible path presses *unnamed places on the arm* — "across the bend of
+the elbow, centre" — rather than offering a list of veins to pick from, which
+would be the old multiple-choice question wearing a different hat.
+
+Delivered alongside: 28 unit tests and 15 browser tests.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -192,7 +228,7 @@ The DOM panel stays as the **coach layer** (tips, why-it-matters, teach mode) �
 stops being the interaction surface.
 
 Branch order (one branch each, verified and deployed before the next starts):
-~~`feature/real-tourniquet`~~ ✅ → `feature/tactile-palpation` →
+~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
 `feature/aseptic-site-cleaning` → `feature/needle-holder-assembly` →
 `feature/anchor-and-insert` → `feature/tube-collection` →
 `feature/withdraw-safety-sharps` → `feature/post-draw-care`.
@@ -201,7 +237,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 |---|---|---|
 | gather | ✅ **done** — a real supply cart | — |
 | tourniquet | ✅ **done** — a real band on a real arm | — |
-| palpate | tap labeled buttons | press the real arm — veins highlight under the fingertip, artery pulses back |
+| palpate | ✅ **done** — a fingertip on the real arm | — |
 | clean | drag 🧽 | scrub a real swab; coverage painted to a decal texture; real 30s dry timer |
 | assemble | div onto div | thread a real needle into a real holder (snap + click) |
 | uncap | drag cap div | pull the real cap along the needle's axis |

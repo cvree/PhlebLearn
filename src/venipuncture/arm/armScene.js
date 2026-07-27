@@ -262,7 +262,7 @@ export function buildArmScene(o){
    *        the bench cannot reach a band being placed high on the upper arm.
    * @param {number} thetaRef  the previous angle, to stay on its branch
    */
-  function pointerToLimbSurface(screen, rect, xHint, radiusOf, thetaRef){
+  function pointerToLimbSurface(screen, rect, xHint, radiusOf, thetaRef, preferNear){
     let lo = xHint == null ? WRIST_X : xHint - 0.11;
     let hi = xHint == null ? SHOULDER_X : xHint + 0.11;
     // weighted so a few millimetres of surface error never outvotes a jump to
@@ -276,6 +276,19 @@ export function buildArmScene(o){
         const x = lo + (hi - lo)*(i/N);
         const rr = radiusOf(x);
         const s = pointerToLimb(screen, rect, x, rr);
+        // `preferNear` rules out the half of the limb turned away from the
+        // camera. Both hits along a ray are equally "on the skin", so the
+        // residual cannot separate them and a symmetric angle hint will not
+        // either — but a fingertip cannot be on a surface facing away from
+        // the person doing the pressing, so that half is simply not a
+        // candidate. (The tourniquet does not pass this: it is deliberately
+        // taken round the hidden underside.)
+        if(preferNear){
+          const ny = Math.cos(s.theta), nz = Math.sin(s.theta);
+          const vy = camera.position.y - (ARM_Y + ny*rr);
+          const vz = camera.position.z - nz*rr;
+          if(ny*vy + nz*vz <= 0) continue;
+        }
         let err = Math.abs(s.rho - rr);
         if(thetaRef != null) err += BRANCH_W*Math.abs(angleDelta(thetaRef, s.theta));
         if(err < bestErr){ bestErr = err; bestX = x; best = s; }
