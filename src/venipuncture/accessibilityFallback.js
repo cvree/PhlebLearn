@@ -35,6 +35,10 @@ export function createProcedureState(tubeKeys, opts){
     tubes,
     filled: [],
     patientName: patient ? patient.name : null,
+    // The whole patient, because from Phase 1b onward the physical steps build
+    // a real arm from their appearance and site scenario — skin tone, build,
+    // which arm, and whether the veins are deep or flat.
+    patient,
     encounter: createEncounterState({ tubes, patient, handedness:o.handedness }),
   };
 }

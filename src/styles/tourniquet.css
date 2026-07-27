@@ -1,0 +1,67 @@
+/* ============ TOURNIQUET — coach / observation layer ==================== */
+/* Same principle as staging.css: the gameplay is on the arm, so the panel
+   only reports what the arm is doing and coaches when asked to. Nothing here
+   is a control surface except the accessible fallback.                   */
+
+.tq-coach{display:flex;flex-direction:column;gap:9px}
+
+/* ---- what the arm is telling you ---- */
+.tq-obs{display:flex;flex-direction:column;gap:5px;background:#fbfaff;
+  border:1.5px solid var(--line);border-radius:12px;padding:8px 10px}
+.tq-obsrow{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.tq-obslab{font-size:10.5px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;
+  color:var(--ink-soft);flex:0 0 auto}
+.tq-obsval{font-size:12.5px;font-weight:800;color:var(--ink);text-align:right;
+  display:flex;align-items:center;gap:7px;justify-content:flex-end;flex-wrap:wrap}
+.tq-obsval.bad{color:var(--bad)}
+
+/* vein fill: a real quantity, shown as one, and never as the only signal —
+   the words beside it say the same thing */
+.tq-meter{display:inline-block;width:74px;height:7px;border-radius:999px;
+  background:#e6e2f2;border:1px solid var(--line);overflow:hidden;vertical-align:middle}
+.tq-meterfill{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#7f9bc4,#3f5f9f);transition:width .18s linear}
+
+.tq-clock{font-variant-numeric:tabular-nums}
+.tq-clock.warn{color:#b0762a}
+.tq-clock.over{color:var(--bad)}
+
+/* ---- live gesture narration ---- */
+/* Named while it happens, because knowing WHICH physical thing is going wrong
+   mid-motion is the difference between practice and guessing. */
+.tq-gesture{font-size:12.5px;font-weight:700;line-height:1.45;color:var(--ink-soft);
+  background:#f4f7fb;border:1px solid var(--line);border-left:4px solid var(--blue);
+  border-radius:10px;padding:7px 10px}
+.tq-gesture b{color:var(--ink)}
+.tq-gesture em{display:block;margin-top:3px;font-style:normal;font-weight:800;color:var(--bad)}
+.tq-gesture.ready{border-left-color:var(--mint);background:#f1faf5}
+
+.tq-next{margin:0;font-size:12px;font-weight:800;color:var(--plum)}
+
+/* ---- accessible control path ---- */
+.tq-controls fieldset{border:1.5px solid var(--line);border-radius:12px;padding:9px 11px;margin:0}
+.tq-controls legend{font-size:11px;font-weight:900;letter-spacing:.3px;text-transform:uppercase;
+  color:var(--ink-soft);padding:0 5px}
+.tq-field{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:6px 0}
+.tq-field span{font-size:12px;font-weight:800;color:var(--ink-soft)}
+.tq-field select{font-family:inherit;font-size:12px;font-weight:700;color:var(--ink);
+  background:#fff;border:1.5px solid var(--line);border-radius:9px;padding:5px 8px;min-width:52%}
+.tq-adjust{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tq-adjust span{font-size:11.5px;font-weight:800;color:var(--ink-soft);width:100%}
+
+/* larger touch targets on coarse pointers */
+@media (pointer:coarse){
+  .tq-field select{min-height:34px;font-size:12.5px}
+}
+
+/* high contrast: borders and text, never colour alone */
+@media (prefers-contrast:more){
+  .tq-obs,.tq-gesture,.tq-controls fieldset{border-width:2px;border-color:#000;color:#000}
+  .tq-meter{border-width:2px;border-color:#000}
+  .tq-obsval.bad,.tq-clock.over{text-decoration:underline}
+}
+
+/* reduced motion: the meter still moves, it just stops easing */
+@media (prefers-reduced-motion:reduce){
+  .tq-meterfill{transition:none}
+}

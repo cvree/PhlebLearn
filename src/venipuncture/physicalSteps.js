@@ -14,6 +14,7 @@ import { LAST } from "../config.js";
 import { pick } from "../utils.js";
 import { SS, saveSS, guided } from "../game/gameState.js";
 import { getRenderer } from "../rendering/renderer.js";
+import { drawArmFor } from "../game/encounter.js";
 import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
 import { createStagingState, setHandedness, placeItem, inspectItem, HAND, ZONE } from "./staging/stagingState.js";
 import { createLayout, orientationForAspect, applyTrayOffset } from "./staging/stagingLayout.js";
@@ -24,6 +25,20 @@ import {
   startStaging, stopStaging, isStagingActive, syncStagingFromState,
   stageItemTo, inspectItemById, returnItemToShelf,
 } from "./staging/stagingRuntime.js";
+import { stagedItemId } from "./encounterState.js";
+import { CATEGORY } from "./staging/supplyCatalog.js";
+import {
+  createTourniquetState, markRouted, setTension, markCrossed, markSecured, markUnravelled,
+  isSecured,
+} from "./tourniquet/tourniquetState.js";
+import { evaluateTourniquet } from "./tourniquet/tourniquetRules.js";
+import { measureTourniquet, applyTourniquetOutcome } from "./tourniquet/tourniquetScoring.js";
+import { renderTourniquetCoach } from "./tourniquet/tourniquetCoach.js";
+import {
+  startTourniquet, stopTourniquet, isTourniquetActive, currentGesture,
+  applyBandProgrammatically, releaseBandProgrammatically, nudgeBand, adjustTension,
+  clampBandPosition,
+} from "./tourniquet/tourniquetRuntime.js";
 
 const ZONE_BY_NAME = { tray:ZONE.TRAY, rack:ZONE.RACK, reach:ZONE.REACH, across:ZONE.ACROSS, counter:ZONE.COUNTER };
 
@@ -50,6 +65,45 @@ export function ensureSupplySession(c){
   });
   c.supplies = { catalog, state, layout, measurements:null };
   return c.supplies;
+}
+
+/**
+ * The arm this draw happens on, described as geometry rather than prose. Built
+ * once per encounter so the tourniquet branch and every branch after it work
+ * on the SAME limb — the vein the band raised is the vein that gets palpated,
+ * cleaned and punctured.
+ */
+export function ensureArmSession(c){
+  if(c.arm) return c.arm;
+  const p = c.patient || {};
+  const a = p.appearance || {};
+  const chosen = drawArmFor(p);
+  c.arm = {
+    skin: a.skin,
+    shirt: p.shirt,
+    build: a.width || 1,
+    armSide: chosen.side,
+    scenarioKeys: chosen.keys,
+    // a dehydrated patient's veins fill less well however good the technique
+    vigour: chosen.keys.indexOf("dry") >= 0 ? 0.72 : 1,
+  };
+  return c.arm;
+}
+
+/**
+ * The strap itself, created once and carried for the whole encounter. The
+ * release step later in the procedure inherits THIS object — it is the same
+ * band, not a second one drawn to look like it.
+ */
+export function ensureTourniquetSession(c){
+  if(c.tourniquet) return c.tourniquet;
+  c.tourniquet = createTourniquetState({
+    itemId: c.encounter ? stagedItemId(c.encounter, CATEGORY.TOURNIQUET) : null,
+    armSide: ensureArmSession(c).armSide,
+    vigour: ensureArmSession(c).vigour,
+  });
+  if(c.encounter) c.encounter.tourniquet = c.tourniquet;
+  return c.tourniquet;
 }
 
 export const PHYSICAL_STEPS = {
@@ -170,6 +224,137 @@ export const PHYSICAL_STEPS = {
     draw();
     launch3d();
     return cleanup;
+  },
+
+  /* ---------------------------------------------------------------------------
+     TOURNIQUET — the band is routed under the arm, tensioned, crossed and
+     tucked as one continuous gesture, and then it STAYS THERE. There is no
+     "tourniquet screen" to leave: the strap is on the patient from here until
+     the release step pulls it off, and the clock it starts is the same clock
+     that step reads.
+     ------------------------------------------------------------------------ */
+  tourniquet(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const tqState = ensureTourniquetSession(c);
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.tourniquetListView;
+    let disposed = false;
+
+    const evaluate = ()=>evaluateTourniquet(tqState, { vessels:(c.armVessels||[]), vigour:arm.vigour });
+
+    function draw(result){
+      if(disposed) return;
+      renderTourniquetCoach(stage, {
+        state: tqState,
+        result: result || liveResult(),
+        gesture: isTourniquetActive() ? currentGesture() : null,
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onApply: (spec)=>draw(doApply(spec)),
+          onRemove: ()=>draw(doRemove()),
+          onNudge: (m)=>draw(doNudge(m)),
+          onTension: (d)=>draw(doTension(d)),
+        },
+      });
+    }
+
+    // Off the 3D path there are no vessel objects to measure against, so the
+    // rules get the same arm description either way.
+    function liveResult(){
+      return isTourniquetActive() ? evaluateTourniquet(tqState, currentArm()) : evaluate();
+    }
+    function currentArm(){
+      return { vessels: c.armVessels || [], vigour: arm.vigour };
+    }
+
+    function doApply(spec){
+      if(isTourniquetActive()) return applyBandProgrammatically(spec);
+      // list-view-only path (no renderer at all): the same state transitions,
+      // in the same order, so the same measurements come out the other end
+      markRouted(tqState, { bandX:spec.bandX, wrap:spec.wrap, skew:spec.skew||0 });
+      setTension(tqState, spec.tension);
+      markCrossed(tqState);
+      markSecured(tqState, { tuck:spec.tuck, tuckedUnder:true });
+      return evaluate();
+    }
+    function doRemove(){
+      if(isTourniquetActive()) return releaseBandProgrammatically();
+      markUnravelled(tqState);
+      return evaluate();
+    }
+    // Switching to the controls tears the 3D scene down, so these cannot go
+    // through the runtime — without a state-side path the accessible route
+    // could apply a band but never adjust one, which is precisely the fine
+    // correction ("a bit higher", "not so tight") it exists to allow.
+    function doNudge(metres){
+      if(isTourniquetActive()) return nudgeBand(metres) || liveResult();
+      if(tqState.bandX == null) return evaluate();
+      tqState.bandX = clampBandPosition(tqState.bandX + metres);
+      return evaluate();
+    }
+    function doTension(delta){
+      if(isTourniquetActive()) return adjustTension(delta) || liveResult();
+      if(!isSecured(tqState)) return evaluate();
+      setTension(tqState, tqState.heldTension + delta);
+      tqState.heldTension = tqState.tension;
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      const ctx = await startTourniquet({
+        state: tqState,
+        arm,
+        guided: guided(),
+        onChange: (result)=>draw(result),
+      });
+      if(disposed){ stopTourniquet(); return; }
+      // hand the real vessel geometry to the rules, so clearance checks are
+      // measured against the arm actually on screen
+      if(ctx && ctx.view) c.armVessels = ctx.view.arm.vessels;
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.tourniquetListView = listView; saveSS();
+      if(listView){ stopTourniquet(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = liveResult();
+      // Teaching mode will not start a draw on a band that is wrong. A scored
+      // shift lets the learner commit — and the arm, the sample and the recap
+      // all carry the consequence.
+      if(guided() && !result.ready) return;
+      const measurements = measureTourniquet(tqState, result);
+      applyTourniquetOutcome(c, measurements);
+      // The clock the release step reads is this band's, not a fresh timer.
+      c.tqStart = tqState.securedAt || performance.now();
+      if(c.encounter){
+        c.encounter.tourniquet = tqState;
+        c.encounter.measurements.tourniquet = measurements;
+      }
+      cleanupOnly();
+      advance();
+    }
+
+    // Leaving the step must NOT take the band off the patient — that is the
+    // whole point of the branch. Only the scene is torn down.
+    function cleanupOnly(){
+      disposed = true;
+      stopTourniquet();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
   },
 };
 

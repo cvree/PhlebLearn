@@ -1,0 +1,334 @@
+/* =========================================================================
+   ARM MESH — the patient's forearm as geometry, built from armAnatomy.js.
+
+   The important part is that the veins are real tubes sitting a real depth
+   under a translucent skin surface, not a texture painted on a cylinder:
+
+     * a vein you can see is one whose polyline is close to the surface
+     * a deep vein is genuinely further in, and reads as a fainter shadow
+     * distension is vertex displacement along each tube's own normals, so a
+       filling vein physically swells and lifts toward the skin
+     * the artery pulses on the same mechanism, which is why palpation can
+       tell them apart in the next branch
+
+   Owns MESHES ONLY. Where the veins are and what they mean is armAnatomy.js;
+   whether the tourniquet is correct is tourniquetRules.js.
+   ========================================================================= */
+import * as THREE from "three";
+import {
+  radiusAt, HAND_X, WRIST_X, SHOULDER_X, ELBOW_X, SITE,
+  buildVessels, mirrorForArm, applyPatientVariation,
+  VESSEL_KIND, distalPallor,
+} from "./armAnatomy.js";
+
+/** The arm axis sits this high above the armrest surface (y=0). */
+export const ARM_Y = 0.052;
+
+const SEG_ALONG = 96;      // rings along the limb
+const SEG_ROUND = 28;      // vertices per ring
+
+/* ---------- surface --------------------------------------------------------- */
+
+/**
+ * Height of the skin surface above the arm axis, at a lateral offset z.
+ * The limb is flattened slightly on top where it rests supinated, which is
+ * what gives the antecubital fossa its shallow hollow.
+ */
+export function surfaceY(x, z, build){
+  const r = radiusAt(x, build);
+  const dz = Math.min(Math.abs(z), r*0.999);
+  const round = Math.sqrt(Math.max(0, r*r - dz*dz));
+  // the fossa is a hollow, not a dome: flatten within ~3 cm of the crease
+  const fossa = Math.exp(-Math.pow((x - ELBOW_X)/0.034, 2)) * 0.0075;
+  return ARM_Y + round - fossa;
+}
+
+/** World position of a point on the skin, given arm-local (x, z). */
+export function surfacePoint(x, z, build){
+  return new THREE.Vector3(x, surfaceY(x, z, build), z);
+}
+
+/* ---------- limb geometry ---------------------------------------------------- */
+
+function buildLimbGeometry(build){
+  const geo = new THREE.CylinderGeometry(1, 1, 1, SEG_ROUND, SEG_ALONG - 1, false);
+  geo.rotateZ(Math.PI/2);            // long axis becomes X
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+
+  for(let i=0;i<pos.count;i++){
+    v.fromBufferAttribute(pos, i);
+    // the unit cylinder runs x:-0.5..0.5 — remap onto the real limb
+    const t = v.x + 0.5;
+    const x = HAND_X + (SHOULDER_X - HAND_X)*t;
+    const r = radiusAt(x, build);
+    const ang = Math.atan2(v.z, v.y);
+    let py = Math.cos(ang)*r, pz = Math.sin(ang)*r;
+
+    // flatten the underside where the limb rests on the armrest
+    if(py < 0) py *= 0.86;
+    // the fossa hollow, on the top surface only
+    if(py > 0){
+      const fossa = Math.exp(-Math.pow((x - ELBOW_X)/0.034, 2)) * 0.0075;
+      py -= fossa * (py/r);
+    }
+    // the wrist narrows in one axis more than the other — a real wrist is oval
+    if(x < WRIST_X + 0.03){
+      const k = 1 - Math.min(1, (WRIST_X + 0.03 - x)/0.06)*0.22;
+      pz *= k;
+    }
+    pos.setXYZ(i, x, ARM_Y + py, pz);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ---------- vessels ---------------------------------------------------------- */
+
+/**
+ * A vessel's centreline in world space: follow the polyline, sitting `depth`
+ * below the skin surface at each point.
+ */
+function vesselCurve(vessel, build){
+  const pts = vessel.path.map(p=>{
+    const sy = surfaceY(p.x, p.z, build);
+    return new THREE.Vector3(p.x, sy - vessel.depth, p.z);
+  });
+  return new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.25);
+}
+
+/* Muted on purpose. A vein under skin is a soft blue-green shadow, not a blue
+   pipe — saturate these and they stop reading as being UNDER the surface and
+   start looking painted onto it, which loses the whole point of giving them a
+   real depth. */
+const VESSEL_COLOR = {
+  [VESSEL_KIND.VEIN]:   0x6b7fa6,
+  [VESSEL_KIND.ARTERY]: 0x9c5a55,
+  [VESSEL_KIND.TENDON]: 0xd8cfc0,
+  [VESSEL_KIND.NERVE]:  0xd9d08a,
+};
+
+function buildVesselMesh(vessel, build){
+  const curve = vesselCurve(vessel, build);
+  const geo = new THREE.TubeGeometry(curve, 64, vessel.calibre, 10, false);
+  const mat = new THREE.MeshStandardMaterial({
+    color: VESSEL_COLOR[vessel.kind] || 0x666666,
+    roughness: 0.62,
+    metalness: 0.0,
+    // deeper vessels are dimmer: this is the depth cue that makes a basilic
+    // read as "further down" than a median cubital without any label
+    opacity: Math.max(0.18, 0.72 - vessel.depth*72),
+    transparent: true,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.vessel = vessel;
+  mesh.userData.perInstance = true;
+
+  // Cache the rest pose so distension can displace along the tube's own
+  // normals — cheap, and correct for a swept tube in a way that scaling is not.
+  const pos = geo.attributes.position, nor = geo.attributes.normal;
+  mesh.userData.basePos = Float32Array.from(pos.array);
+  mesh.userData.baseNor = Float32Array.from(nor.array);
+  return mesh;
+}
+
+/* ---------- the whole arm ---------------------------------------------------- */
+
+/**
+ * @param {object} o
+ *   skin        hex colour from the patient's appearance
+ *   build       0.8 … 1.25
+ *   armSide     "left" | "right"
+ *   scenarioKeys  e.g. ["deep","rolling"] from makeSiteScenario
+ *   vigour      hydration / vein quality, 0.6 … 1.2
+ */
+export function buildArm(o){
+  const opt = o || {};
+  const build = opt.build == null ? 1 : opt.build;
+  const skinHex = opt.skin == null ? 0xe6b98f : opt.skin;
+
+  const group = new THREE.Group();
+  group.name = "patientArm";
+
+  /* --- vessels first: they live inside the skin volume ------------------- */
+  const vessels = applyPatientVariation(
+    mirrorForArm(buildVessels(), opt.armSide),
+    { build, scenarioKeys: opt.scenarioKeys, vigour: opt.vigour }
+  );
+
+  const vesselGroup = new THREE.Group();
+  vesselGroup.name = "vessels";
+  const vesselMeshes = new Map();
+  vessels.forEach(v=>{
+    const m = buildVesselMesh(v, build);
+    vesselGroup.add(m);
+    vesselMeshes.set(v.id, m);
+  });
+  group.add(vesselGroup);
+
+  /* --- skin: translucent, so what is underneath actually shows ----------- */
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: skinHex,
+    roughness: 0.78,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.90,
+  });
+  skinMat.userData.perInstance = true;
+  const limb = new THREE.Mesh(buildLimbGeometry(build), skinMat);
+  limb.name = "skin";
+  limb.userData.armSurface = true;
+  group.add(limb);
+
+  /* --- hand: enough of one that "make a fist" has somewhere to go -------- */
+  const handMat = skinMat.clone();
+  handMat.userData.perInstance = true;
+  const hand = new THREE.Group();
+  hand.name = "hand";
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(radiusAt(HAND_X, build)*1.16, 18, 14), handMat);
+  palm.scale.set(1.15, 0.72, 1.02);
+  palm.position.set(HAND_X - 0.012, ARM_Y - 0.004, 0);
+  hand.add(palm);
+  for(let i=0;i<4;i++){
+    const fr = 0.0088 - i*0.0006;
+    const fl = 0.058 - Math.abs(i-1.2)*0.006;
+    const finger = new THREE.Mesh(new THREE.CapsuleGeometry(fr, fl, 4, 8), handMat);
+    finger.rotation.z = Math.PI/2;
+    finger.position.set(HAND_X - 0.052 - fl/2, ARM_Y - 0.006, (i-1.5)*0.0175);
+    hand.add(finger);
+  }
+  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0102, 0.036, 4, 8), handMat);
+  thumb.rotation.set(0, 0, Math.PI/2 - 0.5);
+  thumb.position.set(HAND_X - 0.026, ARM_Y - 0.008, -0.030);
+  hand.add(thumb);
+  group.add(hand);
+
+  /* --- the crease at the elbow, so the fossa reads as a bend ------------- */
+  const creaseMat = new THREE.MeshBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.055, depthWrite: false,
+  });
+  creaseMat.userData.perInstance = true;
+  const crease = new THREE.Mesh(new THREE.PlaneGeometry(0.012, radiusAt(0, build)*1.7), creaseMat);
+  crease.rotation.x = -Math.PI/2;
+  crease.position.set(ELBOW_X, surfaceY(ELBOW_X, 0, build) + 0.0006, 0);
+  group.add(crease);
+
+  /* --- animation state ---------------------------------------------------- */
+  let distension = 0;
+  let pallor = 0;
+  const baseSkin = new THREE.Color(skinHex);
+  const paleSkin = baseSkin.clone().lerp(new THREE.Color(0xf3e9e2), 0.62);
+
+  /**
+   * Swells every superficial vein by `k` (0..1) and lifts it toward the skin.
+   * This is what the learner is watching when they judge the tension.
+   */
+  function setDistension(k){
+    distension = Math.max(0, Math.min(1, k || 0));
+    vesselMeshes.forEach(mesh=>{
+      const v = mesh.userData.vessel;
+      if(v.kind !== VESSEL_KIND.VEIN) return;
+      applySwell(mesh, distension * (v.depth < 0.004 ? 1 : 0.55));
+      // a filled vein is darker and more obvious through the skin
+      mesh.material.opacity = Math.min(0.86,
+        Math.max(0.18, 0.72 - v.depth*72) + distension*0.34);
+    });
+  }
+
+  function applySwell(mesh, k){
+    const geo = mesh.geometry;
+    const pos = geo.attributes.position;
+    const base = mesh.userData.basePos, nor = mesh.userData.baseNor;
+    const v = mesh.userData.vessel;
+    const grow = v.calibre * 0.62 * k;      // radial swell
+    const lift = v.calibre * 0.34 * k;      // and it rises toward the surface
+    for(let i=0;i<pos.count;i++){
+      const i3 = i*3;
+      pos.array[i3]   = base[i3]   + nor[i3]  *grow;
+      pos.array[i3+1] = base[i3+1] + nor[i3+1]*grow + lift;
+      pos.array[i3+2] = base[i3+2] + nor[i3+2]*grow;
+    }
+    pos.needsUpdate = true;
+    geo.computeBoundingSphere();
+  }
+
+  /** The hand going pale is the sign the band is too tight. */
+  function setPallor(t){
+    pallor = Math.max(0, Math.min(1, t || 0));
+    handMat.color.copy(baseSkin).lerp(paleSkin, pallor);
+    // the forearm distal to the band pales too, just less
+    skinMat.color.copy(baseSkin).lerp(paleSkin, pallor*0.45);
+  }
+
+  let clock = 0;
+  /** Pulses the artery. The tendon and the nerve stay still, on purpose. */
+  function tick(dt){
+    clock += dt || 0;
+    const artery = [...vesselMeshes.values()].find(m=>m.userData.vessel.kind === VESSEL_KIND.ARTERY);
+    if(artery){
+      const beat = Math.max(0, Math.sin(clock*7.6));
+      applySwell(artery, 0.25 + beat*0.75);
+    }
+  }
+
+  function dispose(){
+    group.traverse(obj=>{
+      if(obj.geometry) obj.geometry.dispose();
+      const ms = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+      ms.forEach(m=>{ if(m && m.userData && m.userData.perInstance && m.dispose) m.dispose(); });
+    });
+  }
+
+  setDistension(0);
+
+  return {
+    group, limb, hand, vesselGroup, vesselMeshes, vessels,
+    build, skinHex,
+    surfaceY: (x,z)=>surfaceY(x, z, build),
+    radiusAt: x=>radiusAt(x, build),
+    setDistension, setPallor, tick, dispose,
+    get distension(){ return distension; },
+    get pallor(){ return pallor; },
+  };
+}
+
+/* ---------- the armrest ------------------------------------------------------ */
+
+/**
+ * The chair's armrest. It matters mechanically, not decoratively: the gap
+ * between the limb and the pad is the gap the tourniquet has to be threaded
+ * through, so the pad is built with a real channel under the arm.
+ */
+export function buildArmrest(build){
+  const g = new THREE.Group();
+  g.name = "armrest";
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x5d6b7d, roughness: 0.85 });
+  const len = SHOULDER_X - HAND_X + 0.10;
+  const cx = (SHOULDER_X + HAND_X)/2;
+
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(len, 0.030, 0.135), padMat);
+  pad.position.set(cx, -0.015, 0);
+  g.add(pad);
+
+  // The bolster the arm actually rests on, under the upper forearm only, so
+  // there is clearance beneath the rest of the limb to pass a band through.
+  const bolsterMat = new THREE.MeshStandardMaterial({ color: 0x6b7a8d, roughness: 0.9 });
+  const bolster = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.085, 16), bolsterMat);
+  bolster.rotation.x = Math.PI/2;
+  bolster.position.set(-0.155, 0.014, 0);
+  g.add(bolster);
+
+  const towelMat = new THREE.MeshStandardMaterial({ color: 0xeef2f6, roughness: 0.95 });
+  const towel = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.004, 0.125), towelMat);
+  towel.position.set(0.02, 0.002, 0);
+  g.add(towel);
+
+  return g;
+}
+
+/** The point on the skin the draw is aimed at, for camera framing. */
+export function siteWorldPoint(build){
+  return surfacePoint(SITE.x, SITE.z, build);
+}
+
+export { distalPallor };

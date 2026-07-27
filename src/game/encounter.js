@@ -120,7 +120,28 @@ export function makeSiteScenario(dl){
       learn=`${absC.note} Since that arm is never an option, use the other arm carefully: ${relC.alt}. Escalate only if you truly can't.`;
     }
   }
-  return {desc, options, learn, why:learn, safety:true};
+  // The per-arm conditions are carried out of here as data, not just prose:
+  // Phase 1b's arm geometry reads them so "deeper veins you can't see" is an
+  // arm whose vein polylines genuinely sit further under the skin, rather than
+  // a sentence printed above an unchanged picture.
+  return {desc, options, learn, why:learn, safety:true,
+    arms:{ left:{ key:L.key, sev:L.sev }, right:{ key:R.key, sev:R.sev } }};
+}
+
+/**
+ * Which arm the draw actually happens on, and what that arm is like.
+ * Falls back to a healthy right arm when the encounter had no site scenario.
+ */
+export function drawArmFor(p){
+  const usable = a=>a && (a.sev==="clear" || a.sev==="tricky");
+  const arms = p && p.site && p.site.arms;
+  if(!arms) return { side:"right", keys:[] };
+  // prefer a clear arm, then a merely tricky one, then whatever is left
+  const order = ["right","left"];
+  const clear = order.find(s=>arms[s] && arms[s].sev==="clear");
+  const tricky = order.find(s=>arms[s] && arms[s].sev==="tricky");
+  const side = clear || tricky || (usable(arms.right) ? "right" : "left");
+  return { side, keys: arms[side] && arms[side].key!=="clear" ? [arms[side].key] : [] };
 }
 
 export function makePatient(){

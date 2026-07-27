@@ -15,6 +15,7 @@ import { sfx } from "../audio/audioManager.js";
 import { makeDraggable, isNear } from "../input/touchInput.js";
 import { VP_TIPS } from "./questions.js";
 import { canReleaseTourniquet, canWithdrawNeedle, canActivateSafety, canDisposeSharps, canApplyPressure, canApplyBandage } from "./clinicalRules.js";
+import { markReleased, secondsOn as tqSecondsOn } from "./tourniquet/tourniquetState.js";
 import { FILL_MS, TQ_MS } from "../config.js";
 
 export function vpTubeDot(k){ return `<span class="vp-dot" style="background:#${TUBES[k].color.toString(16).padStart(6,'0')}"></span>`; }
@@ -297,7 +298,6 @@ export const VP_STEPS = {
     });
   },
   release(c,stage,advance){
-    const elapsed=c.tqStart?(performance.now()-c.tqStart):0;
     stage.innerHTML=`
       <div class="vp-arm" id="vpArm"><div class="vp-band vp-tied vp-bandfixed" id="vpBand">🎀</div><div class="vp-site vp-cleaned"></div></div>
       <div class="vp-tqtimer"><div class="vp-tqbar" id="vpTqBar"></div><div class="vp-tqmark"></div></div>
@@ -305,17 +305,39 @@ export const VP_STEPS = {
       ${vpBtn("🎈 Release the tourniquet","mint")}`;
     const bar=$("vpTqBar"), msg=$("vpMsg");
     let raf=null;
-    const loop=()=>{ const t=c.tqStart?(performance.now()-c.tqStart):0; const pct=Math.min(100,t/TQ_MS*100);
+    // When the band was applied physically, this releases THAT band: the
+    // seconds counted here are the seconds it has actually been on the arm,
+    // accumulated across every re-application, not a timer this screen started.
+    const tq=c.tourniquet||null;
+    const secondsOn=()=>tq
+      ? tqSecondsOn(tq)
+      : (c.tqStart?(performance.now()-c.tqStart)/1000:0);
+    const limitS = tq ? 60 : TQ_MS/1000;
+    const loop=()=>{ const pct=Math.min(100,secondsOn()/limitS*100);
       if(bar){ bar.style.width=pct+"%"; bar.classList.toggle("vp-tqred",pct>70); } raf=requestAnimationFrame(loop); };
     $("vpAct").onclick=()=>{
       // Bug fix: releasing the tourniquet is now explicitly gated on confirmed
       // blood flash (canReleaseTourniquet), not just on the timer having run.
       if(!canReleaseTourniquet(c)){ sfx("bad"); msg.innerHTML="💡 Wait for blood flash before releasing the tourniquet."; return; }
       if(raf) cancelAnimationFrame(raf);
-      const t=c.tqStart?(performance.now()-c.tqStart):0; const pct=Math.min(100,t/TQ_MS*100);
-      c.tqGood=pct<=70; sfx(c.tqGood?"good":"click");
+      const s=secondsOn();
+      const inTime = s <= limitS;
+      // A good tourniquet is one that was applied well AND released in time.
+      // The application half was measured when the band went on; this step
+      // must not overwrite that verdict with a timing-only one.
+      const appliedWell = c.tourniquetMeasurements
+        ? (c.tourniquetMeasurements.positionOk && c.tourniquetMeasurements.tensionSafe && c.tourniquetMeasurements.wrappedUnder)
+        : true;
+      c.tqSeconds=Math.round(s*10)/10;
+      c.tqGood = inTime && appliedWell;
+      if(tq) markReleased(tq, { byTail:true });
+      sfx(c.tqGood?"good":"click");
       const band=$("vpBand"); if(band){ band.classList.add("vp-released"); if(FX.gsap) FX.gsap.to(band,{x:40,opacity:0,duration:.3}); }
-      msg.innerHTML=c.tqGood?"✅ Released in good time (under a minute).":"⚠️ It was on a while — release sooner to avoid hemoconcentration.";
+      msg.innerHTML = !inTime
+        ? `⚠️ It was on ${c.tqSeconds}s — release sooner to avoid hemoconcentration.`
+        : appliedWell
+          ? `✅ Released in good time (${c.tqSeconds}s).`
+          : `✅ Released in time (${c.tqSeconds}s) — though the band itself went on poorly.`;
       setTimeout(advance,640);
     };
     raf=requestAnimationFrame(loop);
