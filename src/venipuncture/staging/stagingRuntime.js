@@ -20,7 +20,7 @@ import { preloadModels } from "../../rendering/modelRegistry.js";
 import { registerSupplyModels, SUPPLY_MODEL_IDS } from "./supplyModels.js";
 import { buildStagingScene } from "./stagingScene.js";
 import { ZONE, placeItem, inspectItem, markContaminated, recordEvent } from "./stagingState.js";
-import { zoneAt, rackSlotAt, rackSlotPosition, crossesField, orientationForAspect } from "./stagingLayout.js";
+import { zoneAt, rackSlotAt, rackSlotPosition, crossesField, orientationForAspect, applyTrayOffset } from "./stagingLayout.js";
 import { evaluateStaging } from "./stagingRules.js";
 import { CATEGORY } from "./supplyCatalog.js";
 
@@ -28,6 +28,7 @@ const TAP_PX = 7;              // pointer travel below this is a tap, not a drag
 const LIFT = 0.045;            // how high a held object floats above the surface
 const RACK_SNAP = 0.024;       // metres — deliberately small: no long-range magnet
 const INSPECT_ROTATION = 2.0;  // radians of accumulated turn before a label counts as read
+const DOUBLE_TAP_MS = 300;     // window for "double-tap the item I'm holding to stage it"
 
 let ctx = null;                // the single live staging session
 
@@ -177,6 +178,24 @@ function pickItem(e, canvasEl){
   return proxyHit;
 }
 
+/**
+ * The tray is only picked when nothing on it is under the pointer — reaching
+ * for a tube that happens to be sitting on the tray must never drag the whole
+ * work area instead.
+ */
+function pickTray(e, canvasEl){
+  setNdc(e, canvasEl);
+  const hits = ctx.raycaster.intersectObjects(ctx.view.root.children, true);
+  for(const h of hits){
+    let o = h.object;
+    while(o && o.userData.itemId===undefined && !o.userData.trayHandle) o = o.parent;
+    if(!o) continue;
+    if(o.userData.itemId!==undefined) return null;   // an object on the tray wins
+    if(o.userData.trayHandle) return o;
+  }
+  return null;
+}
+
 function pointOnCounter(e, canvasEl){
   setNdc(e, canvasEl);
   const p = new THREE.Vector3();
@@ -208,6 +227,7 @@ function enterInspect(mesh){
 
 function exitInspect(){
   if(!ctx.inspect) return;
+  clearTimeout(ctx.inspect.tapTimer);
   const { mesh, home } = ctx.inspect;
   const saved = mesh.userData.savedRot;
   if(saved) mesh.rotation.set(saved.x, saved.y, saved.z);
@@ -237,7 +257,11 @@ export function stagingPointerDown(e, canvasEl){
     return true;
   }
 
-  if(!mesh) return false;
+  if(!mesh){
+    const trayHandle = pickTray(e, canvasEl);
+    if(trayHandle) return beginTrayDrag(e, canvasEl);
+    return false;
+  }
   const id = mesh.userData.itemId;
   const p = pointOnCounter(e, canvasEl);
   ctx.drag = {
@@ -255,8 +279,69 @@ export function stagingPointerDown(e, canvasEl){
   return true;
 }
 
+/* ---------- dragging the whole work area ------------------------------------
+   The tray carries everything on it. Items are not children of the tray mesh
+   (their world positions are the authoritative record), so the drag moves the
+   tray group and every staged item together, and the drop commits one offset
+   to the layout, the state, and each item's stored position. */
+
+function beginTrayDrag(e, canvasEl){
+  const p = pointOnCounter(e, canvasEl);
+  if(!p) return false;
+  const carried = Object.keys(ctx.state.items).filter(id=>{
+    const z = ctx.state.items[id].zone;
+    return z===ZONE.TRAY || z===ZONE.RACK;
+  }).map(id=>{
+    const mesh = ctx.view.itemMeshes.get(id);
+    return { id, mesh, from:{ x:mesh.position.x, z:mesh.position.z } };
+  });
+  ctx.trayDrag = {
+    downX: e.clientX, downY: e.clientY, moved: false,
+    grab: { x:p.x, z:p.z },
+    startOffset: { x:ctx.layout.trayOffset.x, z:ctx.layout.trayOffset.z },
+    carried,
+  };
+  if(canvasEl.style) canvasEl.style.cursor = "grabbing";
+  try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
+  sfx("tap");
+  return true;
+}
+
+function moveTrayDrag(e, canvasEl){
+  const d = ctx.trayDrag;
+  const p = pointOnCounter(e, canvasEl);
+  if(!p) return true;
+  if(Math.hypot(e.clientX-d.downX, e.clientY-d.downY) > TAP_PX) d.moved = true;
+  const wanted = { x: d.startOffset.x + (p.x - d.grab.x), z: d.startOffset.z + (p.z - d.grab.z) };
+  const applied = applyTrayOffset(ctx.layout, wanted);
+  ctx.view.setTrayOffset(applied);
+  const dx = applied.x - d.startOffset.x, dz = applied.z - d.startOffset.z;
+  d.carried.forEach(c=>{ c.mesh.position.x = c.from.x + dx; c.mesh.position.z = c.from.z + dz; });
+  return true;
+}
+
+function endTrayDrag(){
+  const d = ctx.trayDrag;
+  ctx.trayDrag = null;
+  if(!d) return;
+  const applied = ctx.layout.trayOffset;
+  const dx = applied.x - d.startOffset.x, dz = applied.z - d.startOffset.z;
+  if(!d.moved || (dx===0 && dz===0)) return;
+  d.carried.forEach(c=>{
+    const st = ctx.state.items[c.id];
+    if(st.pos) st.pos = { x: st.pos.x + dx, z: st.pos.z + dz };
+    else st.pos = { x: c.mesh.position.x, z: c.mesh.position.z };
+  });
+  ctx.state.trayOffset = { x:applied.x, z:applied.z };
+  recordEvent(ctx.state, "moveTray", { x:applied.x, z:applied.z });
+  sfx("click");
+  notify();
+}
+
 export function stagingPointerMove(e, canvasEl){
   if(!isStagingActive()) return false;
+
+  if(ctx.trayDrag) return moveTrayDrag(e, canvasEl);
 
   if(ctx.inspect){
     if(!ctx.inspect.dragging) return true;
@@ -309,10 +394,34 @@ export function stagingPointerUp(e, canvasEl){
   if(!isStagingActive()) return false;
   try{ canvasEl.releasePointerCapture(e.pointerId); }catch(_){}
 
+  if(ctx.trayDrag){
+    endTrayDrag();
+    if(canvasEl.style) canvasEl.style.cursor = "grab";
+    return true;
+  }
+
   if(ctx.inspect){
     const travelled = Math.hypot(e.clientX-ctx.inspect.downX, e.clientY-ctx.inspect.downY);
     ctx.inspect.dragging = false;
-    if(travelled <= TAP_PX) exitInspect();
+    if(travelled > TAP_PX) return true;
+
+    // A tap off the item sets it back down straight away. A tap ON the item
+    // waits out the double-tap window, because a double-tap there means
+    // "I've read it, put it on the tray" — the fast path once you know what
+    // you're looking for.
+    if(!ctx.inspect.hitSelf){ exitInspect(); return true; }
+
+    const now = performance.now();
+    if(ctx.inspect.lastTapAt && now - ctx.inspect.lastTapAt < DOUBLE_TAP_MS){
+      clearTimeout(ctx.inspect.tapTimer);
+      const id = ctx.inspect.id;
+      exitInspect();
+      stageItemTo(id, ZONE.TRAY);
+      sfx("good");
+      return true;
+    }
+    ctx.inspect.lastTapAt = now;
+    ctx.inspect.tapTimer = setTimeout(()=>{ if(ctx && ctx.inspect) exitInspect(); }, DOUBLE_TAP_MS);
     return true;
   }
 
@@ -337,6 +446,7 @@ export function stagingPointerUp(e, canvasEl){
 
 export function stagingPointerCancel(e, canvasEl){
   if(!isStagingActive()) return false;
+  if(ctx.trayDrag){ endTrayDrag(); }
   if(ctx.drag){ commitDrop(ctx.drag); ctx.drag = null; }
   ctx.view.hideHeldShadow(); ctx.view.hideGhost();
   return true;

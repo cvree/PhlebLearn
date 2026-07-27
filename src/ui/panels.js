@@ -22,6 +22,8 @@ import { getScene } from "../rendering/scene.js";
 import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
 import { tubeMeshes, resetTubeSelection, toggleTubeMesh } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
+import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
+import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
 import { VP_TIPS, VP_ICON } from "../venipuncture/questions.js";
 import { fbCard } from "./coachLayer.js";
 
@@ -309,8 +311,10 @@ function renderCollect(){
     <h2>🩸 Venipuncture <span class="vp-count">step ${done+1}/${total}</span></h2>
     <div class="vp-progress">${dots}</div>
     ${lesson}
-    <div class="vp-stage" id="vpStage"></div>`;
+    <div class="vp-stage" id="vpStage"></div>
+    <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`;
   const stage=$("vpStage");
+  wireLeaveDraw();
   renderCurrentStep(c, stage, {
     rerender: renderCollect,
     onComplete: vpFinish,
@@ -321,6 +325,35 @@ function renderCollect(){
   });
   if(FX.gsap && !SS.reduceMotion){ FX.gsap.from(stage,{opacity:0,y:12,duration:.3,ease:"power2.out"}); }
 }
+/* Ends the venipuncture early. Two-step so a mis-tap can't abandon a patient:
+   the button asks for confirmation before it does anything. The encounter is
+   then scored on what was actually completed — nothing is faked as done. */
+function wireLeaveDraw(){
+  const b=$("vpLeave"); if(!b) return;
+  b.onclick=()=>{
+    if(b.dataset.armed!=="1"){
+      b.dataset.armed="1";
+      b.classList.add("armed");
+      b.textContent="Leave without finishing the draw?";
+      sfx("click");
+      setTimeout(()=>{ if(b.dataset.armed==="1"){ b.dataset.armed=""; b.classList.remove("armed"); b.textContent="Leave this draw"; } }, 4000);
+      return;
+    }
+    sfx("bad");
+    if(ENC._collectCleanup) ENC._collectCleanup();
+    ENC.drawAbandoned=true;
+    if(ENC.collect && ENC.collect.supplies && !ENC.collect.supplies.measurements){
+      // capture whatever preparation was done before they walked away
+      const s=ENC.collect.supplies;
+      s.state.completedAt=Date.now();
+      const r=evaluateStaging(s.state, s.catalog);
+      s.measurements=measureStaging(s.state, s.catalog, r);
+      ENC.collect.stagingMeasurements=s.measurements;
+    }
+    runScoreEncounter();
+  };
+}
+
 function vpFinish(){
   const c=ENC.collect;
   const items=[["gatherOk","Supplies gathered"],["veinOk","Vein selected"],["cleanOk","Site cleaned"],["assembleOk","Needle assembled"],["uncapOk","Uncapped"],
@@ -332,10 +365,13 @@ function vpFinish(){
     floatXP("+"+(bonus*2)+" XP"); if(got.length>=9){ sfx("win"); confetti(40); } else sfx("coin"); }
   const hasPostDraw = !!ENC.p.drawEvent && ENC.p.drawEvent.when!=="mid" && !ENC.drawEventHandled;
   const sm = c.stagingMeasurements;
-  const stagingBlock = sm ? `
+  // Teaching mode reports technique immediately; a scored shift holds it back
+  // to the encounter score, after the patient interaction is over.
+  const stagingBlock = (sm && MODE==="teach") ? `
     <div class="vp-technique">
       <div class="vt-head"><span class="vt-title">🧺 Work-area preparation</span><span class="vt-score">${sm.score}/100</span></div>
       <p class="vt-narrative">${sm.narrative}</p>
+      ${sm.mistakes && sm.mistakes.length ? `<ul class="vt-mistakes">${sm.mistakes.map(m=>`<li>${m.item?`<b>${m.item}</b> — `:""}${m.message}</li>`).join("")}</ul>` : ""}
       <div class="vt-metrics">
         <span>Correct items <b>${sm.correctItems}</b></span>
         <span>Wrong items <b>${sm.incorrectItems}</b></span>
@@ -556,7 +592,12 @@ function renderScore(){
   if(!teaching && pct===100){ confetti(50); floatXP("Perfect! ✨"); sfx("win"); }
   else if(!teaching && pct>=80){ confetti(24); }
   const missed=cats.filter(c=>!s[c]);
-  showScoreDetail(missed[0]||cats[0], true);
+  // If the learner walked away mid-draw or prepared badly, the staging report
+  // is the most useful tile to land on — it's the one they were never shown
+  // during a scored shift.
+  const sm = ENC.collect && ENC.collect.stagingMeasurements;
+  const openFirst = (sm && !sm.ready) ? "supplyStaging" : (missed[0]||cats[0]);
+  showScoreDetail(openFirst, true);
   $("cont").onclick=()=>{ sfx("tap"); SHIFT.index++; removePatient(getScene()); nextPatient(); };
 }
 function showScoreDetail(c,silent){

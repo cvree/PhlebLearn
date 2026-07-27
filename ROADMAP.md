@@ -90,7 +90,19 @@ What it teaches, mechanically rather than by quizzing:
   left; left-handed is an exact mirror — of the geometry, not of a label.
 - **Consequence and recovery.** Nothing snaps back. An object released off the
   counter falls and is contaminated. A wrong item sits there until the learner
-  removes it, with a specific clinical explanation of why it can't be used.
+  removes it.
+- **Owning the work area.** The tray itself is draggable and carries everything
+  on it, so the learner arranges their bench where they actually want it (it
+  won't park on top of the patient's arm). The coach panel collapses so the
+  cart gets the whole canvas, and a draw can be left early if it has gone wrong.
+
+**Teaching mode and a scored shift are different mechanics, not the same one
+with hints turned down.** Teaching mode keeps the readiness checklist, names the
+expected order of draw, explains why a staged item is wrong the moment it lands,
+and will not let the draw start from a bad tray. A scored shift shows an
+inventory instead of verdicts, says nothing about what's wrong, and lets the
+learner begin whenever they judge themselves ready — the assessment arrives
+after the patient, naming exactly what they started the draw without.
 
 Delivered alongside: the first real `registerModel()` calls (13 ids, all with
 procedural fallbacks), a persistent `encounterState` carried through the whole

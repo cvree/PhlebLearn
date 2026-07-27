@@ -58,3 +58,16 @@ export function buildStepSequence(tubeCount){
 }
 
 export function getStepDef(id){ return VP_STEP_DEFS.find(d=>d.id===id)||null; }
+
+/**
+ * De-duplicates tube keys and sorts them into the canonical CLSI order of
+ * draw. The player picks tubes off the rack in whatever order they like, so
+ * selection order is NOT draw order — every consumer (the staging rack, the
+ * tube-switch step) treats index 0 as "drawn first", which is only true if
+ * the array is sorted here.
+ */
+export function canonicalTubeOrder(tubeKeys, tubeTable){
+  const table = tubeTable || {};
+  return [...new Set(tubeKeys||[])]
+    .sort((a,b)=>(table[a]?table[a].order:99) - (table[b]?table[b].order:99));
+}

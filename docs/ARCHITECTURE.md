@@ -112,6 +112,22 @@ browser and the visuals can change without touching the rules:
 staging is active the canvas renders the staging scene instead of the room,
 through the same renderer, so there is only ever one WebGL context.
 
+**Guided vs. scored is a rendering and gating decision, never a rules
+decision.** `stagingRules.js` always computes the full truth; `stagingCoach.js`
+decides how much of it the learner is shown, and `physicalSteps.js` decides
+whether an unready tray blocks the draw. Teaching mode surfaces the checklist,
+the expected order of draw and the reason a staged item is wrong; a scored shift
+shows an inventory and nothing else, and the same evaluation is reported after
+the encounter instead. There is no second, laxer rule set behind either mode —
+which is what makes the post-encounter report able to name exactly what was
+wrong at the moment the learner chose to begin.
+
+The tray is an object, not a fixed region: `applyTrayOffset()` moves the tray
+and rack rectangles together, clamped to the counter and pushed clear of the
+patient's arm. Items are not children of the tray mesh (their world positions
+stay authoritative), so a tray drag moves the group and every staged item, and
+the drop commits one offset to the layout, the state, and each item's position.
+
 ## Application startup
 
 `main.js` is the composition root. `boot()` (triggered on `window.load`, with

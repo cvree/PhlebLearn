@@ -12,11 +12,11 @@
    ========================================================================= */
 import { LAST } from "../config.js";
 import { pick } from "../utils.js";
-import { SS, saveSS } from "../game/gameState.js";
+import { SS, saveSS, guided } from "../game/gameState.js";
 import { getRenderer } from "../rendering/renderer.js";
 import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
 import { createStagingState, setHandedness, placeItem, inspectItem, HAND, ZONE } from "./staging/stagingState.js";
-import { createLayout, orientationForAspect } from "./staging/stagingLayout.js";
+import { createLayout, orientationForAspect, applyTrayOffset } from "./staging/stagingLayout.js";
 import { evaluateStaging } from "./staging/stagingRules.js";
 import { measureStaging } from "./staging/stagingScoring.js";
 import { renderStagingCoach } from "./staging/stagingCoach.js";
@@ -69,6 +69,7 @@ export const PHYSICAL_STEPS = {
         catalog: session.catalog,
         result: result || evaluate(),
         inspecting, listView, canRender3d,
+        guided: guided(),
         handlers: {
           onReady: finish,
           onToggleHandedness: toggleHandedness,
@@ -102,6 +103,7 @@ export const PHYSICAL_STEPS = {
         handedness, tubeCount:c.tubes.length,
         shelfCount:session.catalog.length, orientation,
       });
+      applyTrayOffset(session.layout, session.state.trayOffset);
       if(isStagingActive()){
         stopStaging();                       // rebuild the cart around the new layout
         launch3d().then(()=>draw());
@@ -140,10 +142,13 @@ export const PHYSICAL_STEPS = {
 
     function finish(){
       const result = evaluate();
-      if(!result.ready) return;
+      // Teaching mode walks the learner to a correct tray before the draw can
+      // start. A scored shift lets them commit to whatever they prepared — the
+      // consequences and the assessment come after the patient, not before.
+      if(guided() && !result.ready) return;
       session.state.completedAt = Date.now();
       session.measurements = measureStaging(session.state, session.catalog, result);
-      c.gatherOk = true;
+      c.gatherOk = result.ready;   // honest on the recap chips, even when the learner chose to proceed anyway
       c.stagingMeasurements = session.measurements;
       if(c.encounter){
         c.encounter.supplies = session;

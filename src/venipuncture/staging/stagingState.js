@@ -60,6 +60,10 @@ export function createStagingState({ catalog, requiredTubes, handedness, now }){
     requiredTubes: (requiredTubes||[]).slice(),
     rackSlots: new Array((requiredTubes||[]).length).fill(null),
     items,
+    // The learner can shove the whole tray around the counter; this is how far
+    // it has been moved from its default position, so the zones, the items on
+    // it and a rebuilt scene all stay in agreement.
+    trayOffset: { x:0, z:0 },
     events: [],
     startedAt: t0,
     completedAt: null,
@@ -197,6 +201,7 @@ export function setHandedness(state, handedness){
     const s = state.items[id];
     if(s.pos) s.pos = { x:-s.pos.x, z:s.pos.z };
   });
+  state.trayOffset = { x:-state.trayOffset.x, z:state.trayOffset.z };
   recordEvent(state, "handedness", { handedness:next });
   return state;
 }

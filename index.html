@@ -26,6 +26,9 @@
   <button class="floatbtn" id="settingsBtn" style="top:92px;right:12px">⚙️ Settings</button>
   <button class="floatbtn" id="shopBtn" style="top:130px;right:12px">🏠 Shop</button>
   <button class="floatbtn" id="stickerBtn" style="top:168px;right:12px">📔 Stickers</button>
+  <!-- left edge on purpose: on a tall viewport the panel grows to 80vh and
+       would sit on top of anything stacked with the right-hand buttons -->
+  <button class="floatbtn" id="panelToggle" style="top:54px;left:12px;z-index:7" aria-expanded="true" aria-controls="panel">🗔 Hide panel</button>
   <div class="panel" id="panel"></div>
   <div class="disclaimer">Study simulation only. Real blood collection requires approved training, instructor supervision, clinical practice, and employer policy.</div>
 

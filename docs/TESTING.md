@@ -50,6 +50,15 @@ input modes are governed identically. Grouped as:
 - **Catalog integrity**: every item resolves through the model registry, no
   label depends on an emoji, every wrong item carries an explanation and
   inspectable detail, and exactly one usable item exists per required category.
+- **Moving the work area**: dragging the tray moves its zone and takes the rack
+  with it, it clamps to the counter, it cannot be parked on top of the
+  patient's arm, and returning it to zero restores the original geometry
+  exactly.
+- **Order of draw comes from the tube table**, not from the order the player
+  tapped tubes off the rack (`canonicalTubeOrder`).
+- **Proceeding unprepared**: a learner who begins the draw with a tray that
+  isn't ready is measured on exactly which problems were outstanding, and
+  scores materially worse than the identical tray finished properly.
 - **Registry fallback**: a model whose GLB fails to load still produces a
   usable instance from its procedural builder.
 
@@ -120,12 +129,25 @@ gone.
   an instance, procedural or otherwise).
 - Reloading mid-staging leaves the app usable and gives a clean staging state.
 - The accessible list view is fully keyboard operable.
+- **Scored shift**: no checklist, no expected order of draw, no explanation of
+  why a staged item is wrong, and "I'm ready" is live from the first frame with
+  an empty tray — then it advances the procedure.
+- **Teaching mode**: the checklist is present and the draw stays gated behind a
+  correct tray.
+- Dragging the tray moves the whole work area and carries what is on it;
+  grabbing an object that sits on the tray never drags the tray instead.
+- Double-tapping an item you are inspecting sends it straight to the tray.
+- The coach panel collapses and the cart re-frames into the freed space.
+- Leaving a draw takes two clicks and scores the encounter on what was done.
 
 ### The `?e2e=1` test seam
 
 `main.js` installs `window.__phlebTest` **only** when the URL carries `e2e=1`.
-It exposes `gotoProcedureStep()`, `stagingSnapshot()`, `screenPointFor(itemId)`
-and `screenPointForZone(zone)`.
+It exposes `gotoProcedureStep(stepId, tubes, mode)`, `stagingSnapshot()`,
+`screenPointFor(itemId)` and `screenPointForZone(zone)`. The `mode` argument
+(`"teach"` / `"play"`) matters: guided and scored shifts are deliberately
+different mechanics, so a test that doesn't say which one it wants is testing
+neither.
 
 Why it exists: reaching the supply step through normal play means clicking a
 15-screen path whose patient, requisition flaw, site scenario and draw event are

@@ -14,7 +14,9 @@ import {
   createStagingState, placeItem, inspectItem, setHandedness, markContaminated,
   ZONE, HAND, stagedIds,
 } from "../src/venipuncture/staging/stagingState.js";
-import { createLayout, zoneAt, rackSlotAt, crossesField } from "../src/venipuncture/staging/stagingLayout.js";
+import { createLayout, zoneAt, rackSlotAt, crossesField, applyTrayOffset } from "../src/venipuncture/staging/stagingLayout.js";
+import { canonicalTubeOrder } from "../src/venipuncture/procedureState.js";
+import { TUBES } from "../src/config.js";
 import { evaluateStaging, ISSUE, nextIssue } from "../src/venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../src/venipuncture/staging/stagingScoring.js";
 import { registerModel, preloadModels, createModelInstance, isRegistered } from "../src/rendering/modelRegistry.js";
@@ -306,6 +308,103 @@ test("crossesField reports the dominant side for each handedness", () => {
   assert.equal(crossesField(right, -0.3), false);
   assert.equal(crossesField(left, -0.3), true);
   assert.equal(crossesField(left, 0.3), false);
+});
+
+/* ---------- moving the whole work area ------------------------------------------ */
+
+test("dragging the tray moves its zone, and the rack moves with it", () => {
+  const layout = createLayout({ handedness: HAND.RIGHT, tubeCount:2, shelfCount:20 });
+  const originalTray = { x: layout.tray.cx, z: layout.tray.cz };
+  const rackGap = { x: layout.rack.cx - layout.tray.cx, z: layout.rack.cz - layout.tray.cz };
+
+  assert.equal(zoneAt(layout, originalTray.x, originalTray.z + 0.09), ZONE.TRAY);
+
+  // away from the arm, so nothing pushes back (arm avoidance has its own test)
+  applyTrayOffset(layout, { x: -0.10, z: -0.05 });
+
+  assert.ok(Math.abs(layout.tray.cx - (originalTray.x - 0.10)) < 1e-9);
+  assert.ok(Math.abs(layout.rack.cx - layout.tray.cx - rackGap.x) < 1e-9, "the rack must travel with the tray");
+  assert.ok(Math.abs(layout.rack.cz - layout.tray.cz - rackGap.z) < 1e-9);
+
+  // the tray zone followed the object
+  assert.equal(zoneAt(layout, layout.tray.cx, layout.tray.cz + 0.09), ZONE.TRAY);
+  assert.notEqual(zoneAt(layout, originalTray.x + 0.30, originalTray.z + 0.09), ZONE.TRAY);
+});
+
+test("the tray cannot be dragged off the counter", () => {
+  const layout = createLayout({ handedness: HAND.RIGHT, tubeCount:1, shelfCount:20 });
+  applyTrayOffset(layout, { x: 99, z: 99 });
+  assert.ok(layout.tray.maxX <= layout.counter.maxX + 1e-9, "clamped in x");
+  assert.ok(layout.tray.maxZ <= layout.counter.maxZ + 1e-9, "clamped in z");
+  applyTrayOffset(layout, { x: -99, z: -99 });
+  assert.ok(layout.tray.minX >= layout.counter.minX - 1e-9);
+  assert.ok(layout.tray.minZ >= layout.counter.minZ - 1e-9);
+});
+
+test("the tray cannot be parked on top of the patient's arm", () => {
+  const layout = createLayout({ handedness: HAND.RIGHT, tubeCount:2, shelfCount:20 });
+  const arm = layout.arm;
+  // shove it straight at the arm
+  applyTrayOffset(layout, { x: arm.cx - layout.tray.cx, z: arm.cz - layout.tray.cz });
+  const overX = Math.min(layout.tray.maxX, arm.maxX) - Math.max(layout.tray.minX, arm.minX);
+  const overZ = Math.min(layout.tray.maxZ, arm.maxZ) - Math.max(layout.tray.minZ, arm.minZ);
+  assert.ok(overX <= 1e-6 || overZ <= 1e-6,
+    `the tray must not overlap the arm (overlap ${overX.toFixed(3)} x ${overZ.toFixed(3)})`);
+  // and it must still be on the counter
+  assert.ok(layout.tray.minX >= layout.counter.minX - 1e-9);
+  assert.ok(layout.tray.maxX <= layout.counter.maxX + 1e-9);
+});
+
+test("moving the tray back to zero restores the original zone exactly", () => {
+  const layout = createLayout({ handedness: HAND.LEFT, tubeCount:3, shelfCount:20 });
+  const before = { cx: layout.tray.cx, cz: layout.tray.cz, rx: layout.rack.cx };
+  applyTrayOffset(layout, { x: 0.12, z: 0.07 });
+  applyTrayOffset(layout, { x: 0, z: 0 });
+  assert.ok(Math.abs(layout.tray.cx - before.cx) < 1e-9);
+  assert.ok(Math.abs(layout.tray.cz - before.cz) < 1e-9);
+  assert.ok(Math.abs(layout.rack.cx - before.rx) < 1e-9);
+});
+
+/* ---------- order of draw comes from the tube table, not the click order --------- */
+
+test("tube order is canonical, not the order the player picked them off the rack", () => {
+  // picked lavender-first, but lavender (7) is drawn after light blue (2) and red (3)
+  assert.deepEqual(canonicalTubeOrder(["lavender","red","lightblue"], TUBES), ["lightblue","red","lavender"]);
+  assert.deepEqual(canonicalTubeOrder(["gray","bloodculture"], TUBES), ["bloodculture","gray"]);
+  assert.deepEqual(canonicalTubeOrder(["red","red","red"], TUBES), ["red"], "duplicates collapse");
+  assert.deepEqual(canonicalTubeOrder([], TUBES), []);
+});
+
+/* ---------- proceeding with an unready tray -------------------------------------- */
+
+test("a learner who begins the draw unprepared is measured on exactly what was wrong", () => {
+  const h = seed();
+  stageEverythingCorrectly(h, { skipSharps:true });
+  const gauze = h.catalog.find(d=>d.category===CATEGORY.GAUZE && isUsable(d));
+  placeItem(h.state, gauze.id, ZONE.SHELF, {});         // walked off without gauze
+  h.state.completedAt = 50000;
+
+  const r = evaluateStaging(h.state, h.catalog);
+  const m = measureStaging(h.state, h.catalog, r, 50000);
+
+  assert.equal(m.ready, false);
+  assert.ok(m.mistakes.length >= 2, "both the missing gauze and the missing sharps container must be reported");
+  assert.ok(m.mistakes.some(x=>/gauze/i.test(x.message)));
+  assert.ok(m.mistakes.some(x=>/sharps/i.test(x.message)));
+  assert.match(m.narrative, /began the draw with/i);
+});
+
+test("beginning unprepared scores worse than the identical tray finished properly", () => {
+  const done = seed(); stageEverythingCorrectly(done);
+  const doneM = measureStaging(done.state, done.catalog, evaluateStaging(done.state, done.catalog), 40000);
+
+  const rushed = seed(); stageEverythingCorrectly(rushed, { skipSharps:true });
+  const rushedM = measureStaging(rushed.state, rushed.catalog, evaluateStaging(rushed.state, rushed.catalog), 40000);
+
+  assert.equal(doneM.ready, true);
+  assert.equal(doneM.mistakes.length, 0);
+  assert.equal(rushedM.ready, false);
+  assert.ok(rushedM.score < doneM.score - 10, `expected a real cost, got ${rushedM.score} vs ${doneM.score}`);
 });
 
 /* ---------- rack geometry ----------------------------------------------------- */

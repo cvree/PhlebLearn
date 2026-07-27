@@ -31,11 +31,12 @@ function attachDiagnostics(page){
   return errors;
 }
 
-async function openStaging(page){
+/** @param {"play"|"teach"} mode  scored shift vs. guided teaching mode */
+async function openStaging(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
-  await page.evaluate(()=>window.__phlebTest.gotoProcedureStep("gather", ["lightblue","lavender"]));
+  await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("gather", ["lightblue","lavender"], m), mode||"teach");
   await expect(page.locator(".stg-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>{
     const p = await window.__phlebTest.screenPointForZone("tray");
@@ -289,6 +290,147 @@ test("reloading mid-staging leaves the application usable", async ({ page }) => 
   const fresh = await snapshot(page);
   expect(fresh.zones.gloves_ok).toBe("shelf");
   expect(fresh.requiredTubes).toEqual(["red"]);
+  expect(errors).toEqual([]);
+});
+
+/* ---------- scored shift: you decide when you're ready ---------------------------- */
+
+test("a scored shift lets you continue whenever you like, with no checkmarks", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await openStaging(page, "play");
+
+  // no verdicts anywhere: no readiness checklist, no expected order of draw
+  await expect(page.locator(".stg-checks")).toHaveCount(0);
+  await expect(page.locator(".stg-order")).toHaveCount(0);
+  await expect(page.locator(".stg-inventory")).toBeVisible();
+  await expect(page.locator(".stg-msg")).not.toContainText(/still need|Not ready/i);
+
+  // and the button is live from the very first frame, with an empty tray
+  const ready = page.locator("#stgReady");
+  await expect(ready).toBeEnabled();
+  await expect(ready).toContainText(/I'm ready/i);
+  expect((await snapshot(page)).ready).toBe(false);
+
+  await ready.click();
+  await expect(page.locator(".stg-coach")).toHaveCount(0, { timeout:5000 });
+  await expect(page.locator(".vp-stage")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a scored shift does not explain why a staged item is wrong", async ({ page }) => {
+  await openStaging(page, "play");
+  const snap = await snapshot(page);
+  const expired = snap.catalog.find(d=>(d.flaws||[]).includes("expired"));
+
+  await mouseDrag(page, await pointFor(page, expired.id), await pointForZone(page, "tray"));
+  expect((await snapshot(page)).zones[expired.id]).toBe("tray");
+  // the object is on the tray and nothing tells the learner it's expired
+  await expect(page.locator(".stg-msg")).not.toContainText(/expired|expiry/i);
+  await expect(page.locator(".stg-inspect")).toHaveCount(0);
+});
+
+test("teaching mode still gates the draw behind a correct tray", async ({ page }) => {
+  await openStaging(page, "teach");
+  await expect(page.locator(".stg-checks .stg-chk")).toHaveCount(9);
+  await expect(page.locator("#stgReady")).toBeDisabled();
+  await expect(page.locator(".stg-msg")).toContainText(/still need|Not ready/i);
+});
+
+/* ---------- moving the work area ---------------------------------------------------- */
+
+test("dragging the tray moves the whole work area, carrying what is on it", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await openStaging(page, "play");
+
+  await mouseDrag(page, await pointFor(page, "gloves_ok"), await pointForZone(page, "tray"));
+  const before = await snapshot(page);
+  expect(before.zones.gloves_ok).toBe("tray");
+  const gloveBefore = before.positions.gloves_ok;
+
+  // grab the tray by its empty surface and shove it
+  const from = await pointForZone(page, "tray");
+  await mouseDrag(page, { x: from.x, y: from.y + 26 }, { x: from.x + 130, y: from.y + 26 });
+
+  const after = await snapshot(page);
+  expect(after.trayOffset.x).not.toBe(0);
+  // the glove box moved with the tray, and is still ON the tray
+  expect(after.zones.gloves_ok).toBe("tray");
+  expect(after.positions.gloves_ok.x).not.toBeCloseTo(gloveBefore.x, 4);
+  const dTray = after.trayOffset.x - before.trayOffset.x;
+  const dGlove = after.positions.gloves_ok.x - gloveBefore.x;
+  expect(Math.abs(dGlove - dTray)).toBeLessThan(0.005);
+  expect(errors).toEqual([]);
+});
+
+test("grabbing an object that sits on the tray never drags the tray instead", async ({ page }) => {
+  await openStaging(page, "play");
+  await mouseDrag(page, await pointFor(page, "gloves_ok"), await pointForZone(page, "tray"));
+  const before = await snapshot(page);
+
+  // drag the glove box itself off the tray onto the open counter
+  await mouseDrag(page, await pointFor(page, "gloves_ok"), { x: 240, y: 300 });
+  const after = await snapshot(page);
+  expect(after.trayOffset).toEqual(before.trayOffset);
+  expect(after.zones.gloves_ok).not.toBe("tray");
+});
+
+/* ---------- double-tap to stage ------------------------------------------------------ */
+
+test("double-tapping an item you are inspecting sends it straight to the tray", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await openStaging(page, "play");
+  const p = await pointFor(page, "bandage_ok");
+
+  await page.mouse.click(p.x, p.y);                       // tap once: turn it over
+  await expect(page.locator(".stg-inspect")).toBeVisible();
+  expect((await snapshot(page)).zones.bandage_ok).toBe("shelf");
+
+  // it is now held up in front of the camera, not where it was on the shelf
+  await page.waitForTimeout(500);
+  const held = await pointFor(page, "bandage_ok");
+  expect(Math.hypot(held.x-p.x, held.y-p.y)).toBeGreaterThan(20);
+
+  await page.mouse.dblclick(held.x, held.y);              // and again: put it on the tray
+  await page.waitForTimeout(500);
+  expect((await snapshot(page)).zones.bandage_ok).toBe("tray");
+  await expect(page.locator(".stg-inspect")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+/* ---------- leaving / collapsing ------------------------------------------------------ */
+
+test("the coach panel can be collapsed so the cart gets the whole canvas", async ({ page }) => {
+  await openStaging(page, "play");
+  const toggle = page.locator("#panelToggle");
+  await expect(page.locator("#panel")).toBeVisible();
+
+  await toggle.click();
+  await expect(page.locator("#panel")).toBeHidden();
+  await expect(toggle).toContainText(/Show panel/i);
+
+  // the cart re-frames itself into the freed space
+  await page.waitForTimeout(900);
+  const wide = await pointForZone(page, "reach");
+  await toggle.click();
+  await expect(page.locator("#panel")).toBeVisible();
+  await page.waitForTimeout(900);
+  const narrow = await pointForZone(page, "reach");
+  expect(Math.abs(wide.x - narrow.x)).toBeGreaterThan(20);
+});
+
+test("leaving a draw takes two clicks and scores the encounter on what was done", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await openStaging(page, "play");
+  const leave = page.locator("#vpLeave");
+
+  await leave.click();                                    // first click only arms it
+  await expect(leave).toContainText(/Leave without finishing/i);
+  await expect(page.locator(".stg-coach")).toBeVisible();
+
+  await leave.click();                                    // second click actually leaves
+  await expect(page.getByRole("heading", { name:/Encounter score|Lesson complete/i })).toBeVisible({ timeout:8000 });
+  await expect(page.locator(".scorecell[data-cat='supplyStaging']")).toBeVisible();
+  await expect(page.locator("#fbs")).toContainText(/began the draw with/i);
   expect(errors).toEqual([]);
 });
 
