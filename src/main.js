@@ -40,6 +40,10 @@ import {
   isPalpationActive, renderPalpation,
   palpationPointerDown, palpationPointerMove, palpationPointerUp, palpationPointerCancel,
 } from "./venipuncture/palpation/palpationRuntime.js";
+import {
+  isCleaningActive, renderCleaning,
+  cleaningPointerDown, cleaningPointerMove, cleaningPointerUp, cleaningPointerCancel,
+} from "./venipuncture/cleaning/cleaningRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -99,6 +103,7 @@ function setupInput(canvasEl){
     if(isStagingActive()){ stagingPointerDown(e, canvasEl); return; }
     if(isTourniquetActive()){ tourniquetPointerDown(e, canvasEl); return; }
     if(isPalpationActive()){ palpationPointerDown(e, canvasEl); return; }
+    if(isCleaningActive()){ cleaningPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -106,6 +111,7 @@ function setupInput(canvasEl){
     if(isStagingActive()){ stagingPointerMove(e, canvasEl); return; }
     if(isTourniquetActive()){ tourniquetPointerMove(e, canvasEl); return; }
     if(isPalpationActive()){ palpationPointerMove(e, canvasEl); return; }
+    if(isCleaningActive()){ cleaningPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -113,6 +119,7 @@ function setupInput(canvasEl){
     if(isStagingActive()){ stagingPointerUp(e, canvasEl); return; }
     if(isTourniquetActive()){ tourniquetPointerUp(e, canvasEl); return; }
     if(isPalpationActive()){ palpationPointerUp(e, canvasEl); return; }
+    if(isCleaningActive()){ cleaningPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -123,6 +130,7 @@ function setupInput(canvasEl){
     if(isStagingActive()) stagingPointerCancel(e, canvasEl);
     else if(isTourniquetActive()) tourniquetPointerCancel(e, canvasEl);
     else if(isPalpationActive()) palpationPointerCancel(e, canvasEl);
+    else if(isCleaningActive()) cleaningPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -205,6 +213,7 @@ function animate(){
   if(isStagingActive()){ renderStaging(getRenderer(), dt); return; }
   if(isTourniquetActive()){ renderTourniquet(getRenderer(), dt); return; }
   if(isPalpationActive()){ renderPalpation(getRenderer(), dt); return; }
+  if(isCleaningActive()){ renderCleaning(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -510,6 +519,48 @@ function installTestSeam(){
       const canvas = document.querySelector("canvas");
       const rect = canvas.getBoundingClientRect();
       return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+    },
+    /** The prep field's state, as the rules see it. */
+    async cleaningSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const st = ENC && ENC.collect && ENC.collect.cleaning;
+      if(!st) return null;
+      const { evaluateCleaning } = await import("./venipuncture/cleaning/cleaningRules.js");
+      const r = evaluateCleaning(st);
+      return {
+        swabOpen: st.swabOpen, strokes: st.strokes, lightStrokes: st.lightStrokes,
+        coverage: r.coverage, outward: r.outward,
+        dryness: r.dryness, seconds: r.secondsDrying,
+        retouched: st.retouchedAfterClean,
+        ready: r.ready,
+        blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
+      };
+    },
+    /** Screen point at an offset from the puncture point, in metres. */
+    async screenPointOnField(dx, dz){
+      const { getCleaningContext } = await import("./venipuncture/cleaning/cleaningRuntime.js");
+      const ctx = getCleaningContext();
+      if(!ctx) return null;
+      const x = ctx.site.x + dx, z = ctx.site.z + dz;
+      const r = ctx.view.arm.radiusAt(x);
+      const theta = Math.asin(Math.max(-1, Math.min(1, z/r)));
+      const p = ctx.view.limbToWorld(x, theta, r);
+      p.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+    },
+    /**
+     * Skips the drying wait. Tests only — never reachable in play.
+     * Works on the procedure state rather than the runtime, because the
+     * controls path stops the scene and the clock still has to be skippable.
+     */
+    async fastForwardDrying(seconds){
+      const { ENC } = await import("./game/gameState.js");
+      const st = ENC && ENC.collect && ENC.collect.cleaning;
+      if(!st || !st.lastStrokeAt) return null;
+      st.lastStrokeAt -= (seconds || 0)*1000;
+      return true;
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");

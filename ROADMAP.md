@@ -19,15 +19,17 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`) and `palpate` is a fingertip on that arm (`palpation/`); the other 13 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`) and `clean` is a scrubbed prep field on it (`cleaning/`); the other 12 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 13 of the 16 venipuncture steps are still the 2D DOM
+**The gap that remains:** 12 of the 16 venipuncture steps are still the 2D DOM
 panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
 first mechanic where the patient's body answers back; palpation (Phase 2b) is
-the first where the learner has to interpret what the body is telling them.
-Each branch after it converts one more step, in order, on that same arm.
+the first where the learner has to interpret what the body is telling them;
+cleaning (Phase 2c) is the first where the work itself is visible on the skin
+and can be undone by carelessness. Each branch after it converts one more
+step, in order, on that same arm.
 
 ---
 
@@ -221,6 +223,31 @@ would be the old multiple-choice question wearing a different hat.
 
 Delivered alongside: 28 unit tests and 15 browser tests.
 
+## Phase 2c — `feature/aseptic-site-cleaning` ✅ complete
+
+The `clean` step measured how far a 🧽 had been dragged. Distance is not the
+skill. It is now an alcohol pad worked over the site the fingers just found,
+and **the coverage is painted onto the skin as it happens** — the visible wet
+patch IS the measurement, not a decoration of a progress bar.
+
+- **Coverage, not distance.** A 5 cm prep field around the puncture point,
+  scored on a real grid. Dabbing the middle leaves the skin the needle passes
+  through undisinfected, and it is blocked.
+- **Direction.** Concentric circles worked OUTWARD. Scrubbing back over skin
+  already cleaned drags the dirty edge inward, and is measured as the fraction
+  of travel that moved away from the puncture point.
+- **Friction, not painting.** Alcohol disinfects mechanically. Strokes made
+  without working the pad into the skin cover nothing.
+- **A real drying clock.** Thirty seconds of air-drying, gated: puncturing
+  through wet alcohol stings and haemolyses the sample. The decal fades as it
+  evaporates, so the arm itself tells the learner to wait. Fanning or blotting
+  is its own mistake.
+- **It can be undone.** Touching the site after it is clean — with a finger or
+  with the swab — re-contaminates it and blocks the draw until it is redone.
+- **A sealed pad cleans nothing**, however hard it is scrubbed.
+
+Delivered alongside: 22 unit tests and 11 browser tests.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -228,7 +255,7 @@ The DOM panel stays as the **coach layer** (tips, why-it-matters, teach mode) �
 stops being the interaction surface.
 
 Branch order (one branch each, verified and deployed before the next starts):
-~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
+~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ → ~~`feature/aseptic-site-cleaning`~~ ✅ →
 `feature/aseptic-site-cleaning` → `feature/needle-holder-assembly` →
 `feature/anchor-and-insert` → `feature/tube-collection` →
 `feature/withdraw-safety-sharps` → `feature/post-draw-care`.
@@ -238,7 +265,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 | gather | ✅ **done** — a real supply cart | — |
 | tourniquet | ✅ **done** — a real band on a real arm | — |
 | palpate | ✅ **done** — a fingertip on the real arm | — |
-| clean | drag 🧽 | scrub a real swab; coverage painted to a decal texture; real 30s dry timer |
+| clean | ✅ **done** — a scrubbed field on the real arm | — |
 | assemble | div onto div | thread a real needle into a real holder (snap + click) |
 | uncap | drag cap div | pull the real cap along the needle's axis |
 | insert | 2D angle math | **real 3D angle + depth** vs. skin normal, 15–30° window, bevel-up roll check, flashback in the real hub |
