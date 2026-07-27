@@ -36,6 +36,10 @@ import {
   isTourniquetActive, renderTourniquet,
   tourniquetPointerDown, tourniquetPointerMove, tourniquetPointerUp, tourniquetPointerCancel,
 } from "./venipuncture/tourniquet/tourniquetRuntime.js";
+import {
+  isPalpationActive, renderPalpation,
+  palpationPointerDown, palpationPointerMove, palpationPointerUp, palpationPointerCancel,
+} from "./venipuncture/palpation/palpationRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -94,18 +98,21 @@ function setupInput(canvasEl){
   canvasEl.addEventListener("pointerdown", e=>{
     if(isStagingActive()){ stagingPointerDown(e, canvasEl); return; }
     if(isTourniquetActive()){ tourniquetPointerDown(e, canvasEl); return; }
+    if(isPalpationActive()){ palpationPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
   canvasEl.addEventListener("pointermove", e=>{
     if(isStagingActive()){ stagingPointerMove(e, canvasEl); return; }
     if(isTourniquetActive()){ tourniquetPointerMove(e, canvasEl); return; }
+    if(isPalpationActive()){ palpationPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
   canvasEl.addEventListener("pointerup", e=>{
     if(isStagingActive()){ stagingPointerUp(e, canvasEl); return; }
     if(isTourniquetActive()){ tourniquetPointerUp(e, canvasEl); return; }
+    if(isPalpationActive()){ palpationPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -115,6 +122,7 @@ function setupInput(canvasEl){
   canvasEl.addEventListener("pointercancel", e=>{
     if(isStagingActive()) stagingPointerCancel(e, canvasEl);
     else if(isTourniquetActive()) tourniquetPointerCancel(e, canvasEl);
+    else if(isPalpationActive()) palpationPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -196,6 +204,7 @@ function animate(){
   // different scene, so there is only ever one WebGL context.
   if(isStagingActive()){ renderStaging(getRenderer(), dt); return; }
   if(isTourniquetActive()){ renderTourniquet(getRenderer(), dt); return; }
+  if(isPalpationActive()){ renderPalpation(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -449,6 +458,58 @@ function installTestSeam(){
     async limbRadiusAt(x){
       const { trackRadiusAt } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
       return trackRadiusAt(x);
+    },
+    /** The fingers' record and what they are finding right now. */
+    async palpationSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.palpation;
+      if(!s) return null;
+      const { getPalpationContext, currentTouch } = await import("./venipuncture/palpation/palpationRuntime.js");
+      const { evaluatePalpation } = await import("./venipuncture/palpation/palpationRules.js");
+      const ctx = getPalpationContext();
+      // The controls path stops the 3D scene, but the arm is still the arm —
+      // the procedure state carries its vessels so the rules can be asked
+      // about it either way.
+      const vessels = ctx ? ctx.view.arm.vessels : (ENC.collect.armVessels || []);
+      const r = evaluatePalpation(s, vessels);
+      const t = ctx ? currentTouch() : null;
+      return {
+        felt: Object.keys(s.felt), chosenId: s.chosenId, mark: s.mark,
+        everPressed: s.everPressed, peakPress: s.peakPress,
+        arteryPressed: s.arteryPressed, arteryRecognised: s.arteryRecognised,
+        nerveHurt: s.nerveHurt,
+        ready: r.ready, ideal: r.ideal,
+        blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
+        feel: t ? t.feel : null, press: t ? t.press : 0,
+        touching: t ? t.vesselId : null,
+        finger: ctx && ctx.finderPos ? { x:ctx.finderPos.x, z:ctx.finderPos.z, theta:ctx.finderPos.theta } : null,
+      };
+    },
+    /** Where a vessel actually is, to compare against where the finger landed. */
+    async vesselMidpoint(id){
+      const { getPalpationContext } = await import("./venipuncture/palpation/palpationRuntime.js");
+      const ctx = getPalpationContext();
+      if(!ctx) return null;
+      const v = ctx.view.arm.vessels.find(x=>x.id === id);
+      if(!v) return null;
+      const m = v.path[Math.floor(v.path.length/2)];
+      return { x:m.x, z:m.z, calibre:v.calibre, depth:v.depth };
+    },
+    /** Screen point over the middle of a named vessel, for driving a finger. */
+    async screenPointOverVessel(id){
+      const { getPalpationContext } = await import("./venipuncture/palpation/palpationRuntime.js");
+      const ctx = getPalpationContext();
+      if(!ctx) return null;
+      const v = ctx.view.arm.vessels.find(x=>x.id === id);
+      if(!v) return null;
+      const m = v.path[Math.floor(v.path.length/2)];
+      const r = ctx.view.arm.radiusAt(m.x);
+      const theta = Math.asin(Math.max(-1, Math.min(1, m.z/r)));
+      const p = ctx.view.limbToWorld(m.x, theta, r);
+      p.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");

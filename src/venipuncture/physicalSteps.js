@@ -39,6 +39,15 @@ import {
   applyBandProgrammatically, releaseBandProgrammatically, nudgeBand, adjustTension,
   clampBandPosition,
 } from "./tourniquet/tourniquetRuntime.js";
+import { createPalpationState, recordFeel, chooseVessel } from "./palpation/palpationState.js";
+import { evaluatePalpation, feelAt } from "./palpation/palpationRules.js";
+import { buildVessels, mirrorForArm, applyPatientVariation } from "./arm/armAnatomy.js";
+import { measurePalpation, applyPalpationOutcome } from "./palpation/palpationScoring.js";
+import { renderPalpationCoach } from "./palpation/palpationCoach.js";
+import {
+  startPalpation, stopPalpation, isPalpationActive, currentTouch,
+  markCurrentSite, unmarkSite, palpateVesselById, chooseVesselById,
+} from "./palpation/palpationRuntime.js";
 
 const ZONE_BY_NAME = { tray:ZONE.TRAY, rack:ZONE.RACK, reach:ZONE.REACH, across:ZONE.ACROSS, counter:ZONE.COUNTER };
 
@@ -87,6 +96,14 @@ export function ensureArmSession(c){
     // a dehydrated patient's veins fill less well however good the technique
     vigour: chosen.keys.indexOf("dry") >= 0 ? 0.72 : 1,
   };
+  // The vessel geometry is built here rather than only inside the 3D scene, so
+  // the rules can be asked about this arm even when no scene is running — the
+  // accessible path stops the renderer, and it still has to palpate the same
+  // arm and be judged by the same measurements.
+  c.armVessels = applyPatientVariation(
+    mirrorForArm(buildVessels(), c.arm.armSide),
+    { build: c.arm.build, scenarioKeys: c.arm.scenarioKeys, vigour: c.arm.vigour }
+  );
   return c.arm;
 }
 
@@ -104,6 +121,13 @@ export function ensureTourniquetSession(c){
   });
   if(c.encounter) c.encounter.tourniquet = c.tourniquet;
   return c.tourniquet;
+}
+
+/** The fingers' record for this encounter — created once, carried onward. */
+export function ensurePalpationSession(c){
+  if(c.palpation) return c.palpation;
+  c.palpation = createPalpationState();
+  return c.palpation;
 }
 
 export const PHYSICAL_STEPS = {
@@ -348,6 +372,114 @@ export const PHYSICAL_STEPS = {
     function cleanupOnly(){
       disposed = true;
       stopTourniquet();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
+  },
+
+  /* ---------------------------------------------------------------------------
+     PALPATE — find the vein with your fingers, on the same arm, with the same
+     band still on it. Nothing is labelled: press, and what comes back depends
+     on what is under the finger and how hard you are leaning on it.
+     ------------------------------------------------------------------------ */
+  palpate(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const palp = ensurePalpationSession(c);
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.palpationListView;
+    let disposed = false;
+    let touch = null;
+
+    const evaluate = ()=>evaluatePalpation(palp, c.armVessels || []);
+
+    function draw(result, live){
+      if(disposed) return;
+      if(live !== undefined) touch = live;
+      renderPalpationCoach(stage, {
+        state: palp,
+        result: result || evaluate(),
+        touch: touch || (isPalpationActive() ? currentTouch() : null),
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onMark: ()=>draw(markCurrentSite() || evaluate()),
+          onUnmark: ()=>draw(unmarkSite() || evaluate()),
+          onPress: (id, press)=>draw(doPress(id, press)),
+          onChoose: (id)=>draw(doChoose(id)),
+        },
+      });
+    }
+
+    // Switching to the controls tears the 3D scene down, so these cannot go
+    // through the runtime. They press the SAME vessels through the SAME
+    // feelAt(), so the same things get recorded and the same rules judge them
+    // — the accessible path is another way in, not an easier game.
+    function vesselMid(id){
+      const v = (c.armVessels || []).find(x=>x.id === id);
+      return v ? { v, m: v.path[Math.floor(v.path.length/2)] } : null;
+    }
+    function doPress(id, press){
+      if(isPalpationActive()) return palpateVesselById(id, press) || evaluate();
+      const hit = vesselMid(id);
+      if(!hit) return evaluate();
+      const p = press == null ? 0.62 : press;
+      recordFeel(palp, feelAt(c.armVessels, hit.m.x, hit.m.z, p), p, 260);
+      return evaluate();
+    }
+    function doChoose(id){
+      if(isPalpationActive()) return chooseVesselById(id) || evaluate();
+      const hit = vesselMid(id);
+      if(!hit) return evaluate();
+      chooseVessel(palp, id, { x: hit.m.x, z: hit.m.z });
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      const ctx = await startPalpation({
+        state: palp,
+        arm,
+        // the band applied in the previous step is still on this arm, and the
+        // veins it raised are the veins being felt for
+        tourniquet: c.tourniquet,
+        onChange: (result, found, press)=>draw(result, currentTouch()),
+      });
+      if(disposed){ stopPalpation(); return; }
+      if(ctx && ctx.view) c.armVessels = ctx.view.arm.vessels;
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.palpationListView = listView; saveSS();
+      if(listView){ stopPalpation(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = evaluate();
+      if(guided() && !result.ready) return;
+      const measurements = measurePalpation(palp, result, c.armVessels || []);
+      applyPalpationOutcome(c, measurements);
+      // The vein found here is the vein every later step works on.
+      c.site = { vesselId: palp.chosenId, mark: palp.mark };
+      if(c.encounter){
+        c.encounter.site = c.site;
+        c.encounter.measurements.palpation = measurements;
+      }
+      cleanupOnly();
+      advance();
+    }
+
+    function cleanupOnly(){
+      disposed = true;
+      stopPalpation();
       try{ delete document.body.dataset.staging; }catch(_){}
     }
 
