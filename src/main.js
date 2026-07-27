@@ -32,6 +32,10 @@ import {
   isStagingActive, renderStaging,
   stagingPointerDown, stagingPointerMove, stagingPointerUp, stagingPointerCancel,
 } from "./venipuncture/staging/stagingRuntime.js";
+import {
+  isTourniquetActive, renderTourniquet,
+  tourniquetPointerDown, tourniquetPointerMove, tourniquetPointerUp, tourniquetPointerCancel,
+} from "./venipuncture/tourniquet/tourniquetRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -89,16 +93,19 @@ function setupInput(canvasEl){
   // are suppressed so a pick-up gesture can never be read as a camera drag.
   canvasEl.addEventListener("pointerdown", e=>{
     if(isStagingActive()){ stagingPointerDown(e, canvasEl); return; }
+    if(isTourniquetActive()){ tourniquetPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
   canvasEl.addEventListener("pointermove", e=>{
     if(isStagingActive()){ stagingPointerMove(e, canvasEl); return; }
+    if(isTourniquetActive()){ tourniquetPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
   canvasEl.addEventListener("pointerup", e=>{
     if(isStagingActive()){ stagingPointerUp(e, canvasEl); return; }
+    if(isTourniquetActive()){ tourniquetPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -107,6 +114,7 @@ function setupInput(canvasEl){
   });
   canvasEl.addEventListener("pointercancel", e=>{
     if(isStagingActive()) stagingPointerCancel(e, canvasEl);
+    else if(isTourniquetActive()) tourniquetPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -183,9 +191,11 @@ function animate(){
   const t=clock.getElapsedTime();
   const dt=Math.min(0.05, t-(animate._last||t)); animate._last=t;
 
-  // While the learner is staging supplies, the canvas shows the supply cart
-  // instead of the room — same renderer, different scene.
+  // While the learner is working a close-up — the supply cart, or the
+  // patient's arm — the canvas shows that instead of the room. Same renderer,
+  // different scene, so there is only ever one WebGL context.
   if(isStagingActive()){ renderStaging(getRenderer(), dt); return; }
+  if(isTourniquetActive()){ renderTourniquet(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -299,6 +309,12 @@ function installTestSeam(){
         labelFields:{name:false,iddob:false,datetime:false,initials:false},
         handlingChoice:null, respondChoice:null, scores:{}, startedAt:Date.now() });
       p.site = null; p.drawEvent = null;
+      // Pin the physique too. From Phase 1b the arm is real geometry built
+      // from the patient's build, so a randomised one changes the limb's
+      // radius — and with it where a wrap lands and how far a pull travels —
+      // between runs. Fixing it here keeps a failure meaning "the mechanic
+      // broke" rather than "a bigger patient got rolled".
+      if(p.appearance){ p.appearance.width = 1; p.appearance.height = 1; }
       go("collect");
       const { ENC } = await import("./game/gameState.js");
       const idx = ENC.collect ? ENC.collect.steps.indexOf(stepId) : -1;
@@ -335,6 +351,104 @@ function installTestSeam(){
       const canvas = document.querySelector("canvas");
       const r = canvas.getBoundingClientRect();
       return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height };
+    },
+    /** The tourniquet's state and the arm's response, as the rules see them. */
+    async tourniquetSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.tourniquet;
+      if(!s) return null;
+      const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      const { evaluateTourniquet } = await import("./venipuncture/tourniquet/tourniquetRules.js");
+      const ctx = getTourniquetContext();
+      const arm = { vessels: ctx ? ctx.view.arm.vessels : [], vigour: s.vigour };
+      const r = evaluateTourniquet(s, arm);
+      return {
+        phase: s.phase, wrap: s.wrap, tuck: s.tuck, tuckedUnder: s.tuckedUnder,
+        bandX: s.bandX, skew: s.skew,
+        tension: s.tension, heldTension: s.heldTension, peakTension: s.peakTension,
+        attempts: s.attempts, restarts: s.restarts,
+        ready: r.ready, distension: r.distension, pulse: r.pulse,
+        seconds: r.seconds, heightAboveSite: r.heightAboveSite,
+        blocking: r.blocking.map(i=>i.code),
+        issues: r.issues.map(i=>i.code),
+        armDistension: ctx ? ctx.view.arm.distension : null,
+      };
+    },
+    /**
+     * The strap end's exact cylindrical angle right now — see armScene.js's
+     * pointerToLimb doc: this is the same exact reading tourniquetRuntime.js
+     * seeds a drag with, so a test can start a sweep continuously from where
+     * the pointer actually grabbed the object instead of jumping to an
+     * arbitrary angle on the first move.
+     */
+    async strapEndTheta(index){
+      const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      const ctx = getTourniquetContext();
+      if(!ctx) return null;
+      const end = ctx.strap.ends[index];
+      if(!end) return null;
+      return Math.atan2(end.position.z, end.position.y - ctx.view.ARM_Y);
+    },
+    /**
+     * Where a strap end actually is on screen right now — needed because a
+     * LOOSE tourniquet sits coiled on the bench, not on the arm's cylinder, so
+     * a test cannot compute a pick point for it from cylindrical coordinates
+     * the way it can once the band is routed.
+     */
+    async screenPointForStrapEnd(index){
+      const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      const ctx = getTourniquetContext();
+      if(!ctx) return null;
+      const end = ctx.strap.ends[index];
+      if(!end) return null;
+      const p = end.position.clone();
+      p.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+    },
+    /**
+     * Projects a point in the arm's own cylindrical coordinates to the screen,
+     * so a test can drive the wrap gesture in the same terms the runtime
+     * measures it: where along the arm, how far round it, how far off it.
+     */
+    /**
+     * Batched form of screenPointOnLimb. A wrap gesture is driven at the
+     * resolution a real continuous drag has (~90 samples); asking for those
+     * one per round trip costs more than the whole test budget, so the points
+     * are computed in a single call and replayed locally.
+     * @param {Array<[number,number,number]>} list  [x, theta, r] triples
+     */
+    async screenPointsOnLimb(list){
+      const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      const ctx = getTourniquetContext();
+      if(!ctx) return null;
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return list.map(([x, theta, r])=>{
+        const p = ctx.view.limbToWorld(x, theta, r);
+        p.project(ctx.view.camera);
+        return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+      });
+    },
+    async screenPointOnLimb(x, theta, r){
+      const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      const ctx = getTourniquetContext();
+      if(!ctx) return null;
+      const p = ctx.view.limbToWorld(x, theta, r);
+      p.project(ctx.view.camera);
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+    },
+    /**
+     * The exact radius the wrap gesture is measured against. A test has to
+     * drive the pointer at this radius, not the bare limb radius, or the
+     * offset saturates at the silhouette and the sweep is never recovered.
+     */
+    async limbRadiusAt(x){
+      const { trackRadiusAt } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      return trackRadiusAt(x);
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");

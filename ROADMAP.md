@@ -17,15 +17,16 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Other libs | GSAP 3.12, Lenis, Vanta fog — still CDN, still with `onerror` fallbacks (progressive enhancement, unchanged) |
 | 3D room | 100% hand-built primitives (`box`/`cyl`/`sph` in `rendering/materials.js`). Desk, chair, supply stand, tube rack, sharps bin |
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
-| Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`). **No arms at all** — Phase 1b |
+| Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is now a real 3D supply cart (`staging/`); the other 15 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`) and `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`); the other 14 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 15 of the 16 venipuncture steps are still the 2D DOM
-panel. Supply staging (Phase 1a, below) proved the object-interaction pipeline
-end to end; each branch after it converts one more step, in order, using the
-same pipeline.
+**The gap that remains:** 14 of the 16 venipuncture steps are still the 2D DOM
+panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
+end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
+first mechanic where the patient's body answers back. Each branch after it
+converts one more step, in order, on that same arm.
 
 ---
 
@@ -115,18 +116,74 @@ because it proves the whole object-interaction pipeline — registry → mesh �
 pick → drag → zone → shared state → rules → measurement → feedback — without
 needing new anatomy geometry first. Every branch below reuses it.
 
-## Phase 1b — The real arm
+## Phase 1b — The real arm ✅ complete (with `feature/real-tourniquet`)
 
-- A proper 3D forearm attached to the patient, resting on the chair armrest.
+- A proper 3D arm — hand, forearm, antecubital fossa, upper arm — resting on the
+  chair armrest, built procedurally in `venipuncture/arm/`.
 - **Real vein geometry** under a translucent skin layer: median cubital, cephalic,
-  basilic — plus a pulsing brachial artery and a tendon as real hazards.
-- Skin tone driven by the existing `SKIN_TONES` / `makeAppearance()`.
-- `makeSiteScenario(dl)` stops being labels and becomes **geometry**: deep veins sit
-  lower, rolling veins physically slide under pressure, small veins are thinner.
-- New `tweenCamera` "draw close-up" preset docking over the antecubital fossa.
-- See `docs/ASSET_PIPELINE.md` for which parts of the arm are procedural
-  (must be — they vary per patient and need real collision) vs. which
-  instruments become GLB assets.
+  basilic — plus a pulsing brachial artery, a tendon and the median nerve as real
+  hazards, every one of them at a real depth below the surface.
+- Skin tone and build driven by the existing `SKIN_TONES` / `makeAppearance()`.
+- `makeSiteScenario(dl)` stops being labels and becomes **geometry**: a "deep veins"
+  patient has vein polylines that genuinely sit further under the skin, a
+  dehydrated one has narrower ones. `drawArmFor()` carries that out as data.
+- A close-up scene (`arm/armScene.js`) framing the whole limb, reused by every
+  branch from here on.
+
+**The one piece of maths worth knowing about** is `pointerToLimb()`. Manipulating
+a limb is cylindrical — where along it, how far round it, how far off it — so the
+pointer is converted into exactly those numbers. The catch is that a camera
+square-on to an arm has its view direction *inside* the limb's cross-section
+plane, so that circle is seen edge-on and near side and far side land on the same
+pixels: which side of the arm your hand is on is simply not in the picture. The
+scene camera is therefore yawed along the arm (`CAM_YAW`), which gives the
+cross-section area on screen and makes the angle solvable exactly, with one 2×2
+inverse. Where that still cannot help — round the hidden underside — the code
+measures what honestly is visible (contact with the skin, distance travelled)
+rather than inferring an angle that is not there.
+
+## Phase 2a — `feature/real-tourniquet` ✅ complete
+
+The `tourniquet` step no longer exists as a 🎀 div dragged into a glowing box.
+It is a real band applied to the real arm above, as one continuous gesture, and
+then it **stays on the patient** — the same strap, carried on the encounter,
+until the release step takes it off.
+
+What it teaches, mechanically rather than by quizzing:
+
+- **Position.** Where you take the band round the arm is where it ends up,
+  measured in metres from the antecubital fossa and reported in inches. 3–4″ is
+  the window; too low is *blocked* (it is inside the field you are about to
+  clean and the hub will foul on it), too high is a warning (the veins fill
+  less well).
+- **Direction.** A band passed *underneath* the limb stays against the skin the
+  whole way round. One carried clear of the arm has been draped across the top
+  — a different, blocked application.
+- **Tension, judged by watching the arm.** Pull is a real distance, and there is
+  no meter in a scored shift. The veins physically swell — vertex displacement
+  along each vessel's own normals, so they bulge and lift toward the skin — and
+  the learner reads *that*. Overshoot and the model turns back on itself: the
+  hand visibly blanches, the radial pulse cannot be found, and the veins
+  collapse again, because arterial inflow has stopped.
+- **Sequence, with a real consequence.** Let go before the loop is tucked and
+  the band springs off and has to be re-applied; the time it was already on the
+  arm still counts.
+- **Which way the tail points.** Tucked up the arm it is clear; tucked toward
+  the site it lies across the skin about to be cleaned — blocked.
+- **The clock.** It starts when the band holds, runs through every step that
+  follows, and the sample hemoconcentrates as it does: past a minute the veins
+  themselves start to fall back.
+- **Error recovery.** Pull the tail and the band comes off, on the arm, without
+  leaving the patient — the same one-handed release the procedure uses later.
+
+Teaching mode will not start a draw on a band that is wrong and says which of
+those it is. A scored shift shows the arm and the clock and nothing else, lets
+the learner commit, and reports the measurements afterwards.
+
+Delivered alongside: `venipuncture/arm/` (Phase 1b, above), a persistent
+`tourniquetState` on the encounter, a `tourniquet` measurement category
+reporting real inches and seconds, an accessible control path that writes the
+same state through the same functions, 101 unit tests and 21 browser tests.
 
 ## Phase 2 — Real instruments
 
@@ -135,7 +192,7 @@ The DOM panel stays as the **coach layer** (tips, why-it-matters, teach mode) �
 stops being the interaction surface.
 
 Branch order (one branch each, verified and deployed before the next starts):
-`feature/real-tourniquet` → `feature/tactile-palpation` →
+~~`feature/real-tourniquet`~~ ✅ → `feature/tactile-palpation` →
 `feature/aseptic-site-cleaning` → `feature/needle-holder-assembly` →
 `feature/anchor-and-insert` → `feature/tube-collection` →
 `feature/withdraw-safety-sharps` → `feature/post-draw-care`.
@@ -143,7 +200,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 | Step | Today | Becomes |
 |---|---|---|
 | gather | ✅ **done** — a real supply cart | — |
-| tourniquet | drag a 🎀 div | route it under the arm, wrap, tension, cross, tuck, leave a releasable tail; the same strap stays in the scene until it is released after first blood |
+| tourniquet | ✅ **done** — a real band on a real arm | — |
 | palpate | tap labeled buttons | press the real arm — veins highlight under the fingertip, artery pulses back |
 | clean | drag 🧽 | scrub a real swab; coverage painted to a decal texture; real 30s dry timer |
 | assemble | div onto div | thread a real needle into a real holder (snap + click) |
