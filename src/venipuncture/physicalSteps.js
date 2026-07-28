@@ -57,7 +57,7 @@ import {
   pullCapStraight, wiggleCapOff, pullCap, placeCap, recap, touchNeedle,
   rollBevel, inspectBevel, discardUnit, warnPatient, beginUncap,
 } from "./assembly/assemblyState.js";
-import { evaluateAssembly, evaluateUncap } from "./assembly/assemblyRules.js";
+import { evaluateAssembly, evaluateUncap, bevelFromTurns } from "./assembly/assemblyRules.js";
 import {
   measureAssembly, measureUncap, applyAssemblyOutcome, applyUncapOutcome,
 } from "./assembly/assemblyScoring.js";
@@ -68,6 +68,18 @@ import {
   pullSheath, placeSheath, recapNeedle, setDownUnit, rollUnit, lookAtBevel,
   discardAndReplace, tellPatient,
 } from "./assembly/assemblyRuntime.js";
+import {
+  createInsertState, resetAnchor, anchorAt, advance as advanceNeedle,
+  markFlashIfInVein, insertInto, pullOutCompletely,
+} from "./insert/insertState.js";
+import { evaluateInsert } from "./insert/insertRules.js";
+import { measureInsert, applyInsertOutcome } from "./insert/insertScoring.js";
+import { renderInsertCoach } from "./insert/insertCoach.js";
+import {
+  startInsert, stopInsert, isInsertActive, currentInsert,
+  redoAnchor, anchorProgrammatically, insertProgrammatically,
+  advanceProgrammatically, pullOutProgrammatically, getInsertContext,
+} from "./insert/insertRuntime.js";
 import { evaluateCleaning } from "./cleaning/cleaningRules.js";
 import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
 import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
@@ -190,6 +202,38 @@ export function ensureAssemblySession(c){
   });
   if(c.encounter) c.encounter.assembly = c.needleUnit;
   return c.needleUnit;
+}
+
+/**
+ * The stick itself, created once and carried for the rest of the encounter.
+ * It works on the vein palpation marked and the needle assembly/uncap built —
+ * neither is re-chosen here, both are inherited exactly as they were left.
+ */
+export function ensureInsertSession(c){
+  if(c.insert) return c.insert;
+  const unit = ensureAssemblySession(c);
+  // Reached directly (a resumed draw, or the test seam jumping straight in)
+  // without ever finishing assembly/uncap: the same defensive fallback the
+  // uncap step itself needs, so insertion never operates on a capped or
+  // untested needle even when the earlier steps were skipped.
+  if(!unit.engaged){ peelOpen(unit); liftNeedle(unit, "sheath"); threadIn(unit, 2.5, 0); }
+  if(unit.capOn){
+    pullCapStraight(unit);
+    rollBevel(unit, -(unit.bevelDeg == null ? bevelFromTurns(unit.turns) : unit.bevelDeg));
+    inspectBevel(unit);
+    warnPatient(unit);
+  }
+  const site = c.site || {};
+  const chosenId = site.vesselId || "median-cubital";
+  let mark = site.mark;
+  if(!mark){
+    const v = (c.armVessels || []).find(x => x.id === chosenId);
+    const m = v ? v.path[Math.floor(v.path.length/2)] : { x: 0, z: 0 };
+    mark = { x: m.x, z: m.z };
+  }
+  c.insert = createInsertState({ chosenId, markX: mark.x, markZ: mark.z });
+  if(c.encounter) c.encounter.access = c.insert;
+  return c.insert;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -884,6 +928,136 @@ export const PHYSICAL_STEPS = {
     function cleanupOnly(){
       disposed = true;
       stopAssembly();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
+  },
+
+  /* ---------------------------------------------------------------------------
+     ANCHOR + INSERT — the vein palpation marked, the needle assembly built and
+     uncap uncapped, going in for real. Two sequential techniques: anchor the
+     skin with the off hand first, then carry the needle in at a real angle and
+     advance it by feel until the flash confirms the tip is in the vein.
+     ------------------------------------------------------------------------ */
+  insert(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const ins = ensureInsertSession(c);
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.insertListView;
+    let disposed = false;
+
+    const bevelDeg = ()=> c.needleUnit
+      ? (c.needleUnit.bevelDeg == null ? bevelFromTurns(c.needleUnit.turns) : c.needleUnit.bevelDeg)
+      : null;
+    const evaluate = ()=>evaluateInsert(ins, c.armVessels || [], bevelDeg());
+
+    function draw(result){
+      if(disposed) return;
+      renderInsertCoach(stage, {
+        state: ins,
+        result: result || evaluate(),
+        bevelDeg: bevelDeg(),
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onAction: (kind)=>draw(doAction(kind)),
+        },
+      });
+    }
+
+    function checkFlash(){
+      const v = (c.armVessels || []).find(x => x.id === ins.chosenId);
+      if(v) markFlashIfInVein(ins, v, Date.now());
+    }
+
+    // The controls tear the 3D scene down, so these cannot go through the
+    // runtime — but they run the SAME pure technique helpers it does, so the
+    // anchor offsets, angles and depths that come out are identical.
+    function doAction(kind){
+      if(isInsertActive()){
+        switch(kind){
+          case "anchor-ideal": return anchorProgrammatically(0.035, 0.016) || evaluate();
+          case "anchor-close": return anchorProgrammatically(0.010, 0.016) || evaluate();
+          case "anchor-far": return anchorProgrammatically(0.090, 0.016) || evaluate();
+          case "anchor-wrongside": return anchorProgrammatically(-0.020, 0.016) || evaluate();
+          case "anchor-weak": return anchorProgrammatically(0.035, 0.003) || evaluate();
+          case "redo-anchor": return redoAnchor() || evaluate();
+          case "insert-ideal": return insertProgrammatically(20, 0.006) || evaluate();
+          case "insert-shallow": return insertProgrammatically(5, 0.006) || evaluate();
+          case "insert-steep": return insertProgrammatically(45, 0.006) || evaluate();
+          case "advance": return advanceProgrammatically(0.0012) || evaluate();
+          case "retreat": return advanceProgrammatically(-0.0008) || evaluate();
+          case "pullout": return pullOutProgrammatically() || evaluate();
+          default: return evaluate();
+        }
+      }
+      switch(kind){
+        case "anchor-ideal": anchorAt(ins, ins.markX - 0.035, 0.016); break;
+        case "anchor-close": anchorAt(ins, ins.markX - 0.010, 0.016); break;
+        case "anchor-far": anchorAt(ins, ins.markX - 0.090, 0.016); break;
+        case "anchor-wrongside": anchorAt(ins, ins.markX + 0.020, 0.016); break;
+        case "anchor-weak": anchorAt(ins, ins.markX - 0.035, 0.003); break;
+        case "redo-anchor": resetAnchor(ins); break;
+        case "insert-ideal": insertInto(ins, ins.markX, ins.markZ, 20, 0.006); checkFlash(); break;
+        case "insert-shallow": insertInto(ins, ins.markX, ins.markZ, 5, 0.006); checkFlash(); break;
+        case "insert-steep": insertInto(ins, ins.markX, ins.markZ, 45, 0.006); checkFlash(); break;
+        case "advance": advanceNeedle(ins, 0.0012); checkFlash(); break;
+        case "retreat": advanceNeedle(ins, -0.0008); checkFlash(); break;
+        case "pullout": pullOutCompletely(ins); break;
+        default: break;
+      }
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      await startInsert({
+        state: ins,
+        arm,
+        tourniquet: c.tourniquet,
+        bevelDeg,
+        onChange: (result)=>draw(result),
+      });
+      if(disposed){ stopInsert(); return; }
+      const ctx = getInsertContext();
+      if(ctx && ctx.view) c.armVessels = ctx.view.arm.vessels;
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.insertListView = listView; saveSS();
+      if(listView){ stopInsert(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = evaluate();
+      // Teaching mode will not let a bad stick proceed. A scored shift lets
+      // the learner commit — the tube fill and the recap both carry whatever
+      // this step actually produced.
+      if(guided() && !result.ready) return;
+      const measurements = measureInsert(ins, result, bevelDeg());
+      applyInsertOutcome(c, measurements);
+      if(c.encounter){
+        c.encounter.access = ins;
+        c.encounter.measurements.insert = measurements;
+      }
+      cleanupOnly();
+      advance();
+    }
+
+    // Leaving the step must not pull the needle back out — it stays exactly
+    // where it landed for the fill step that follows. Only the scene disposes.
+    function cleanupOnly(){
+      disposed = true;
+      stopInsert();
       try{ delete document.body.dataset.staging; }catch(_){}
     }
 

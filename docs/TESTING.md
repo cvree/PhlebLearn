@@ -4,7 +4,7 @@ Three layers, fastest-to-slowest:
 
 | Layer | Command | What it covers |
 |---|---|---|
-| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, and every converted step's rule + scoring + technique layer (`staging/`, `tourniquet/`, `palpation/`, `cleaning/`, `assembly/`). No browser, no DOM — runs on Node's built-in test runner. |
+| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, and every converted step's rule + scoring + technique layer (`staging/`, `tourniquet/`, `palpation/`, `cleaning/`, `assembly/`, `insert/`). No browser, no DOM — runs on Node's built-in test runner. |
 | Playwright tests | `npm run test:e2e` | The production build, served via `vite preview`, driven in a real Chromium instance. |
 | Full verification | `npm run verify` | Unit tests → build → Playwright, in order. Run this before merging any phase branch. |
 
@@ -168,6 +168,33 @@ a real object rather than a widget:
 - **Scored shift**: no verdicts, no explanation, and the learner can commit
   with nothing built.
 
+## Anchor + insert browser tests (`tests/insert.e2e.spec.js`)
+
+16 tests against the production build. The unit tests (`tests/insert.spec.js`,
+28 of them) prove the rules; these prove the two gestures are real:
+
+- The old `#vpSyr` / `.vp-anglewedge` / `.vp-target` divs no longer exist.
+- Pressing below the mark and pulling further away anchors it with a real
+  offset and pull distance; pressing too close, too far, or on the wrong side
+  of the mark is each caught with its own message.
+- A natural straight carry from the ready pose to the mark lands the angle in
+  the 15–30° window and flashes — the obvious way to play it is the clean one.
+- A short, tall approach reads as too steep; a long, flat one reads as too
+  shallow — both blocked, both computed from the same fixed local basis, not
+  from screen pixels.
+- Continuing to drag forward deepens the stick; the other way eases it back;
+  far enough is a through-and-through.
+- Pulling all the way out clears the entry — including recovering mid-drag
+  from a bad approach — and a fresh line can flash cleanly.
+- An entry nowhere near the vessel does not flash, even at a depth that would
+  read as "in" some vessel if position and depth were judged separately.
+- A bevel forced back down (simulating an uncap that never got rolled up)
+  blocks an otherwise clean stick.
+- The accessible controls anchor, insert, redo a bad anchor, and advance or
+  withdraw with the 3D scene torn down, through the identical rules.
+- **Scored shift**: no verdicts, no explanation, and the learner can commit
+  with nothing anchored.
+
 ### The `?e2e=1` test seam
 
 `main.js` installs `window.__phlebTest` **only** when the URL carries `e2e=1`.
@@ -192,9 +219,15 @@ narrow screens.
 Each converted step adds its own reader and its own projector to the seam
 (`tourniquetSnapshot` / `screenPointsOnLimb`, `palpationSnapshot` /
 `screenPointOverVessel`, `cleaningSnapshot` / `screenPointOnField`,
-`assemblySnapshot` / `benchAnchors` / `screenPointsOnBench`). The rule they all
-follow: **a test drives the gesture in the same coordinates the runtime
-measures it in**, never in guessed pixels.
+`assemblySnapshot` / `benchAnchors` / `screenPointsOnBench`, `insertSnapshot` /
+`insertAnchors` / `screenPointsOnInsertLimb`). The rule they all follow: **a
+test drives the gesture in the same coordinates the runtime measures it in**,
+never in guessed pixels.
+
+`insertAnchors()` also hands back the runtime's own `readyDistal`/`readyHeight`
+constants rather than the test hardcoding a copy of them — the two drifting
+apart silently is exactly the kind of bug a passing-but-meaningless test would
+hide.
 
 `hubScreenPoint()` is the one that looks redundant and is not. Threading a
 needle is measured as the pointer's angle about the holder's hub *as drawn* —
@@ -210,6 +243,29 @@ version of the assembly suite timed out on exactly that. Straight legs go
 through one `mouse.move(x, y, { steps })` each, and a full revolution of the
 threading gesture is eight interpolated chords, which keeps every angular step
 well inside the half-turn the runtime unwraps at.
+
+**Why insert's approach needed a genuinely different fix, not just a bigger
+one.** The first version of `insert`'s angle read the pointer through the same
+live surface/cross-section solves every other step uses, continuously
+re-seeded frame to frame. Those solves are only accurate near the arm — a
+needle spends most of its approach *held clear* of it, which is exactly the
+regime their own doc comments warn degrades. Driving a synthetic drag from far
+above the skin reproduced this directly: the recovered along-arm position
+drifted tens of millimetres from the intended one and never converged, however
+many samples were fed in, because each frame's re-seed inherited the previous
+frame's error. The fix was not more samples but a different technique: fix a
+small local basis ONCE, by projecting three exactly-known world points (a
+ready pose, a 10mm step along the arm, a 10mm step up off it) through
+`toScreen()`, then solve every subsequent raw pointer position against that
+fixed basis by the same 2×2 inverse `pointerToLimb` itself uses internally.
+Forward projection of a known point has no ambiguity to begin with, so nothing
+here degrades with distance from the surface — see `insertRuntime.js`'s file
+header for the full reasoning. A second bug fell out of testing the resulting
+mechanic at all: pulling the needle all the way back out mid-drag nulled the
+basis without rebuilding it, so a single continuous gesture that carried
+straight from a bad approach into a fresh one crashed on the very next move
+event — caught only because the browser suite drives that exact recovery path
+and the unit tests, working in plain numbers, cannot.
 
 ## The 8 "urgent sequencing bugs" — what was actually wrong
 

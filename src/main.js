@@ -48,6 +48,10 @@ import {
   isAssemblyActive, renderAssembly,
   assemblyPointerDown, assemblyPointerMove, assemblyPointerUp, assemblyPointerCancel,
 } from "./venipuncture/assembly/assemblyRuntime.js";
+import {
+  isInsertActive, renderInsert,
+  insertPointerDown, insertPointerMove, insertPointerUp, insertPointerCancel,
+} from "./venipuncture/insert/insertRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -109,6 +113,7 @@ function setupInput(canvasEl){
     if(isPalpationActive()){ palpationPointerDown(e, canvasEl); return; }
     if(isCleaningActive()){ cleaningPointerDown(e, canvasEl); return; }
     if(isAssemblyActive()){ assemblyPointerDown(e, canvasEl); return; }
+    if(isInsertActive()){ insertPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -118,6 +123,7 @@ function setupInput(canvasEl){
     if(isPalpationActive()){ palpationPointerMove(e, canvasEl); return; }
     if(isCleaningActive()){ cleaningPointerMove(e, canvasEl); return; }
     if(isAssemblyActive()){ assemblyPointerMove(e, canvasEl); return; }
+    if(isInsertActive()){ insertPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -127,6 +133,7 @@ function setupInput(canvasEl){
     if(isPalpationActive()){ palpationPointerUp(e, canvasEl); return; }
     if(isCleaningActive()){ cleaningPointerUp(e, canvasEl); return; }
     if(isAssemblyActive()){ assemblyPointerUp(e, canvasEl); return; }
+    if(isInsertActive()){ insertPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -139,6 +146,7 @@ function setupInput(canvasEl){
     else if(isPalpationActive()) palpationPointerCancel(e, canvasEl);
     else if(isCleaningActive()) cleaningPointerCancel(e, canvasEl);
     else if(isAssemblyActive()) assemblyPointerCancel(e, canvasEl);
+    else if(isInsertActive()) insertPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -223,6 +231,7 @@ function animate(){
   if(isPalpationActive()){ renderPalpation(getRenderer(), dt); return; }
   if(isCleaningActive()){ renderCleaning(getRenderer(), dt); return; }
   if(isAssemblyActive()){ renderAssembly(getRenderer(), dt); return; }
+  if(isInsertActive()){ renderInsert(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -651,6 +660,91 @@ function installTestSeam(){
       const canvas = document.querySelector("canvas");
       const rect = canvas.getBoundingClientRect();
       return { x: rect.left + (v.x*0.5+0.5)*rect.width, y: rect.top + (-v.y*0.5+0.5)*rect.height };
+    },
+    /** The anchor, the stick, and the arm's own verdict on both. */
+    async insertSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.insert;
+      if(!s) return null;
+      const { evaluateInsert, ANGLE_IDEAL, BEVEL_TOLERANCE_DEG } = await import("./venipuncture/insert/insertRules.js");
+      const { bevelFromTurns } = await import("./venipuncture/assembly/assemblyRules.js");
+      const unit = ENC.collect.needleUnit;
+      const bevelDeg = unit ? (unit.bevelDeg == null ? bevelFromTurns(unit.turns) : unit.bevelDeg) : null;
+      const vessels = ENC.collect.armVessels || [];
+      const r = evaluateInsert(s, vessels, bevelDeg);
+      return {
+        chosenId: s.chosenId, markX: s.markX, markZ: s.markZ,
+        anchorSet: s.anchorSet, anchorX: s.anchorX, anchorPull: s.anchorPull,
+        anchorOffset: r.anchorOffset,
+        entryX: s.entryX, entryZ: s.entryZ, angleDeg: s.angleDeg,
+        depthM: s.depthM, peakDepthM: s.peakDepthM,
+        vesselDepthM: r.chosen ? r.chosen.depth : null,
+        vesselCalibreM: r.chosen ? r.chosen.calibre : null,
+        reapproaches: s.reapproaches, withdrawnBeforeFlash: s.withdrawnBeforeFlash,
+        flashAt: s.flashAt, bevelDeg,
+        inVein: r.inVein, through: r.through, ready: r.ready,
+        blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
+        angleIdeal: ANGLE_IDEAL, bevelToleranceDeg: BEVEL_TOLERANCE_DEG,
+      };
+    },
+    /**
+     * Forces the inherited needle unit's bevel angle — tests only, for
+     * exercising the case where uncap never got rolled up before insert
+     * inherits it. Never reachable in play.
+     */
+    async setNeedleBevelDeg(deg){
+      const { ENC } = await import("./game/gameState.js");
+      if(!ENC || !ENC.collect || !ENC.collect.needleUnit) return false;
+      ENC.collect.needleUnit.bevelDeg = deg;
+      return true;
+    },
+    /** The runtime's own live gesture state — diagnostic, mid-drag only. */
+    async insertDebug(){
+      const { getInsertContext } = await import("./venipuncture/insert/insertRuntime.js");
+      const ctx = getInsertContext();
+      if(!ctx) return null;
+      return {
+        phase: ctx.phase, down: ctx.down,
+        approachBasis: ctx.approachBasis, angleEMA: ctx.angleEMA, depthDir: ctx.depthDir,
+        lastAlong: ctx.lastAlong,
+      };
+    },
+    /** The real geometry a test needs to drive the anchor and the stick. */
+    async insertAnchors(){
+      const { getInsertContext, READY_DISTAL, READY_HEIGHT } = await import("./venipuncture/insert/insertRuntime.js");
+      const ctx = getInsertContext();
+      if(!ctx) return null;
+      return {
+        markX: ctx.state.markX, markZ: ctx.state.markZ,
+        chosenId: ctx.state.chosenId,
+        theta0: Math.asin(Math.max(-1, Math.min(1,
+          ctx.state.markZ/ctx.view.arm.radiusAt(ctx.state.markX)))),
+        readyDistal: READY_DISTAL, readyHeight: READY_HEIGHT,
+      };
+    },
+    /** The limb's real radius at a position, for computing an approach path. */
+    async insertLimbRadiusAt(x){
+      const { getInsertContext } = await import("./venipuncture/insert/insertRuntime.js");
+      const ctx = getInsertContext();
+      if(!ctx) return null;
+      return ctx.view.arm.radiusAt(x);
+    },
+    /**
+     * Batched cylindrical points (x, theta, r) → screen pixels on the insert
+     * scene, for driving the anchor pull and the needle's approach as one
+     * continuous gesture at the resolution a real drag has.
+     */
+    async screenPointsOnInsertLimb(list){
+      const { getInsertContext } = await import("./venipuncture/insert/insertRuntime.js");
+      const ctx = getInsertContext();
+      if(!ctx) return null;
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return list.map(([x, theta, r])=>{
+        const p = ctx.view.limbToWorld(x, theta, r);
+        p.project(ctx.view.camera);
+        return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+      });
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");

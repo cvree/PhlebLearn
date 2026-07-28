@@ -194,3 +194,11 @@
   .asm-val.bad{text-decoration:underline}
 }
 @media (prefers-reduced-motion:reduce){ .asm-fill,.asm-needleline{transition:none} }
+
+/* ============ INSERT — the flash callout ================================ */
+/* Everything else reuses the assembly step's .asm-* rows and controls; the
+   flash itself needs its own accent since it is the one moment worth
+   celebrating rather than just reporting.                                 */
+.ins-flash{font-size:14px;font-weight:900;color:#b3352f;letter-spacing:.2px}
+
+@media (prefers-contrast:more){ .ins-flash{text-decoration:underline} }
