@@ -7,8 +7,8 @@
     "dev": "vite --base /",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "test": "node --test tests/procedure.spec.js tests/staging.spec.js tests/tourniquet.spec.js tests/palpation.spec.js tests/cleaning.spec.js tests/assembly.spec.js",
-    "test:e2e": "playwright test tests/smoke.spec.js tests/staging.e2e.spec.js tests/tourniquet.e2e.spec.js tests/palpation.e2e.spec.js tests/cleaning.e2e.spec.js tests/assembly.e2e.spec.js",
+    "test": "node --test tests/procedure.spec.js tests/staging.spec.js tests/tourniquet.spec.js tests/palpation.spec.js tests/cleaning.spec.js tests/assembly.spec.js tests/insert.spec.js",
+    "test:e2e": "playwright test tests/smoke.spec.js tests/staging.e2e.spec.js tests/tourniquet.e2e.spec.js tests/palpation.e2e.spec.js tests/cleaning.e2e.spec.js tests/assembly.e2e.spec.js tests/insert.e2e.spec.js",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {

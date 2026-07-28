@@ -25,7 +25,7 @@ venipuncture/  (procedureState, questions, clinicalRules, steps,
                accessibilityFallback = the driver, physicalSteps,
                encounterState, and one directory per converted step:
                staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
-               assembly/*)
+               assembly/*, insert/*)
         │
 input/  (raycasting, cameraControls, pointerInput, touchInput)
         │

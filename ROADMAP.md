@@ -19,18 +19,20 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`) and `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`); the other 10 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), and `insert` is a real anchor and a real stick on that same vein (`insert/`); the other 9 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 10 of the 16 venipuncture steps are still the 2D DOM
+**The gap that remains:** 9 of the 16 venipuncture steps are still the 2D DOM
 panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
 first mechanic where the patient's body answers back; palpation (Phase 2b) is
 the first where the learner has to interpret what the body is telling them;
 cleaning (Phase 2c) is the first where the work itself is visible on the skin
 and can be undone by carelessness; the needle-and-holder unit (Phase 2d) is the
-first where one step's technique physically determines the next step's problem.
-Each branch after it converts one more step, in order, on that same arm.
+first where one step's technique physically determines the next step's problem;
+anchor and insert (Phase 2e) is the first where a mistake becomes irreversible
+the instant the skin is broken. Each branch after it converts one more step, in
+order, on that same arm.
 
 ---
 
@@ -309,6 +311,60 @@ encounter, `assembly` and `uncap` measurement categories reporting real turns,
 degrees and millimetres, an accessible control path that writes the same state
 through the same pure helpers, 35 unit tests and 19 browser tests.
 
+## Phase 2e — `feature/anchor-and-insert` ✅ complete
+
+The last of the sixteen steps to be a screen-space drag. The old `insert` read
+`atan2(dy,dx)` off raw pixels and dropped a syringe sprite onto a target box.
+It is now two sequential real gestures on the vein palpation marked, with the
+unit assembly built and uncap uncapped — anchor the skin, then carry the
+needle in and advance it by feel until the flash confirms the tip is where it
+should be.
+
+- **Anchor is a real technique, not a checkbox before the "real" step.** The
+  off hand presses an inch or two below the marked site and pulls the skin
+  taut — a real distance, judged the same way the tourniquet's tension is.
+  Too close and the thumb is in the needle's path; too far and the traction
+  barely reaches; pull the wrong way and it is not anchored at all. It can be
+  redone right up until the skin is broken.
+- **An unanchored compliant vein rolls clear of the approaching tip** — the
+  exact displacement palpation already models under a fingertip
+  (`rollOffset()`), run back through the same formula and scaled down as real
+  traction is applied. The median cubital barely rolls, which is *why* it is
+  the first-choice vein; a more compliant one genuinely needs the anchor to
+  be hit reliably.
+- **The angle is a real 3D quantity, derived without ever trusting a live
+  position far from the arm.** armScene's own solves (`pointerToLimb`,
+  `pointerToLimbSurface`) are only accurate near the skin — held at arm's
+  length they degrade exactly the way their own doc comments warn. So the
+  needle's approach instead fixes a small local basis, ONCE, by projecting
+  three exactly-known world points (a ready pose, a 10mm step along the arm,
+  a 10mm step off it) through `toScreen()` — forward projection has no
+  ambiguity to begin with. Every raw pointer position is then solved against
+  that fixed basis by the same 2×2 inverse `pointerToLimb` itself uses, just
+  evaluated against exact references instead of a continuously re-seeded live
+  one. 15–30° is the window; flatter skates over the vein, steeper drives
+  through it.
+- **A flash needs BOTH position and depth, checked together.** The first cut
+  of this rule checked them separately — a stick nowhere near the vein could
+  still read as "in" it purely because the depth number happened to line up
+  for *some* vessel. `isTrueFlash()` requires the entry to be laterally on
+  the vessel's own path *and* the depth inside its wall-to-wall band before
+  anything lights up.
+- **Depth is never shown, only reported** — continuing to advance past the
+  entry converts along-arm travel to depth by the locked angle's own
+  trigonometry, exactly as far as the geometry allows and no further, because
+  a bedside view cannot see under the skin either. Advance too far and it is
+  a through-and-through; pull all the way back out and the entry clears for a
+  genuine second attempt, counted.
+- **The bevel rides forward from uncap.** Left un-rolled, it blocks an
+  otherwise perfect stick — the one mistake in this whole procedure that only
+  becomes irreversible the moment the skin is broken.
+
+Delivered alongside: `venipuncture/insert/`, `insert` measurement category
+reporting real degrees, millimetres and a flash timestamp, an accessible
+control path exercising the identical pure state helpers, 28 unit tests and
+16 browser tests.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -318,7 +374,7 @@ stops being the interaction surface.
 Branch order (one branch each, verified and deployed before the next starts):
 ~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
 ~~`feature/aseptic-site-cleaning`~~ ✅ → ~~`feature/needle-holder-assembly`~~ ✅ →
-`feature/anchor-and-insert` → `feature/tube-collection` →
+~~`feature/anchor-and-insert`~~ ✅ → `feature/tube-collection` →
 `feature/withdraw-safety-sharps` → `feature/post-draw-care`.
 
 | Step | Today | Becomes |
@@ -329,7 +385,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 | clean | ✅ **done** — a scrubbed field on the real arm | — |
 | assemble | ✅ **done** — a real needle threaded into a real holder | — |
 | uncap | ✅ **done** — the sheath pulled along the needle's own axis | — |
-| insert | 2D angle math | **real 3D angle + depth** vs. skin normal, 15–30° window, bevel-up roll check, flashback in the real hub |
+| insert | ✅ **done** — a real anchor, a real angle, a real flash | — |
 | fill | CSS height animation | real tube fills by volume; vacuum seat has feel |
 | switch | drag tube divs | pull tubes off the **real rack** in order of draw; needle jitter is penalised |
 | release / withdraw / safety | button taps | real band snap, real withdrawal path, real shield slide |
