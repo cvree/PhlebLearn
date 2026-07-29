@@ -318,6 +318,40 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   expect(errors).toEqual([]);
 });
 
+/* ---------- what the earlier steps actually left behind ----------------------------- */
+
+test("a tube left engaged on the holder is still engaged here, and blocks", async ({ page })=>{
+  // Walked from the fill step rather than jumped to, because the point is that
+  // this step reads the collection state the learner really left — a defensive
+  // "finish anything unfinished" would have quietly done the work for them and
+  // deleted the very mistake the rule exists to catch.
+  test.slow();
+  await page.goto("./?e2e=1");
+  await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
+  await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  await page.evaluate(([t])=>window.__phlebTest.gotoProcedureStep("fill", t, "play"), [TUBES]);
+  await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
+
+  // push a tube on and deliberately leave it there
+  const colView = page.locator("#colView");
+  if(await colView.getAttribute("aria-pressed") === "false") await colView.click();
+  await page.locator('[data-col="take:lightblue"]').click();
+  await page.locator('[data-col="push-braced"]').click();
+  const col = await page.evaluate(()=>window.__phlebTest.collectionSnapshot());
+  expect(col.currentKey).toBe("lightblue");
+  expect(col.tubes[0].pierced).toBe(true);
+
+  // a scored shift lets them walk on: fill -> switch -> release -> withdraw
+  for(let i = 0; i < 3; i++){
+    await page.locator("#colReady, #wdReady").first().click();
+    await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
+  }
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalSnapshot()), null, { timeout:10000 });
+
+  const snap = await snapshot(page);
+  expect(snap.blocking).toContain("tubeStillOn");
+});
+
 /* ---------- a scored shift lets mistakes happen and stays quiet --------------------- */
 
 test("a scored shift allows an unsafe sequence and says nothing until after", async ({ page })=>{

@@ -338,12 +338,17 @@ export function ensureWithdrawalSession(c){
   }
   const ins = ensureInsertSession(c);
   const col = ensureCollectionSession(c);
-  // The same defensive fallback the earlier ensure* functions use: jumped
-  // straight here, the tubes were collected off-screen. A collection that
-  // DID happen keeps exactly what it produced, short draws and all.
-  for(const key of col.order){
-    const t = col.tubes[key];
-    if(!t || !t.removedAt) collectTubeCleanly(col, key, { tourniquetOn: true });
+  // The same defensive fallback the earlier ensure* functions use, and with
+  // the same strict condition: only when the collection step genuinely never
+  // ran — no tube was ever so much as picked up — were the tubes filled
+  // off-screen. A collection that DID happen keeps exactly what it produced.
+  // That distinction matters: a learner who left a tube still engaged on the
+  // holder must arrive here with it still engaged, because "there is a tube
+  // on the holder" is precisely what the withdrawal rules have to catch. A
+  // blanket "finish anything unfinished" would quietly do the work for them
+  // and delete the mistake.
+  if(col.takenSequence.length === 0){
+    for(const key of col.order) collectTubeCleanly(col, key, { tourniquetOn: true });
   }
   const gauzeDef = stagedDef(c, CATEGORY.GAUZE);
   const binId = c.encounter ? stagedSharpsId(c.encounter) : null;
