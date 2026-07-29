@@ -1,0 +1,443 @@
+/* =========================================================================
+   Withdraw, safety and sharps — browser acceptance tests against the
+   PRODUCTION build.
+
+   The unit tests prove the rules; these prove the steps are real: that the
+   band comes off by a pull on its actual tail, that the needle is drawn back
+   out along the line it went in by a real gesture, that the safety shield is
+   a thing the pointer physically slides until it locks, and that the sharp
+   ends up inside a real container — or is refused by the trash.
+   ========================================================================= */
+import { test, expect } from "@playwright/test";
+
+const ALLOWLISTED_WARNINGS = [
+  /THREE\.Clock: This module has been deprecated/,
+  /THREE\.WebGLShadowMap: PCFSoftShadowMap has been deprecated/,
+  /GL Driver Message/,
+];
+
+function attachDiagnostics(page){
+  const errors = [];
+  page.on("pageerror", err=>errors.push(`pageerror: ${err.message}`));
+  page.on("console", msg=>{
+    if(msg.type()!=="error" && msg.type()!=="warning") return;
+    const t = msg.text();
+    if(ALLOWLISTED_WARNINGS.some(re=>re.test(t))) return;
+    errors.push(`console.${msg.type()}: ${t}`);
+  });
+  return errors;
+}
+
+const TUBES = ["lightblue","lavender"];
+
+async function open(page, mode, step){
+  await page.goto("./?e2e=1");
+  await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
+  await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m),
+    [step || "release", TUBES, mode || "teach"]);
+  await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
+}
+
+const snapshot = page=>page.evaluate(()=>window.__phlebTest.withdrawalSnapshot());
+const anchors = page=>page.evaluate(()=>window.__phlebTest.withdrawalAnchors());
+
+/** Pulls the band's tail free — a real travel, not a button. */
+async function pullTail(page){
+  const a = await anchors(page);
+  await page.mouse.move(a.tail.x, a.tail.y);
+  await page.mouse.down();
+  await page.mouse.move(a.tail.x + 90, a.tail.y - 70, { steps: 18 });
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+}
+
+/** Carries the gauze from the bench to rest by the site. */
+async function gauzeToSite(page){
+  const a = await anchors(page);
+  await page.mouse.move(a.gauze.x, a.gauze.y);
+  await page.mouse.down();
+  await page.mouse.move(a.site.x, a.site.y, { steps: 24 });
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+}
+
+/** Draws the needle `mm` millimetres OUT along its own entry line. */
+async function withdrawDrag(page, mm, sideMm){
+  const a = await anchors(page);
+  const sx = a.sidePx ? a.sidePx.dx*(sideMm || 0)/10 : 0;
+  const sy = a.sidePx ? a.sidePx.dy*(sideMm || 0)/10 : 0;
+  await page.mouse.move(a.hub.x, a.hub.y);
+  await page.mouse.down();
+  await page.mouse.move(a.hub.x + a.outPx.dx*mm/10 + sx, a.hub.y + a.outPx.dy*mm/10 + sy, { steps: 26 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+}
+
+/** Slides the safety shield `mm` millimetres forward along the needle. */
+async function shieldSlide(page, mm){
+  const a = await anchors(page);
+  await page.mouse.move(a.shield.x, a.shield.y);
+  await page.mouse.down();
+  await page.mouse.move(a.shield.x + a.inPx.dx*mm/10, a.shield.y + a.inPx.dy*mm/10, { steps: 20 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+}
+
+/**
+ * Switches to the accessible controls. The preference PERSISTS across steps
+ * (it is a saved setting, not per-screen state), so a test walking several
+ * steps must not blindly click the toggle again — the second click would turn
+ * the controls back off.
+ */
+async function useControls(page){
+  const toggle = page.locator("#wdView");
+  if(await toggle.getAttribute("aria-pressed") === "false") await toggle.click();
+  await expect(page.locator(".asm-controls")).toBeVisible();
+}
+
+/** Carries the unit from wherever it is to a destination anchor. */
+async function carryUnitTo(page, dest){
+  const a = await anchors(page);
+  await page.mouse.move(a.hub.x, a.hub.y);
+  await page.mouse.down();
+  await page.mouse.move(a[dest].x, a[dest].y, { steps: 26 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+}
+
+/* ---------- release: the band comes off by its own tail --------------------------- */
+
+test("release is the real band's real tail, not a button", async ({ page })=>{
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "release");
+  // the old 2D screen is gone
+  await expect(page.locator(".vp-tqtimer")).toHaveCount(0);
+  await expect(page.locator("#vpAct")).toHaveCount(0);
+
+  const snap = await snapshot(page);
+  expect(snap.bandOnPatient).toBe(true);
+  expect(snap.bandReleasedAt).toBeNull();
+  const a = await anchors(page);
+  expect(a.tail).not.toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test("pulling the tail releases the band, and the clock it stops is the band's own", async ({ page })=>{
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "release");
+  await expect(page.locator("#wdReady")).toBeDisabled();
+  await pullTail(page);
+
+  const snap = await snapshot(page);
+  expect(snap.bandOnPatient).toBe(false);
+  expect(snap.bandReleasedAt).not.toBeNull();
+  expect(snap.tourniquetSecondsAtRelease).toBeGreaterThan(0);
+  expect(snap.collectionDoneAtRelease).toBe(true);
+  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expect(page.locator('[data-live="band"]')).toHaveText("off");
+  expect(errors).toEqual([]);
+});
+
+test("the coach patches the band's ticking clock rather than re-rendering", async ({ page })=>{
+  await open(page, "teach", "release");
+  await page.evaluate(()=>{ document.querySelector("#wdReady").dataset.probe = "1"; });
+  await page.waitForTimeout(1200);
+  const kept = await page.evaluate(()=>document.querySelector("#wdReady").dataset.probe);
+  expect(kept).toBe("1");
+  await expect(page.locator('[data-live="band"]')).toContainText("on —");
+});
+
+/* ---------- withdraw: gauze ready, then out along the line ------------------------ */
+
+test("gauze is carried from the bench and rests by the site, without pressure", async ({ page })=>{
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "withdraw");
+  await pullTail(page);
+  await gauzeToSite(page);
+
+  const snap = await snapshot(page);
+  expect(snap.gauzeTaken).toBe(true);
+  expect(snap.gauzePlaced).toBe(true);
+  expect(snap.gauzeOffsetM).toBeLessThan(0.02);
+  expect(snap.gauzePressedEarly).toBe(false);
+  expect(snap.withdrawn).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("a smooth pull along the entry line brings the needle out cleanly", async ({ page })=>{
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "withdraw");
+  await pullTail(page);
+  await gauzeToSite(page);
+  await expect(page.locator("#wdReady")).toBeDisabled();
+  await withdrawDrag(page, 30);
+
+  const snap = await snapshot(page);
+  expect(snap.withdrawn).toBe(true);
+  expect(snap.depthM).toBe(0);
+  expect(snap.exitDeviationDeg).toBeLessThan(12);
+  expect(snap.gauzeReadyAtWithdraw).toBe(true);
+  expect(snap.tourniquetOnAtWithdraw).toBe(false);
+  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expect(page.locator('[data-live="depth"]')).toHaveText("out");
+  expect(errors).toEqual([]);
+});
+
+test("a sideways exit is measured in degrees off the entry line, not a boolean", async ({ page })=>{
+  await open(page, "teach", "withdraw");
+  await pullTail(page);
+  await gauzeToSite(page);
+  await withdrawDrag(page, 30, 9);   // 9mm of sideways lever on the way out
+
+  const snap = await snapshot(page);
+  expect(snap.withdrawn).toBe(true);
+  expect(snap.exitDeviationDeg).toBeGreaterThan(5);
+  expect(snap.exitLateralM).toBeGreaterThan(0.002);
+});
+
+test("teaching mode holds the withdraw step until the band is off first", async ({ page })=>{
+  await open(page, "teach", "withdraw");
+  const snap = await snapshot(page);
+  expect(snap.bandOnPatient).toBe(true);
+  expect(snap.issues).toContain("bandStillOn");
+  // the tail is still grabbable IN the withdraw step — it is the same arm
+  const a = await anchors(page);
+  expect(a.tail).not.toBeNull();
+});
+
+/* ---------- safety: the mechanism is a thing the pointer operates ------------------- */
+
+test("the shield slides forward for real and locks at full travel, in the hand", async ({ page })=>{
+  // the whole release-and-withdraw sequence before the shield is even reachable
+  test.slow();
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "safety");
+  await pullTail(page);
+  await gauzeToSite(page);
+  await withdrawDrag(page, 30);
+
+  let snap = await snapshot(page);
+  expect(snap.withdrawn).toBe(true);
+  expect(snap.safetyLocked).toBe(false);
+  await expect(page.locator("#wdReady")).toBeDisabled();
+
+  await shieldSlide(page, 12);      // part-way: nothing locks
+  snap = await snapshot(page);
+  expect(snap.safetyTravel).toBeGreaterThan(0.1);
+  expect(snap.safetyLocked).toBe(false);
+
+  await shieldSlide(page, 30);      // carried through: it clicks
+  snap = await snapshot(page);
+  expect(snap.safetyLocked).toBe(true);
+  expect(snap.surfaceActivated).toBe(false);
+  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expect(page.locator('[data-live="safety"]')).toHaveText("locked");
+  expect(errors).toEqual([]);
+});
+
+/* ---------- dispose: into the container, whole, and nowhere else -------------------- */
+
+test("the unit is carried into the sharps container and is gone", async ({ page })=>{
+  test.slow();
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "dispose");
+  await pullTail(page);
+  await gauzeToSite(page);
+  await withdrawDrag(page, 30);
+  await shieldSlide(page, 40);
+  await expect(page.locator("#wdReady")).toBeDisabled();
+  await carryUnitTo(page, "sharps");
+
+  const snap = await snapshot(page);
+  expect(snap.disposed).toBe(true);
+  expect(snap.disposedFully).toBe(true);
+  expect(snap.safetyEngagedAtDispose).toBe(true);
+  expect(snap.trashAttempts).toBe(0);
+  await expect(page.locator("#wdReady")).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test("the trash refuses the sharp, and the sharps container still completes it", async ({ page })=>{
+  // two full carries on top of the whole withdraw-and-shield sequence
+  test.slow();
+  await open(page, "teach", "dispose");
+  await pullTail(page);
+  await gauzeToSite(page);
+  await withdrawDrag(page, 30);
+  await shieldSlide(page, 40);
+  await carryUnitTo(page, "trash");
+
+  let snap = await snapshot(page);
+  expect(snap.disposed).toBe(false);
+  expect(snap.trashAttempts).toBe(1);
+  expect(snap.blocking).toContain("trashAttempted");
+  await expect(page.locator(".stg-msg")).toContainText("sharps container");
+
+  await carryUnitTo(page, "sharps");
+  snap = await snapshot(page);
+  expect(snap.disposed).toBe(true);
+});
+
+/* ---------- the whole sequence, end to end ------------------------------------------ */
+
+test("the four steps hand one continuous piece of work forward", async ({ page })=>{
+  // the entire post-draw sequence, through all four steps, in one run
+  test.slow();
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "release");
+  await pullTail(page);
+  await page.locator("#wdReady").click();
+
+  // withdraw inherits the released band
+  await expect(page.locator(".asm-coach")).toBeVisible();
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
+  let snap = await snapshot(page);
+  expect(snap.bandOnPatient).toBe(false);
+  await gauzeToSite(page);
+  await withdrawDrag(page, 30);
+  await page.locator("#wdReady").click();
+
+  // safety inherits the withdrawn needle
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
+  snap = await snapshot(page);
+  expect(snap.withdrawn).toBe(true);
+  await shieldSlide(page, 40);
+  await page.locator("#wdReady").click();
+
+  // dispose inherits the locked shield
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
+  snap = await snapshot(page);
+  expect(snap.safetyLocked).toBe(true);
+  await carryUnitTo(page, "sharps");
+  await page.locator("#wdReady").click();
+
+  // and the next step is pressure — the 2D fallback, still to be converted
+  await expect(page.locator("#vpPress")).toBeVisible({ timeout: 10000 });
+  expect(errors).toEqual([]);
+});
+
+/* ---------- what the earlier steps actually left behind ----------------------------- */
+
+test("a tube left engaged on the holder is still engaged here, and blocks", async ({ page })=>{
+  // Walked from the fill step rather than jumped to, because the point is that
+  // this step reads the collection state the learner really left — a defensive
+  // "finish anything unfinished" would have quietly done the work for them and
+  // deleted the very mistake the rule exists to catch.
+  test.slow();
+  await page.goto("./?e2e=1");
+  await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
+  await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  await page.evaluate(([t])=>window.__phlebTest.gotoProcedureStep("fill", t, "play"), [TUBES]);
+  await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
+
+  // push a tube on and deliberately leave it there
+  const colView = page.locator("#colView");
+  if(await colView.getAttribute("aria-pressed") === "false") await colView.click();
+  await page.locator('[data-col="take:lightblue"]').click();
+  await page.locator('[data-col="push-braced"]').click();
+  const col = await page.evaluate(()=>window.__phlebTest.collectionSnapshot());
+  expect(col.currentKey).toBe("lightblue");
+  expect(col.tubes[0].pierced).toBe(true);
+
+  // a scored shift lets them walk on: fill -> switch -> release -> withdraw
+  for(let i = 0; i < 3; i++){
+    await page.locator("#colReady, #wdReady").first().click();
+    await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
+  }
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalSnapshot()), null, { timeout:10000 });
+
+  const snap = await snapshot(page);
+  expect(snap.blocking).toContain("tubeStillOn");
+});
+
+/* ---------- a scored shift lets mistakes happen and stays quiet --------------------- */
+
+test("a scored shift allows an unsafe sequence and says nothing until after", async ({ page })=>{
+  await open(page, "play", "withdraw");
+  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  await expect(page.locator("#wdReady")).toBeEnabled();
+  // withdraw with the band still on — allowed, recorded
+  await gauzeToSite(page);
+  await withdrawDrag(page, 30);
+
+  const snap = await snapshot(page);
+  expect(snap.withdrawn).toBe(true);
+  expect(snap.tourniquetOnAtWithdraw).toBe(true);
+  expect(snap.blocking).toContain("withdrewUnderPressure");
+  // and the coach still names nothing
+  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+});
+
+/* ---------- the accessible path ------------------------------------------------------ */
+
+test("the controls path runs the whole sequence through the same rules", async ({ page })=>{
+  test.slow();
+  const errors = attachDiagnostics(page);
+  await open(page, "teach", "release");
+  await useControls(page);
+  await page.locator('[data-wd="fist"]').click();
+  await page.locator('[data-wd="release"]').click();
+  let snap = await snapshot(page);
+  expect(snap.bandOnPatient).toBe(false);
+  expect(snap.fistRelaxed).toBe(true);
+  await page.locator("#wdReady").click();
+
+  await expect(page.locator(".asm-coach")).toBeVisible();
+  await useControls(page);
+  await page.locator('[data-wd="gauze-take"]').click();
+  await page.locator('[data-wd="gauze-place"]').click();
+  await page.locator('[data-wd="withdraw-smooth"]').click();
+  snap = await snapshot(page);
+  expect(snap.withdrawn).toBe(true);
+  expect(snap.gauzeReadyAtWithdraw).toBe(true);
+  await page.locator("#wdReady").click();
+
+  await useControls(page);
+  await page.locator('[data-wd="safety-hand"]').click();
+  snap = await snapshot(page);
+  expect(snap.safetyLocked).toBe(true);
+  expect(snap.surfaceActivated).toBe(false);
+  await page.locator("#wdReady").click();
+
+  await useControls(page);
+  await page.locator('[data-wd="dispose-sharps"]').click();
+  snap = await snapshot(page);
+  expect(snap.disposed).toBe(true);
+  expect(snap.disposedFully).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("the controls path is not an easier game — the three classic stories all count", async ({ page })=>{
+  await open(page, "teach", "safety");
+  await useControls(page);
+  await page.locator('[data-wd="release"]').click();
+  await page.locator('[data-wd="gauze-take"]').click();
+  await page.locator('[data-wd="gauze-place"]').click();
+  await page.locator('[data-wd="withdraw-smooth"]').click();
+  await page.locator('[data-wd="recap"]').click();
+  await page.locator('[data-wd="setdown"]').click();
+  await page.locator('[data-wd="safety-surface"]').click();
+
+  const snap = await snapshot(page);
+  expect(snap.recapAttempted).toBe(true);
+  expect(snap.exposedSetDown).toBe(true);
+  expect(snap.surfaceActivated).toBe(true);
+  expect(snap.blocking).toEqual(expect.arrayContaining([
+    "recapAttempted", "exposedSetDown", "struckOnSurface",
+  ]));
+});
+
+test("pressing the gauze down early is recorded through the controls too", async ({ page })=>{
+  await open(page, "teach", "withdraw");
+  await useControls(page);
+  await page.locator('[data-wd="release"]').click();
+  await page.locator('[data-wd="gauze-take"]').click();
+  await page.locator('[data-wd="gauze-place"]').click();
+  await page.locator('[data-wd="gauze-press"]').click();
+
+  const snap = await snapshot(page);
+  expect(snap.gauzePressedEarly).toBe(true);
+  expect(snap.issues).toContain("pressedTooSoon");
+});

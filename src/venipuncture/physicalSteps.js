@@ -25,11 +25,11 @@ import {
   startStaging, stopStaging, isStagingActive, syncStagingFromState,
   stageItemTo, inspectItemById, returnItemToShelf,
 } from "./staging/stagingRuntime.js";
-import { stagedItemId } from "./encounterState.js";
+import { stagedItemId, stagedSharpsId } from "./encounterState.js";
 import { CATEGORY } from "./staging/supplyCatalog.js";
 import {
   createTourniquetState, markRouted, setTension, markCrossed, markSecured, markUnravelled,
-  isSecured, secondsOn as tqSecondsOn,
+  markReleased, isSecured, isOnPatient, secondsOn as tqSecondsOn, WRAP, TUCK,
 } from "./tourniquet/tourniquetState.js";
 import { evaluateTourniquet } from "./tourniquet/tourniquetRules.js";
 import { measureTourniquet, applyTourniquetOutcome } from "./tourniquet/tourniquetScoring.js";
@@ -83,6 +83,7 @@ import {
 import {
   createCollectionState, takeTube, returnTube, discardTube,
   backOffToGuideline, pushOn, removeTube, flow as flowTube, GRIP,
+  collectTubeCleanly,
 } from "./collection/collectionState.js";
 import { evaluateCollection } from "./collection/collectionRules.js";
 import { measureCollection, applyCollectionOutcome } from "./collection/collectionScoring.js";
@@ -93,6 +94,22 @@ import {
   removeTubeProgrammatically, returnTubeProgrammatically, discardTubeProgrammatically,
   waitProgrammatically, getCollectionContext,
 } from "./collection/collectionRuntime.js";
+import { evaluateWithdrawal, modeReady as withdrawalModeReady, DEVICE } from "./withdrawal/withdrawalRules.js";
+import {
+  createWithdrawalState, relaxFist, markBandReleased,
+  takeGauze, placeGauze, withdrawSmoothly, withdrawRoughly,
+  slideSafety, activateSafetyCleanly, attemptRecap, setDownUnit as wdSetDownUnit,
+  disposeUnit, markCrossedPatient,
+} from "./withdrawal/withdrawalState.js";
+import { measureWithdrawal, applyWithdrawalOutcome } from "./withdrawal/withdrawalScoring.js";
+import { renderWithdrawalCoach } from "./withdrawal/withdrawalCoach.js";
+import {
+  startWithdrawal, stopWithdrawal, isWithdrawalActive,
+  relaxFistProgrammatically, releaseBandProgrammatically as wdReleaseBand,
+  takeGauzeProgrammatically, placeGauzeProgrammatically, withdrawProgrammatically,
+  slideSafetyProgrammatically, recapProgrammatically, setDownProgrammatically,
+  disposeProgrammatically,
+} from "./withdrawal/withdrawalRuntime.js";
 import { evaluateCleaning } from "./cleaning/cleaningRules.js";
 import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
 import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
@@ -293,6 +310,64 @@ export function ensureCollectionSession(c){
 /** Seconds the band has been on the arm, for this step's own measurements. */
 function tourniquetSecondsFor(c){
   return c.tourniquet ? tqSecondsOn(c.tourniquet) : null;
+}
+
+/**
+ * The end of the draw as one piece of work — created once and carried across
+ * the release, withdraw, safety and dispose steps, exactly as the collection
+ * state is carried across fill and switch.
+ *
+ * Everything it needs is inherited, never re-chosen: the band is the strap
+ * the tourniquet step secured, the entry line is the one insert fixed when
+ * the skin was broken, the gauze and the sharps container are the ones the
+ * learner actually staged back at the cart.
+ */
+export function ensureWithdrawalSession(c){
+  if(c.withdrawal) return c.withdrawal;
+  ensureArmSession(c);
+  const tq = ensureTourniquetSession(c);
+  // Reached directly (a resumed draw, or the test seam jumping straight in)
+  // with a band that was never applied at all: one was applied off-screen —
+  // but a band the learner genuinely took off early stays off, because that
+  // is a real state of the arm, not a gap.
+  if(tq.attempts === 0 && !tq.releasedAt){
+    markRouted(tq, { bandX: 0.089, wrap: WRAP.UNDER, skew: 0 });
+    setTension(tq, 0.55);
+    markCrossed(tq);
+    markSecured(tq, { tuck: TUCK.PROXIMAL, tuckedUnder: true });
+  }
+  const ins = ensureInsertSession(c);
+  const col = ensureCollectionSession(c);
+  // The same defensive fallback the earlier ensure* functions use, and with
+  // the same strict condition: only when the collection step genuinely never
+  // ran — no tube was ever so much as picked up — were the tubes filled
+  // off-screen. A collection that DID happen keeps exactly what it produced.
+  // That distinction matters: a learner who left a tube still engaged on the
+  // holder must arrive here with it still engaged, because "there is a tube
+  // on the holder" is precisely what the withdrawal rules have to catch. A
+  // blanket "finish anything unfinished" would quietly do the work for them
+  // and delete the mistake.
+  if(col.takenSequence.length === 0){
+    for(const key of col.order) collectTubeCleanly(col, key, { tourniquetOn: true });
+  }
+  const gauzeDef = stagedDef(c, CATEGORY.GAUZE);
+  const binId = c.encounter ? stagedSharpsId(c.encounter) : null;
+  c.withdrawal = createWithdrawalState({
+    device: DEVICE.STRAIGHT,
+    angleDeg: ins.angleDeg == null ? 20 : ins.angleDeg,
+    depthDir: ins.depthDir,
+    entryX: ins.entryX == null ? ins.markX : ins.entryX,
+    entryZ: ins.entryZ == null ? ins.markZ : ins.entryZ,
+    depthM: Math.max(0.002, (ins.depthM || 0) + (col.needleDeeperM || 0)),
+    vessel: col.vessel,
+    inVein: col.inVein && !col.needleOut,
+    gauze: gauzeDef
+      ? { itemId: gauzeDef.id, clean: !(gauzeDef.flaws && gauzeDef.flaws.length) }
+      : { itemId: null, clean: true },
+    bin: { itemId: binId, available: !!binId },
+  });
+  if(c.encounter) c.encounter.disposal = c.withdrawal;
+  return c.withdrawal;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -1141,7 +1216,212 @@ export const PHYSICAL_STEPS = {
   switch(c, stage, advance){
     return runCollection(c, stage, advance, "switch");
   },
+
+  /* ---------------------------------------------------------------------------
+     RELEASE — the band comes off by its own tail, before the needle moves,
+     with the free hand steadied so the holder stays still. The strap being
+     pulled is the SAME strap the tourniquet step secured; the clock being
+     stopped is the clock that step started.
+     ------------------------------------------------------------------------ */
+  release(c, stage, advance){
+    return runWithdrawal(c, stage, advance, "release");
+  },
+
+  /* ---------------------------------------------------------------------------
+     WITHDRAW — gauze rested above the site first, then the needle drawn back
+     out along the very line the insert step fixed when the skin was broken.
+     The exit path, its speed and its sideways drift are all measured.
+     ------------------------------------------------------------------------ */
+  withdraw(c, stage, advance){
+    return runWithdrawal(c, stage, advance, "withdraw");
+  },
+
+  /* ---------------------------------------------------------------------------
+     SAFETY — the device's own mechanism, operated in the hand, immediately.
+     Striking it on the bench, recapping, or laying an exposed used sharp
+     down are each recorded as themselves.
+     ------------------------------------------------------------------------ */
+  safety(c, stage, advance){
+    return runWithdrawal(c, stage, advance, "safety");
+  },
+
+  /* ---------------------------------------------------------------------------
+     DISPOSE — the whole unit carried straight into the sharps container the
+     learner staged within reach, without crossing back over the patient.
+     ------------------------------------------------------------------------ */
+  dispose(c, stage, advance){
+    return runWithdrawal(c, stage, advance, "dispose");
+  },
 };
+
+/* ===========================================================================
+   WITHDRAW, SAFETY AND SHARPS — shared by the release, withdraw, safety and
+   dispose steps.
+
+   They differ in exactly one thing: when they are finished. The rules, the
+   measurements and the gestures are one continuous piece of work on the same
+   arm, exactly as fill and switch are.
+   ======================================================================== */
+function runWithdrawal(c, stage, advance, mode){
+  const arm = ensureArmSession(c);
+  const wd = ensureWithdrawalSession(c);
+  const canRender3d = !!getRenderer();
+  let listView = !canRender3d || !!SS.withdrawalListView;
+  let disposed = false;
+
+  const liveCtx = ()=>({
+    tourniquetReleased: !c.tourniquet || !isOnPatient(c.tourniquet),
+    tourniquetOn: !!(c.tourniquet && c.tourniquet.securedAt && !c.tourniquet.releasedAt),
+    tourniquetSeconds: tourniquetSecondsFor(c),
+    collectionDone: !c.collection
+      || (c.collection.order || []).every(k => c.collection.tubes[k] && c.collection.tubes[k].removedAt),
+    tubeOnHolder: !!(c.collection && c.collection.currentKey),
+  });
+  const evaluate = ()=>evaluateWithdrawal(wd, liveCtx());
+
+  function draw(result){
+    if(disposed) return;
+    const lc = liveCtx();
+    renderWithdrawalCoach(stage, {
+      state: wd,
+      result: result || evaluate(),
+      mode,
+      ready: withdrawalModeReady(wd, lc, mode),
+      live: lc,
+      guided: guided(),
+      listView, canRender3d,
+      handlers: {
+        onReady: finish,
+        onToggleView: toggleView,
+        onAction: (kind)=>draw(doAction(kind)),
+      },
+    });
+  }
+
+  /** The release itself: the same state change on the same strap, both paths. */
+  function releaseNow(){
+    if(isWithdrawalActive()) return wdReleaseBand() || evaluate();
+    const lc = liveCtx();
+    markBandReleased(wd, {
+      byTail: true,
+      collectionDone: lc.collectionDone,
+      tourniquetSeconds: lc.tourniquetSeconds == null ? null : Math.round(lc.tourniquetSeconds*10)/10,
+    });
+    if(c.tourniquet && isOnPatient(c.tourniquet)) markReleased(c.tourniquet, { byTail: true });
+    return evaluate();
+  }
+
+  // The controls tear the 3D scene down, so these cannot go through the
+  // runtime — but they run the SAME pure technique helpers it does, so the
+  // timings, angles and destinations that come out are identical.
+  function doAction(kind){
+    const live = isWithdrawalActive();
+    const wdCtx = ()=>({ tubeOn: liveCtx().tubeOnHolder, tourniquetOn: liveCtx().tourniquetOn });
+    switch(kind){
+      case "fist":
+        if(live) return relaxFistProgrammatically() || evaluate();
+        relaxFist(wd); break;
+      case "release":
+        return releaseNow();
+      case "gauze-take":
+        if(live) return takeGauzeProgrammatically() || evaluate();
+        takeGauze(wd, { itemId: wd.gauzeItemId, clean: wd.gauzeClean }); break;
+      case "gauze-place":
+        if(live) return placeGauzeProgrammatically(0.012, false) || evaluate();
+        placeGauze(wd, { offsetM: 0.012, pressing: false }); break;
+      case "gauze-press":
+        if(live) return placeGauzeProgrammatically(0.004, true) || evaluate();
+        placeGauze(wd, { offsetM: 0.004, pressing: true }); break;
+      case "withdraw-smooth":
+        if(live) return withdrawProgrammatically("smooth") || evaluate();
+        withdrawSmoothly(wd, wdCtx()); break;
+      case "withdraw-rough":
+        if(live) return withdrawProgrammatically("rough") || evaluate();
+        withdrawRoughly(wd, wdCtx()); break;
+      case "safety-hand":
+        if(live) return slideSafetyProgrammatically("hand") || evaluate();
+        activateSafetyCleanly(wd); break;
+      case "safety-partial":
+        if(live) return slideSafetyProgrammatically("partial") || evaluate();
+        slideSafety(wd, 0.5); break;
+      case "safety-surface":
+        if(live) return slideSafetyProgrammatically("surface") || evaluate();
+        slideSafety(wd, 1.001, { surface: true }); break;
+      case "recap":
+        if(live) return recapProgrammatically() || evaluate();
+        attemptRecap(wd); break;
+      case "setdown":
+        if(live) return setDownProgrammatically() || evaluate();
+        wdSetDownUnit(wd); break;
+      case "dispose-sharps":
+        if(live) return disposeProgrammatically("sharps") || evaluate();
+        disposeUnit(wd, { target: "sharps", fully: true }); break;
+      case "dispose-crossed":
+        if(live) return disposeProgrammatically("sharps", { crossed: true }) || evaluate();
+        markCrossedPatient(wd);
+        disposeUnit(wd, { target: "sharps", fully: true, crossedPatient: true }); break;
+      case "dispose-trash":
+        if(live) return disposeProgrammatically("trash") || evaluate();
+        disposeUnit(wd, { target: "trash" }); break;
+      default: break;
+    }
+    return evaluate();
+  }
+
+  async function launch3d(){
+    if(!canRender3d || listView || disposed) return;
+    await startWithdrawal({
+      mode,
+      state: wd,
+      arm,
+      insert: c.insert,
+      collection: c.collection,
+      tourniquet: c.tourniquet,
+      guided: guided(),
+      onChange: (result)=>draw(result),
+    });
+    if(disposed){ stopWithdrawal(); return; }
+    draw();
+  }
+
+  function toggleView(){
+    listView = !listView;
+    SS.withdrawalListView = listView; saveSS();
+    if(listView){ stopWithdrawal(); draw(); }
+    else launch3d().then(()=>draw());
+  }
+
+  function finish(){
+    const lc = liveCtx();
+    if(guided() && !withdrawalModeReady(wd, lc, mode)) return;
+    const measurements = measureWithdrawal(wd, evaluate(), {
+      tourniquetSeconds: wd.tourniquetSecondsAtRelease == null
+        ? lc.tourniquetSeconds : wd.tourniquetSecondsAtRelease,
+      tourniquetReleased: lc.tourniquetReleased,
+    });
+    applyWithdrawalOutcome(c, measurements);
+    if(c.encounter){
+      c.encounter.disposal = wd;
+      c.encounter.measurements.withdrawal = measurements;
+    }
+    cleanupOnly();
+    advance();
+  }
+
+  // Leaving a step must not undo the arm: the band stays off once pulled, the
+  // unit stays wherever it physically is. Only the scene is torn down — the
+  // next step of the same sequence rebuilds it around the same state.
+  function cleanupOnly(){
+    disposed = true;
+    stopWithdrawal();
+    try{ delete document.body.dataset.staging; }catch(_){}
+  }
+
+  try{ document.body.dataset.staging = "on"; }catch(_){}
+  draw();
+  launch3d();
+  return cleanupOnly;
+}
 
 /* ===========================================================================
    TUBE COLLECTION — shared by the fill and switch steps.
