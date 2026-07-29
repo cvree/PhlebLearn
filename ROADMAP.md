@@ -19,11 +19,13 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), and `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`); the other 7 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`); the other 3 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 7 of the 16 venipuncture steps are still the 2D DOM
-panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
+**The gap that remains:** 3 of the 16 venipuncture steps are still the 2D DOM
+panel — `pressure`, `bandage` and `invert`.
+
+Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
 first mechanic where the patient's body answers back; palpation (Phase 2b) is
 the first where the learner has to interpret what the body is telling them;
@@ -34,8 +36,11 @@ anchor and insert (Phase 2e) is the first where a mistake becomes irreversible
 the instant the skin is broken; tube collection (Phase 2f) is the first where
 the learner's hands have to do one thing while deliberately not disturbing
 another, and the first where some errors can be put right and some genuinely
-cannot. Each branch after it converts one more step, in order, on that same
-arm.
+cannot; withdraw/safety/sharps (Phase 2g) is the first where the danger stops
+being to the specimen and becomes a danger to the person holding the needle,
+and the first whose interactions are dispatched from the state of the arm
+rather than from which step is running. Each branch after it converts one more
+step, in order, on that same arm.
 
 ---
 
@@ -446,6 +451,84 @@ Still deliberately left for later branches: the tourniquet actually coming off
 mid-collection belongs to `release`, and inverting the filled tubes belongs to
 `invert`.
 
+## Phase 2g — `feature/withdraw-safety-sharps` ✅ complete
+
+Four steps, one object again. `release` was a "🎈 Release the tourniquet"
+button; `withdraw` was two buttons in sequence; `safety` was a third button;
+`dispose` was a div dragged onto a 🗑️. They are now **the end of the draw as
+one continuous piece of work on the same arm** — the band being pulled off is
+the strap the tourniquet step secured, the needle being drawn out is the needle
+the insert step put in, and the container it lands in is the one the learner
+positioned back at the supply cart.
+
+- **The band comes off by its own tail.** The tucked loop is drawn from the
+  same `tourniquetState` the tourniquet branch wrote, at the side the learner
+  actually tucked it, and one real pull on it releases the band — the same
+  one-handed gesture that step already used for error recovery. The clock it
+  stops is the clock that step started, accumulated across every
+  re-application, not a timer this screen invented.
+- **Reaching across a patient is done with a needle in their arm.** Straying
+  the free hand over the holder while going for the tail jostles the tip, and
+  the displacement is measured against the vessel's own calibre — the same
+  physics the tube changes use, so a big median cubital tolerates what a
+  narrow cephalic does not. It is a level, not a running sum: a later smaller
+  wobble cannot shrink the record.
+- **Gauze is a position, not a checkbox.** The pad is carried off the bench
+  and rested above the puncture; how far from it, in real millimetres, is
+  what decides whether pressure can start the instant the tip is out. A
+  *second* push on an already-resting pad — the pointer driven well inside
+  the limb's silhouette — is pressing down on a needle that is still in the
+  vein, which drags the bevel through the wall it entered. The first carry
+  legitimately passes over the arm and is not mistaken for that.
+- **The needle leaves along the line it entered.** The exit line is the one
+  the insert step fixed when the skin was broken — entry point, locked angle,
+  `depthDir` — and outward travel shallows the tip by that angle's own
+  trigonometry, the same conversion insert used going in. Deviation from that
+  line is reported in degrees, sideways excursion in millimetres and the exit
+  in centimetres per second: a yank and a saw are two different findings, and
+  neither is a boolean.
+- **The safety is the device's own mechanism.** A straight needle's shield
+  travels forward over the shaft until it locks; a butterfly's slider
+  retracts the needle into its body. The shield is a real mesh the pointer
+  slides, and stopping short does not lock — a shield that has not clicked is
+  one that slides back. Locking it is timed from the moment the tip left the
+  skin, because "immediately" is a measurement.
+- **The three classic needlestick stories are each recorded as themselves.**
+  Dragging the unit down onto the bench and pushing activates the shield
+  against a surface; putting an exposed used sharp down is its own event;
+  recapping by hand is a third. All three are blocking, and none of them is
+  the same finding as the others.
+- **Where the sharp physically goes.** The whole unit is carried into a real
+  container and has to pass the aperture, not rest in its mouth. The ordinary
+  waste bin refuses it and counts the attempt — and the recovery stays open,
+  because the sharps container still completes the step. Carrying it *back*
+  across the patient after having got clear of them is a routing finding; the
+  carry necessarily starts over the arm, so that first moment is not counted.
+- **The four ids are one piece of work, so the gestures follow the arm, not
+  the screen.** Both the pointer's hit-testing and the accessible controls are
+  built from the state of the arm rather than from which step is running: a
+  band still on the patient stays grabbable in the withdraw step, and a needle
+  still in the vein stays withdrawable in the safety step. Gating on the step
+  id instead would leave a learner who got the order wrong with no way back —
+  which is exactly the learner who most needs one.
+
+**The geometry.** The holder is the same rigid body on the same fixed line
+collection derived, and withdrawing it is travelling OUT along that line —
+a hand held clear of the limb, so it uses the fixed-basis technique for the
+third time: three exactly-known world points projected once through
+`toScreen()`, then the identical 2×2 inverse. The shield slide reuses the same
+solve against the unit's own axis wherever it is being held. The gauze and both
+containers sit on the bench, a known plane, so `pointerToPlane` gives one exact
+world point per carry. The bases are rebuilt on every reframe, never lazily.
+
+Delivered alongside: `venipuncture/withdrawal/`, a persistent `withdrawal` on
+the encounter, a `withdrawal` measurement category reporting real seconds on
+the band, real exit degrees, real millimetres of drag and real seconds of
+exposed sharp, critical safety events recorded separately from the numeric
+score, an accessible control path exercising the identical pure helpers
+(including its own recap, set-down and strike-the-bench, which fail exactly as
+the drags do), 38 unit tests and 15 browser tests.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -456,7 +539,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 ~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
 ~~`feature/aseptic-site-cleaning`~~ ✅ → ~~`feature/needle-holder-assembly`~~ ✅ →
 ~~`feature/anchor-and-insert`~~ ✅ → ~~`feature/tube-collection`~~ ✅ →
-`feature/withdraw-safety-sharps` → `feature/post-draw-care`.
+~~`feature/withdraw-safety-sharps`~~ ✅ → `feature/post-draw-care`.
 
 | Step | Today | Becomes |
 |---|---|---|
@@ -469,9 +552,11 @@ Branch order (one branch each, verified and deployed before the next starts):
 | insert | ✅ **done** — a real anchor, a real angle, a real flash | — |
 | fill | ✅ **done** — a real tube filled by a real vacuum | — |
 | switch | ✅ **done** — tubes off the real rack, braced against the flange | — |
-| release / withdraw / safety | button taps | real band snap, real withdrawal path, real shield slide |
+| release | ✅ **done** — the real band's real tail, pulled free | — |
+| withdraw | ✅ **done** — out along the line it went in, gauze ready | — |
+| safety | ✅ **done** — the device's own shield, slid until it locks | — |
+| dispose | ✅ **done** — the whole unit carried into a real container | — |
 | pressure / bandage | drag 🩹 | real gauze on the real site; hold timer checks arm position |
-| dispose | button | actually drop the unit into the 3D sharps bin (`pickType:"bin"` already exists) |
 | invert | button | grab the tube and rotate it 5–10× — counted for real; shaking causes hemolysis |
 
 **Accessibility:** today's `VP_STEPS` survive as an opt-in **2D fallback mode** for

@@ -56,6 +56,10 @@ import {
   isCollectionActive, renderCollection,
   collectionPointerDown, collectionPointerMove, collectionPointerUp, collectionPointerCancel,
 } from "./venipuncture/collection/collectionRuntime.js";
+import {
+  isWithdrawalActive, renderWithdrawal,
+  withdrawalPointerDown, withdrawalPointerMove, withdrawalPointerUp, withdrawalPointerCancel,
+} from "./venipuncture/withdrawal/withdrawalRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -119,6 +123,7 @@ function setupInput(canvasEl){
     if(isAssemblyActive()){ assemblyPointerDown(e, canvasEl); return; }
     if(isInsertActive()){ insertPointerDown(e, canvasEl); return; }
     if(isCollectionActive()){ collectionPointerDown(e, canvasEl); return; }
+    if(isWithdrawalActive()){ withdrawalPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -130,6 +135,7 @@ function setupInput(canvasEl){
     if(isAssemblyActive()){ assemblyPointerMove(e, canvasEl); return; }
     if(isInsertActive()){ insertPointerMove(e, canvasEl); return; }
     if(isCollectionActive()){ collectionPointerMove(e, canvasEl); return; }
+    if(isWithdrawalActive()){ withdrawalPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -141,6 +147,7 @@ function setupInput(canvasEl){
     if(isAssemblyActive()){ assemblyPointerUp(e, canvasEl); return; }
     if(isInsertActive()){ insertPointerUp(e, canvasEl); return; }
     if(isCollectionActive()){ collectionPointerUp(e, canvasEl); return; }
+    if(isWithdrawalActive()){ withdrawalPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -155,6 +162,7 @@ function setupInput(canvasEl){
     else if(isAssemblyActive()) assemblyPointerCancel(e, canvasEl);
     else if(isInsertActive()) insertPointerCancel(e, canvasEl);
     else if(isCollectionActive()) collectionPointerCancel(e, canvasEl);
+    else if(isWithdrawalActive()) withdrawalPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -241,6 +249,7 @@ function animate(){
   if(isAssemblyActive()){ renderAssembly(getRenderer(), dt); return; }
   if(isInsertActive()){ renderInsert(getRenderer(), dt); return; }
   if(isCollectionActive()){ renderCollection(getRenderer(), dt); return; }
+  if(isWithdrawalActive()){ renderWithdrawal(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -865,6 +874,72 @@ function installTestSeam(){
       const on = !!(tq && tq.securedAt && !tq.releasedAt);
       for(let t = 0; t < (seconds || 10); t += 0.1) flow(s, 0.1, on);
       return true;
+    },
+    /** The end-of-draw state and the rules' view of it, for the four post-draw steps. */
+    async withdrawalSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const c = ENC && ENC.collect;
+      const s = c && c.withdrawal;
+      if(!s) return null;
+      const { evaluateWithdrawal } = await import("./venipuncture/withdrawal/withdrawalRules.js");
+      const { isOnPatient, secondsOn } = await import("./venipuncture/tourniquet/tourniquetState.js");
+      const tq = c.tourniquet;
+      const col = c.collection;
+      const r = evaluateWithdrawal(s, {
+        tourniquetReleased: !tq || !isOnPatient(tq),
+        tourniquetOn: !!(tq && tq.securedAt && !tq.releasedAt),
+        tourniquetSeconds: tq ? secondsOn(tq) : null,
+        collectionDone: !col || (col.order || []).every(k => col.tubes[k] && col.tubes[k].removedAt),
+        tubeOnHolder: !!(col && col.currentKey),
+      });
+      return {
+        device: s.device,
+        bandOnPatient: !!(tq && isOnPatient(tq)),
+        bandReleasedAt: s.releasedAt,
+        fistRelaxed: s.fistRelaxed,
+        collectionDoneAtRelease: s.collectionDoneAtRelease,
+        tourniquetSecondsAtRelease: s.tourniquetSecondsAtRelease,
+        releaseShiftM: s.releaseShiftM,
+        gauzeTaken: s.gauzeTakenAt != null,
+        gauzePlaced: s.gauzePlacedAt != null,
+        gauzeOffsetM: s.gauzeOffsetM,
+        gauzeClean: s.gauzeClean,
+        gauzePressedEarly: s.gauzePressedEarly,
+        depthM: s.depthM,
+        withdrawn: s.withdrawnAt != null,
+        exitDeviationDeg: s.exitDeviationDeg,
+        exitLateralM: s.exitLateralM,
+        peakSpeedMps: s.peakSpeedMps,
+        gauzeReadyAtWithdraw: s.gauzeReadyAtWithdraw,
+        tourniquetOnAtWithdraw: s.tourniquetOnAtWithdraw,
+        safetyTravel: s.safetyTravel,
+        safetyLocked: s.safetyLockedAt != null,
+        surfaceActivated: s.surfaceActivated,
+        recapAttempted: s.recapAttempted,
+        exposedSetDown: s.exposedSetDown,
+        disposed: s.disposedAt != null,
+        disposedFully: s.disposedFully,
+        safetyEngagedAtDispose: s.safetyEngagedAtDispose,
+        crossedPatient: s.crossedPatient,
+        trashAttempts: s.trashAttempts,
+        setDownAfterSafety: s.setDownAfterSafety,
+        ready: r.ready,
+        blocking: r.blocking.map(i=>i.code),
+        issues: r.issues.map(i=>i.code),
+      };
+    },
+    /**
+     * Exact screen points for the things the withdrawal gestures grab — the
+     * band's tail, the holder's hub, the shield, the gauze, the containers —
+     * projected through the SAME toScreen() the runtime's own bases use.
+     */
+    async withdrawalAnchor(kind){
+      const { withdrawalScreenPoint } = await import("./venipuncture/withdrawal/withdrawalRuntime.js");
+      return withdrawalScreenPoint(kind);
+    },
+    async withdrawalAnchors(){
+      const { withdrawalAnchors } = await import("./venipuncture/withdrawal/withdrawalRuntime.js");
+      return withdrawalAnchors();
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
