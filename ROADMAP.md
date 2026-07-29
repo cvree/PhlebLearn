@@ -19,10 +19,10 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), and `insert` is a real anchor and a real stick on that same vein (`insert/`); the other 9 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), and `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`); the other 7 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 9 of the 16 venipuncture steps are still the 2D DOM
+**The gap that remains:** 7 of the 16 venipuncture steps are still the 2D DOM
 panel. Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
 first mechanic where the patient's body answers back; palpation (Phase 2b) is
@@ -31,8 +31,11 @@ cleaning (Phase 2c) is the first where the work itself is visible on the skin
 and can be undone by carelessness; the needle-and-holder unit (Phase 2d) is the
 first where one step's technique physically determines the next step's problem;
 anchor and insert (Phase 2e) is the first where a mistake becomes irreversible
-the instant the skin is broken. Each branch after it converts one more step, in
-order, on that same arm.
+the instant the skin is broken; tube collection (Phase 2f) is the first where
+the learner's hands have to do one thing while deliberately not disturbing
+another, and the first where some errors can be put right and some genuinely
+cannot. Each branch after it converts one more step, in order, on that same
+arm.
 
 ---
 
@@ -304,7 +307,10 @@ first step threads together is the unit the second step uncaps.
 Deliberately left for `feature/tube-collection`: pre-seating the first tube to
 the holder's guideline. Pushing past the line pierces the stopper and kills the
 tube — a real and classic error, but it is a tube-handling lesson and it
-belongs with `fill` and `switch`, not here.
+belongs with `fill` and `switch`, not here. (Phase 2f delivered it, in the
+place it actually bites once the needle is already in: a stopper pierced with
+the tip out of the vein spends its vacuum on air, and a tube parked at the
+guideline instead keeps it.)
 
 Delivered alongside: `venipuncture/assembly/`, a persistent `needleUnit` on the
 encounter, `assembly` and `uncap` measurement categories reporting real turns,
@@ -365,6 +371,81 @@ reporting real degrees, millimetres and a flash timestamp, an accessible
 control path exercising the identical pure state helpers, 28 unit tests and
 16 browser tests.
 
+## Phase 2f — `feature/tube-collection` ✅ complete
+
+Two more steps, one object again. `fill` was a CSS height animation with a
+"stop at the fill line" button; `switch` was a row of divs dragged onto
+another div. They are now **tubes taken off a real rack and pushed onto the
+holder that is already in the patient** — and the needle whose position they
+disturb is the needle the insert step put in.
+
+- **The guideline is a technique, and it earns its place three times over.**
+  A tube pushed into the holder passes it before the rear cannula reaches the
+  stopper. Short of it the tube is held, positioned, and still sealed;
+  past it the vacuum is open onto whatever is at the needle's other end —
+  blood if the tip is in the vein, and *air and nothing at all* if it is not,
+  which finishes that tube for good. It is also where force starts to reach
+  the patient: below the guideline the tube slides freely in the barrel, so
+  simply bringing one up to the holder can never move the needle.
+- **Where the hand goes is the whole thing.** A push made from the holder's
+  **flange** is a couple — fingers pulling back as the thumb pushes forward —
+  and about 8% of it reaches the patient. A push made by grabbing the tube's
+  barrel has nothing to push against: the holder travels with the tube and the
+  needle travels with the holder. Seating a tube that way drives the tip clean
+  out of the lumen, and the flow stops. Which of the two the pointer went down
+  nearest is the only difference between them.
+- **Displacement is measured against the vein it is in**, not a fixed
+  millimetre count — a big median cubital tolerates a shove that loses a
+  narrow cephalic. Axial displacement undoes itself when the tube comes back
+  off; a sideways lever does not, because the tip has been dragged across the
+  lumen and taking your hand away does not put it back.
+- **The vacuum does the work, and stopping is its decision.** Flow is real
+  millilitres per second, from this vein's calibre, this needle's gauge, this
+  patient's own filling and whether the band is still on. It stops when the
+  tube's own draw volume is reached — 2.7 mL of citrate, 4.0 of EDTA — and the
+  skill is *waiting for that* rather than judging a moment. Pull one off early
+  and it is short.
+- **A short citrate tube is wrong, not approximate.** The 9:1 blood-to-citrate
+  ratio is fixed at manufacture, so an under-drawn light blue makes the PT/INR
+  incorrect and is blocked for redraw; an under-drawn serum tube is a warning.
+  Every tube carries its own required fraction.
+- **Order of draw is a directional contamination between two named
+  additives**, not a "wrong order" flag. Reach for the lavender first and EDTA
+  goes through the same needle into the citrate tube behind it, and the coach
+  says which additive and what it ruins.
+- **What a second attempt can fix, and what it cannot.** A tube that came off
+  short can be drawn again — another of the same kind, at the cost of the
+  wasted one, and the step is not finished while that is still possible. A
+  tube ruined by carryover cannot, because the additive is in the needle and
+  a redraw through it would be ruined identically. Teaching mode therefore
+  lets the learner move on from an irreversible mistake while still reporting
+  it, instead of claiming a specimen was fine.
+- **A vein pulled shut by a big tube's vacuum** stops flowing early, and the
+  way out is real: back the tube off to the guideline to break the vacuum, let
+  the vein refill, push it back on. Each cycle gets more.
+
+**The geometry.** The rack is on the bench — a known plane, so `pointerToPlane`
+gives one exact world point. The holder is a rigid body on the line the insert
+step fixed when the skin was broken (entry point, locked angle, and the
+along-arm direction the tip was travelling, which is now recorded on the
+insert state rather than left on its runtime). A tube going on and coming off
+is a hand held CLEAR of the limb — the one case none of armScene's three limb
+readings handle — so it uses the same fixed-basis trick the needle's approach
+does: three exactly-known world points projected once through `toScreen()`,
+then the identical 2×2 inverse against that fixed frame. Nothing re-seeds and
+nothing diverges, however far from the arm the hand is.
+
+Delivered alongside: `venipuncture/collection/`, a persistent `collection` on
+the encounter, a `collection` measurement category reporting real millilitres,
+percentages of each tube's own volume, millimetres of needle displacement and
+the band's seconds, an accessible control path exercising the identical pure
+helpers (including its own "push it on by the tube alone", which fails exactly
+as the drag does), 47 unit tests and 20 browser tests.
+
+Still deliberately left for later branches: the tourniquet actually coming off
+mid-collection belongs to `release`, and inverting the filled tubes belongs to
+`invert`.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -374,7 +455,7 @@ stops being the interaction surface.
 Branch order (one branch each, verified and deployed before the next starts):
 ~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
 ~~`feature/aseptic-site-cleaning`~~ ✅ → ~~`feature/needle-holder-assembly`~~ ✅ →
-~~`feature/anchor-and-insert`~~ ✅ → `feature/tube-collection` →
+~~`feature/anchor-and-insert`~~ ✅ → ~~`feature/tube-collection`~~ ✅ →
 `feature/withdraw-safety-sharps` → `feature/post-draw-care`.
 
 | Step | Today | Becomes |
@@ -386,8 +467,8 @@ Branch order (one branch each, verified and deployed before the next starts):
 | assemble | ✅ **done** — a real needle threaded into a real holder | — |
 | uncap | ✅ **done** — the sheath pulled along the needle's own axis | — |
 | insert | ✅ **done** — a real anchor, a real angle, a real flash | — |
-| fill | CSS height animation | real tube fills by volume; vacuum seat has feel |
-| switch | drag tube divs | pull tubes off the **real rack** in order of draw; needle jitter is penalised |
+| fill | ✅ **done** — a real tube filled by a real vacuum | — |
+| switch | ✅ **done** — tubes off the real rack, braced against the flange | — |
 | release / withdraw / safety | button taps | real band snap, real withdrawal path, real shield slide |
 | pressure / bandage | drag 🩹 | real gauze on the real site; hold timer checks arm position |
 | dispose | button | actually drop the unit into the 3D sharps bin (`pickType:"bin"` already exists) |

@@ -52,6 +52,10 @@ import {
   isInsertActive, renderInsert,
   insertPointerDown, insertPointerMove, insertPointerUp, insertPointerCancel,
 } from "./venipuncture/insert/insertRuntime.js";
+import {
+  isCollectionActive, renderCollection,
+  collectionPointerDown, collectionPointerMove, collectionPointerUp, collectionPointerCancel,
+} from "./venipuncture/collection/collectionRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -114,6 +118,7 @@ function setupInput(canvasEl){
     if(isCleaningActive()){ cleaningPointerDown(e, canvasEl); return; }
     if(isAssemblyActive()){ assemblyPointerDown(e, canvasEl); return; }
     if(isInsertActive()){ insertPointerDown(e, canvasEl); return; }
+    if(isCollectionActive()){ collectionPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -124,6 +129,7 @@ function setupInput(canvasEl){
     if(isCleaningActive()){ cleaningPointerMove(e, canvasEl); return; }
     if(isAssemblyActive()){ assemblyPointerMove(e, canvasEl); return; }
     if(isInsertActive()){ insertPointerMove(e, canvasEl); return; }
+    if(isCollectionActive()){ collectionPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -134,6 +140,7 @@ function setupInput(canvasEl){
     if(isCleaningActive()){ cleaningPointerUp(e, canvasEl); return; }
     if(isAssemblyActive()){ assemblyPointerUp(e, canvasEl); return; }
     if(isInsertActive()){ insertPointerUp(e, canvasEl); return; }
+    if(isCollectionActive()){ collectionPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -147,6 +154,7 @@ function setupInput(canvasEl){
     else if(isCleaningActive()) cleaningPointerCancel(e, canvasEl);
     else if(isAssemblyActive()) assemblyPointerCancel(e, canvasEl);
     else if(isInsertActive()) insertPointerCancel(e, canvasEl);
+    else if(isCollectionActive()) collectionPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -232,6 +240,7 @@ function animate(){
   if(isCleaningActive()){ renderCleaning(getRenderer(), dt); return; }
   if(isAssemblyActive()){ renderAssembly(getRenderer(), dt); return; }
   if(isInsertActive()){ renderInsert(getRenderer(), dt); return; }
+  if(isCollectionActive()){ renderCollection(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -745,6 +754,117 @@ function installTestSeam(){
         p.project(ctx.view.camera);
         return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
       });
+    },
+    /** Every tube's real volume, ratio and state, plus the arm's verdict. */
+    async collectionSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.collection;
+      if(!s) return null;
+      const { evaluateCollection, requiredFraction, lumenToleranceM } =
+        await import("./venipuncture/collection/collectionRules.js");
+      const tq = ENC.collect.tourniquet;
+      const r = evaluateCollection(s, {
+        vessel: s.vessel,
+        inVein: s.inVein && !s.needleOut,
+        tourniquetOn: !!(tq && tq.securedAt && !tq.releasedAt),
+      });
+      return {
+        order: s.order.slice(),
+        takenSequence: s.takenSequence.slice(),
+        currentKey: s.currentKey,
+        seatDepth: s.seatDepth,
+        grip: s.grip,
+        inVein: s.inVein,
+        needleOut: s.needleOut,
+        needleShiftM: s.needleShiftM,
+        peakShiftM: s.peakShiftM,
+        needleDeeperM: s.needleDeeperM,
+        needleLateralM: s.needleLateralM,
+        lumenToleranceM: lumenToleranceM(s.vessel),
+        tubesWasted: s.tubesWasted,
+        reseats: s.reseats,
+        tubes: s.order.map(k=>{
+          const t = s.tubes[k];
+          return {
+            key: k,
+            taken: !!t,
+            pierced: !!(t && t.pierced),
+            removed: !!(t && t.removedAt),
+            deadOnAir: !!(t && t.deadOnAir),
+            collapsed: !!(t && t.collapsed),
+            carryoverFrom: t && t.carryover ? t.carryover.from : null,
+            drawnMl: t ? t.drawnMl : 0,
+            volumeMl: t ? t.volumeMl : null,
+            fraction: t && t.volumeMl ? t.drawnMl/t.volumeMl : 0,
+            requiredFraction: requiredFraction(k),
+            vacuumCycles: t ? t.vacuumCycles : 0,
+          };
+        }),
+        ready: r.ready, allDone: r.allDone,
+        blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
+      };
+    },
+    /**
+     * The real geometry a test needs to drive a tube on and off: where the
+     * rack tubes stand, where the holder's mouth and flange are, and the axis
+     * a tube travels along. All projected through the SAME toScreen() the
+     * runtime's own fixed basis is built from, so a test drags exactly where
+     * the gesture reads.
+     */
+    async collectionAnchors(){
+      const { getCollectionContext } = await import("./venipuncture/collection/collectionRuntime.js");
+      const ctx = getCollectionContext();
+      if(!ctx) return null;
+      const canvas = document.querySelector("canvas");
+      const rect = canvas.getBoundingClientRect();
+      const at = (v)=>{
+        const p = ctx.view.toScreen(v.clone(), rect, v.clone());
+        return { x: p.x, y: p.y };
+      };
+      const THREE = await import("three");
+      const g = ctx.geom;
+      const mouth = ctx.axis.origin.clone().addScaledVector(ctx.axis.out, g.holderLen);
+      const flange = ctx.axis.origin.clone().addScaledVector(ctx.axis.out, g.holderLen*g.flangeAt);
+      const rack = {};
+      for(const key of Object.keys(ctx.rack.slots)){
+        const s = ctx.rack.slots[key];
+        rack[key] = at(new THREE.Vector3(s.x, s.y + g.tubeLen*0.6, s.z));
+      }
+      return {
+        mode: ctx.mode,
+        rack,
+        mouth: at(mouth),
+        flange: at(flange),
+        /** screen pixels per 10mm along the seat axis, and across it */
+        alongPx: (()=>{
+          const a = at(mouth.clone().addScaledVector(ctx.axis.into, 0.010));
+          const m = at(mouth);
+          return { dx: a.x - m.x, dy: a.y - m.y };
+        })(),
+        sidePx: (()=>{
+          const a = at(mouth.clone().addScaledVector(ctx.axis.side, 0.010));
+          const m = at(mouth);
+          return { dx: a.x - m.x, dy: a.y - m.y };
+        })(),
+      };
+    },
+    /** Runs the vacuum forward without waiting in real time. */
+    async fastForwardFill(seconds){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.collection;
+      if(!s) return false;
+      const rt = await import("./venipuncture/collection/collectionRuntime.js");
+      // While the scene is up this has to go THROUGH the runtime, or the state
+      // moves on without the coach ever being told and the panel freezes on
+      // the last volume a rendered frame happened to report. The controls path
+      // tears the scene down, so there it calls the same pure helper the
+      // render loop itself does.
+      if(rt.isCollectionActive()){ rt.waitProgrammatically(seconds || 10); return true; }
+      const { flow } = await import("./venipuncture/collection/collectionState.js");
+      const tq = ENC.collect.tourniquet;
+      const on = !!(tq && tq.securedAt && !tq.releasedAt);
+      for(let t = 0; t < (seconds || 10); t += 0.1) flow(s, 0.1, on);
+      return true;
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
