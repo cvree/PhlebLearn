@@ -303,7 +303,7 @@ function freezeNeedleAtEntry(s){
 function tryBreakSkin(e, canvasEl, xSeed){
   const s = readSkin(e, canvasEl, xSeed, null);
   if(!s) return false;
-  breakSkin(ctx.state, s.x, skinZ(s), ctx.angleEMA || 0);
+  breakSkin(ctx.state, s.x, skinZ(s), ctx.angleEMA || 0, ctx.depthDir);
   ctx.lastAlong = s.x;
   freezeNeedleAtEntry(s);
   sfx("click");

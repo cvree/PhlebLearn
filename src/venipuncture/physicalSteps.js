@@ -29,7 +29,7 @@ import { stagedItemId } from "./encounterState.js";
 import { CATEGORY } from "./staging/supplyCatalog.js";
 import {
   createTourniquetState, markRouted, setTension, markCrossed, markSecured, markUnravelled,
-  isSecured,
+  isSecured, secondsOn as tqSecondsOn,
 } from "./tourniquet/tourniquetState.js";
 import { evaluateTourniquet } from "./tourniquet/tourniquetRules.js";
 import { measureTourniquet, applyTourniquetOutcome } from "./tourniquet/tourniquetScoring.js";
@@ -80,6 +80,19 @@ import {
   redoAnchor, anchorProgrammatically, insertProgrammatically,
   advanceProgrammatically, pullOutProgrammatically, getInsertContext,
 } from "./insert/insertRuntime.js";
+import {
+  createCollectionState, takeTube, returnTube, discardTube,
+  backOffToGuideline, pushOn, removeTube, flow as flowTube, GRIP,
+} from "./collection/collectionState.js";
+import { evaluateCollection } from "./collection/collectionRules.js";
+import { measureCollection, applyCollectionOutcome } from "./collection/collectionScoring.js";
+import { renderCollectionCoach } from "./collection/collectionCoach.js";
+import {
+  startCollection, stopCollection, isCollectionActive,
+  takeTubeProgrammatically, pushOnProgrammatically, backOffProgrammatically,
+  removeTubeProgrammatically, returnTubeProgrammatically, discardTubeProgrammatically,
+  waitProgrammatically, getCollectionContext,
+} from "./collection/collectionRuntime.js";
 import { evaluateCleaning } from "./cleaning/cleaningRules.js";
 import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
 import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
@@ -234,6 +247,52 @@ export function ensureInsertSession(c){
   c.insert = createInsertState({ chosenId, markX: mark.x, markZ: mark.z });
   if(c.encounter) c.encounter.access = c.insert;
   return c.insert;
+}
+
+/**
+ * The tubes for this encounter — created once, carried through both the fill
+ * and the switch step, because they are one continuous piece of work on one
+ * holder that is already in the patient.
+ *
+ * Everything it needs is inherited, never re-chosen: the vein is the one
+ * palpation marked and insert actually landed in, the gauge is the needle
+ * they staged, the patient's filling is the same `vigour` the tourniquet
+ * branch has been using, and whether there is any access at all is whatever
+ * the insert step ended with.
+ */
+export function ensureCollectionSession(c){
+  if(c.collection) return c.collection;
+  const ins = ensureInsertSession(c);
+  const unit = ensureAssemblySession(c);
+  const arm = ensureArmSession(c);
+  const vessel = (c.armVessels || []).find(v => v.id === ins.chosenId) || null;
+  // Reached directly (a resumed draw, or the test seam jumping straight in)
+  // without the insert step ever having run: the same defensive fallback
+  // ensureInsertSession itself needs for assembly/uncap, so a tube is never
+  // put on a holder that was never in a vein. A stick that DID happen and
+  // missed is left exactly as it was — that is a real outcome, not a gap.
+  if(ins.entryX == null && !ins.flashAt && vessel){
+    anchorAt(ins, ins.markX - 0.035, 0.016);
+    insertInto(ins, ins.markX, ins.markZ, 20, vessel.depth);
+    markFlashIfInVein(ins, vessel, Date.now());
+  }
+  const m = c.insertMeasurements;
+  c.collection = createCollectionState({
+    order: c.tubes || [],
+    vessel,
+    gauge: unit.gauge,
+    vigour: arm.vigour,
+    // a stick that never landed in the vein is a stick nothing will flow
+    // through — the tube step inherits that rather than starting afresh
+    inVein: m ? !!m.inVein && !m.throughAndThrough : !!ins.flashAt,
+  });
+  if(c.encounter) c.encounter.collection = c.collection;
+  return c.collection;
+}
+
+/** Seconds the band has been on the arm, for this step's own measurements. */
+function tourniquetSecondsFor(c){
+  return c.tourniquet ? tqSecondsOn(c.tourniquet) : null;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -1066,6 +1125,177 @@ export const PHYSICAL_STEPS = {
     launch3d();
     return cleanupOnly;
   },
+
+  /* ---------------------------------------------------------------------------
+     FILL — the first tube onto the holder that is already in the patient.
+     ------------------------------------------------------------------------ */
+  fill(c, stage, advance){
+    return runCollection(c, stage, advance, "fill");
+  },
+
+  /* ---------------------------------------------------------------------------
+     SWITCH — every tube after the first, off the same rack, onto the same
+     holder, in the order of draw. Same state, same rules, same runtime: a
+     tube change is not a different activity from filling one.
+     ------------------------------------------------------------------------ */
+  switch(c, stage, advance){
+    return runCollection(c, stage, advance, "switch");
+  },
 };
+
+/* ===========================================================================
+   TUBE COLLECTION — shared by the fill and switch steps.
+
+   They differ in exactly one thing: when they are finished. `fill` is done
+   once the first tube is off the holder; `switch` is done once they all are.
+   The rules, the measurements and the gestures are identical, because in the
+   patient's arm it is one continuous piece of work.
+   ======================================================================== */
+function runCollection(c, stage, advance, mode){
+  const arm = ensureArmSession(c);
+  const ins = ensureInsertSession(c);
+  const col = ensureCollectionSession(c);
+  const canRender3d = !!getRenderer();
+  let listView = !canRender3d || !!SS.collectionListView;
+  let disposed = false;
+
+  const evaluate = ()=>evaluateCollection(col, {
+    vessel: col.vessel,
+    inVein: col.inVein && !col.needleOut,
+    tourniquetOn: !!(c.tourniquet && c.tourniquet.securedAt && !c.tourniquet.releasedAt),
+  });
+
+  /**
+   * A tube that will never fill does not stop being finished with. Without
+   * this, a dead-on-air or dislodged draw would leave the learner unable to
+   * leave the step at all — including in teaching mode, where the button is
+   * the only way forward.
+   */
+  const stepReady = (result)=>{
+    if(col.needleOut || !col.inVein) return true;
+    if(mode === "fill"){
+      const first = col.order[0];
+      if(!first) return true;
+      const t = col.tubes[first];
+      // off the holder, and not something a second attempt would still fix
+      return !!(t && t.removedAt) && result.redrawable.indexOf(first) < 0;
+    }
+    return result.allDone;
+  };
+
+  function draw(result){
+    if(disposed) return;
+    const r = result || evaluate();
+    renderCollectionCoach(stage, {
+      state: col,
+      result: r,
+      ready: stepReady(r),
+      readyMessage: mode === "fill"
+        ? "That tube is off and filled to its draw volume."
+        : "Every tube is filled to its draw volume, in order. The band comes off next.",
+      readyLabel: mode === "fill" ? "Next tube ▶" : "All tubes collected ▶",
+      guided: guided(),
+      listView, canRender3d,
+      handlers: {
+        onReady: finish,
+        onToggleView: toggleView,
+        onAction: (kind)=>draw(doAction(kind)),
+      },
+    });
+  }
+
+  // The controls tear the 3D scene down, so these cannot go through the
+  // runtime — but they run the SAME pure technique helpers it does, so the
+  // seat depths, fill volumes and needle shifts that come out are identical.
+  function doAction(kind){
+    const live = isCollectionActive();
+    if(kind.indexOf("take:") === 0){
+      const key = kind.slice(5);
+      if(live) return takeTubeProgrammatically(key) || evaluate();
+      takeTube(col, key);
+      return evaluate();
+    }
+    switch(kind){
+      case "push-braced":
+        if(live) return pushOnProgrammatically(GRIP.FLANGE) || evaluate();
+        pushOn(col, GRIP.FLANGE); break;
+      case "push-unbraced":
+        if(live) return pushOnProgrammatically(GRIP.BODY) || evaluate();
+        pushOn(col, GRIP.BODY); break;
+      case "backoff":
+        if(live) return backOffProgrammatically() || evaluate();
+        backOffToGuideline(col); break;
+      case "remove-braced":
+        if(live) return removeTubeProgrammatically(GRIP.FLANGE) || evaluate();
+        removeTube(col, GRIP.FLANGE); break;
+      case "remove-unbraced":
+        if(live) return removeTubeProgrammatically(GRIP.BODY) || evaluate();
+        removeTube(col, GRIP.BODY); break;
+      case "return":
+        if(live) return returnTubeProgrammatically() || evaluate();
+        returnTube(col); break;
+      case "discard":
+        if(live) return discardTubeProgrammatically() || evaluate();
+        discardTube(col); break;
+      case "wait":
+        if(live) return waitProgrammatically(5) || evaluate();
+        // the same vacuum, the same rate, just without a render loop to tick it
+        for(let t = 0; t < 5; t += 0.1){
+          flowTube(col, 0.1, !!(c.tourniquet && c.tourniquet.securedAt && !c.tourniquet.releasedAt));
+        }
+        break;
+      default: break;
+    }
+    return evaluate();
+  }
+
+  async function launch3d(){
+    if(!canRender3d || listView || disposed) return;
+    await startCollection({
+      state: col,
+      arm,
+      insert: ins,
+      tourniquet: c.tourniquet,
+      onChange: (result)=>draw(result),
+    });
+    if(disposed){ stopCollection(); return; }
+    draw();
+  }
+
+  function toggleView(){
+    listView = !listView;
+    SS.collectionListView = listView; saveSS();
+    if(listView){ stopCollection(); draw(); }
+    else launch3d().then(()=>draw());
+  }
+
+  function finish(){
+    const result = evaluate();
+    if(guided() && !stepReady(result)) return;
+    const measurements = measureCollection(col, result, {
+      tourniquetSeconds: tourniquetSecondsFor(c),
+    });
+    applyCollectionOutcome(c, measurements);
+    if(c.encounter){
+      c.encounter.collection = col;
+      c.encounter.measurements.collection = measurements;
+    }
+    cleanupOnly();
+    advance();
+  }
+
+  // Leaving the step must not pull the needle out or empty the holder: the
+  // switch step that follows works on exactly what this one left behind.
+  function cleanupOnly(){
+    disposed = true;
+    stopCollection();
+    try{ delete document.body.dataset.staging; }catch(_){}
+  }
+
+  try{ document.body.dataset.staging = "on"; }catch(_){}
+  draw();
+  launch3d();
+  return cleanupOnly;
+}
 
 export function hasPhysicalStep(id){ return Object.prototype.hasOwnProperty.call(PHYSICAL_STEPS, id); }

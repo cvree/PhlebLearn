@@ -33,6 +33,13 @@ export function createInsertState(o){
     /* --- entry --------------------------------------------------------------- */
     entryX: null, entryZ: null,
     angleDeg: null,
+    /**
+     * Which way along the arm the tip was travelling when it went in, +1 being
+     * proximal. Recorded here rather than left on the runtime because the
+     * holder sticking out of the patient points back down this line, and the
+     * collection branch has to place it after this step's scene is gone.
+     */
+    depthDir: 1,
 
     /* --- depth ---------------------------------------------------------------- */
     depthM: 0,
@@ -107,12 +114,13 @@ export function anchorAt(state, x, pullM){
 
 /* ---------- approach and depth ---------------------------------------------------- */
 
-export function breakSkin(state, x, z, angleDeg){
+export function breakSkin(state, x, z, angleDeg, depthDir){
   if(state.entryX != null) return state;
   state.entryX = x;
   state.entryZ = z;
   state.angleDeg = Math.max(0, angleDeg || 0);
-  recordEvent(state, "entry", { x, z, angle: state.angleDeg });
+  if(depthDir != null) state.depthDir = depthDir < 0 ? -1 : 1;
+  recordEvent(state, "entry", { x, z, angle: state.angleDeg, dir: state.depthDir });
   return state;
 }
 
