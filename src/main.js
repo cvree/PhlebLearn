@@ -64,6 +64,10 @@ import {
   isPostDrawActive, renderPostDraw,
   postDrawPointerDown, postDrawPointerMove, postDrawPointerUp, postDrawPointerCancel,
 } from "./venipuncture/postdraw/postDrawRuntime.js";
+import {
+  isInversionActive, renderInversion,
+  inversionPointerDown, inversionPointerMove, inversionPointerUp, inversionPointerCancel,
+} from "./venipuncture/inversion/inversionRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -129,6 +133,7 @@ function setupInput(canvasEl){
     if(isCollectionActive()){ collectionPointerDown(e, canvasEl); return; }
     if(isWithdrawalActive()){ withdrawalPointerDown(e, canvasEl); return; }
     if(isPostDrawActive()){ postDrawPointerDown(e, canvasEl); return; }
+    if(isInversionActive()){ inversionPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -142,6 +147,7 @@ function setupInput(canvasEl){
     if(isCollectionActive()){ collectionPointerMove(e, canvasEl); return; }
     if(isWithdrawalActive()){ withdrawalPointerMove(e, canvasEl); return; }
     if(isPostDrawActive()){ postDrawPointerMove(e, canvasEl); return; }
+    if(isInversionActive()){ inversionPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -155,6 +161,7 @@ function setupInput(canvasEl){
     if(isCollectionActive()){ collectionPointerUp(e, canvasEl); return; }
     if(isWithdrawalActive()){ withdrawalPointerUp(e, canvasEl); return; }
     if(isPostDrawActive()){ postDrawPointerUp(e, canvasEl); return; }
+    if(isInversionActive()){ inversionPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -171,6 +178,7 @@ function setupInput(canvasEl){
     else if(isCollectionActive()) collectionPointerCancel(e, canvasEl);
     else if(isWithdrawalActive()) withdrawalPointerCancel(e, canvasEl);
     else if(isPostDrawActive()) postDrawPointerCancel(e, canvasEl);
+    else if(isInversionActive()) inversionPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -259,6 +267,7 @@ function animate(){
   if(isCollectionActive()){ renderCollection(getRenderer(), dt); return; }
   if(isWithdrawalActive()){ renderWithdrawal(getRenderer(), dt); return; }
   if(isPostDrawActive()){ renderPostDraw(getRenderer(), dt); return; }
+  if(isInversionActive()){ renderInversion(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -1006,6 +1015,54 @@ function installTestSeam(){
     async postDrawAnchors(){
       const { postDrawAnchors } = await import("./venipuncture/postdraw/postDrawRuntime.js");
       return postDrawAnchors();
+    },
+    /** Each tube's inversion count, angles, speed and specimen verdict. */
+    async inversionSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.inversion;
+      if(!s) return null;
+      const { evaluateInversion, inversionsFor, specimenVerdict, SHAKE_DEG_PER_S, OVER_AT } =
+        await import("./venipuncture/inversion/inversionRules.js");
+      const r = evaluateInversion(s);
+      return {
+        order: s.order.slice(),
+        heldKey: s.heldKey,
+        shakeThreshold: SHAKE_DEG_PER_S,
+        overAt: OVER_AT,
+        tubes: s.order.map(k=>{
+          const t = s.tubes[k];
+          const spec = inversionsFor(k);
+          const v = specimenVerdict(t);
+          return {
+            key: k,
+            required: spec.min,
+            ideal: spec.ideal,
+            mustNotMix: !!spec.mustNotMix,
+            inversions: t ? t.inversions : 0,
+            rockCount: t ? t.rockCount : 0,
+            tilt: t ? t.tilt : 0,
+            peakTilt: t ? t.peakTilt : 0,
+            peakDegPerS: t ? t.peakDegPerS : 0,
+            travelDeg: t ? t.travelDeg : 0,
+            haemolysis: t ? t.haemolysis : 0,
+            clotting: t ? t.clotting : "none",
+            delaySeconds: t ? t.delaySeconds : 0,
+            racked: !!(t && t.rackedAt != null),
+            sluggish: !!(t && t.sluggish),
+            usable: v.usable,
+            reason: v.reason,
+          };
+        }),
+        pending: r.pending.slice(),
+        allHandled: r.allHandled,
+        ready: r.ready,
+        blocking: r.blocking.map(i=>i.code),
+        issues: r.issues.map(i=>i.code),
+      };
+    },
+    async inversionAnchors(){
+      const { inversionAnchors } = await import("./venipuncture/inversion/inversionRuntime.js");
+      return inversionAnchors();
     },
     /** Runs the bleed/clot clock forward without waiting in real time. */
     async fastForwardPressure(seconds){

@@ -125,6 +125,20 @@ import {
   flexArmProgrammatically, checkSiteProgrammatically,
   bandageProgrammatically, removeBandageProgrammatically, aftercareProgrammatically,
 } from "./postdraw/postDrawRuntime.js";
+import { evaluateInversion } from "./inversion/inversionRules.js";
+import {
+  createInversionState, pickUp as pickUpTube, rack as rackTube,
+  invertTimes, rockTimes, shakeTimes,
+} from "./inversion/inversionState.js";
+import { measureInversion, applyInversionOutcome } from "./inversion/inversionScoring.js";
+import { renderInversionCoach } from "./inversion/inversionCoach.js";
+import {
+  startInversion, stopInversion, isInversionActive,
+  pickUpProgrammatically, rackProgrammatically, invertProgrammatically,
+  invertToRequirementProgrammatically, rockProgrammatically,
+  shakeProgrammatically, invertSlowlyProgrammatically,
+} from "./inversion/inversionRuntime.js";
+import { inversionsFor, mustNotMix } from "./inversion/inversionRules.js";
 import { evaluateCleaning } from "./cleaning/cleaningRules.js";
 import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
 import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
@@ -434,6 +448,35 @@ export function ensurePostDrawSession(c){
   };
   if(c.encounter) c.encounter.aftercare = c.postDraw;
   return c.postDraw;
+}
+
+/**
+ * The specimens, once they are off the patient — created once from what the
+ * collection step actually produced, so a short or contaminated tube arrives
+ * here still short and still contaminated, and each tube's delay is measured
+ * from the moment it genuinely came off the holder.
+ */
+export function ensureInversionSession(c){
+  if(c.inversion) return c.inversion;
+  const col = ensureCollectionSession(c);
+  // The same defensive fallback the earlier ensure* functions use, with the
+  // same strict condition: only when the collection step never ran at all.
+  if(col.takenSequence.length === 0){
+    for(const key of col.order) collectTubeCleanly(col, key, { tourniquetOn: true });
+  }
+  const collected = {};
+  for(const key of col.order){
+    const t = col.tubes[key];
+    collected[key] = {
+      drawnMl: t ? t.drawnMl : 0,
+      volumeMl: t ? t.volumeMl : null,
+      removedAt: t && t.removedAt ? t.removedAt : Date.now(),
+      carryoverFrom: t && t.carryover ? t.carryover.from : null,
+    };
+  }
+  c.inversion = createInversionState({ order: col.order, collected });
+  if(c.encounter) c.encounter.specimens = c.inversion;
+  return c.inversion;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -1334,6 +1377,122 @@ export const PHYSICAL_STEPS = {
      ------------------------------------------------------------------------ */
   bandage(c, stage, advance){
     return runPostDraw(c, stage, advance, "bandage");
+  },
+
+  /* ---------------------------------------------------------------------------
+     INVERT — the tubes the collection step filled, picked up one at a time and
+     turned end over end as many times as each additive actually needs. The
+     last of the sixteen steps to stop being a 2D widget.
+     ------------------------------------------------------------------------ */
+  invert(c, stage, advance){
+    const arm = ensureArmSession(c);
+    const inv = ensureInversionSession(c);
+    const canRender3d = !!getRenderer();
+    let listView = !canRender3d || !!SS.inversionListView;
+    let disposed = false;
+
+    const evaluate = ()=>evaluateInversion(inv);
+
+    function draw(result){
+      if(disposed) return;
+      renderInversionCoach(stage, {
+        state: inv,
+        result: result || evaluate(),
+        guided: guided(),
+        listView, canRender3d,
+        handlers: {
+          onReady: finish,
+          onToggleView: toggleView,
+          onAction: (kind)=>draw(doAction(kind)),
+        },
+      });
+    }
+
+    // The controls tear the 3D scene down, so these cannot go through the
+    // runtime — but they run the SAME pure technique helpers it does, so the
+    // counts, angles, speeds and haemolysis that come out are identical.
+    function doAction(kind){
+      const live = isInversionActive();
+      if(kind.indexOf("pick:") === 0){
+        const key = kind.slice(5);
+        if(live) return pickUpProgrammatically(key) || evaluate();
+        pickUpTube(inv, key);
+        return evaluate();
+      }
+      switch(kind){
+        case "mix": {
+          if(live) return invertToRequirementProgrammatically() || evaluate();
+          const t = inv.heldKey ? inv.tubes[inv.heldKey] : null;
+          if(t && !mustNotMix(t.key)){
+            invertTimes(inv, Math.max(0, inversionsFor(t.key).ideal - t.inversions), {});
+          }
+          break;
+        }
+        case "one":
+          if(live) return invertProgrammatically(1) || evaluate();
+          invertTimes(inv, 1, {}); break;
+        case "rock":
+          if(live) return rockProgrammatically(4) || evaluate();
+          rockTimes(inv, 4, {}); break;
+        case "slow":
+          if(live) return invertSlowlyProgrammatically(1) || evaluate();
+          invertTimes(inv, 1, { degPerS: 30 }); break;
+        case "shake":
+          if(live) return shakeProgrammatically(6) || evaluate();
+          shakeTimes(inv, 6, {}); break;
+        case "rack":
+          if(live) return rackProgrammatically() || evaluate();
+          rackTube(inv); break;
+        default: break;
+      }
+      return evaluate();
+    }
+
+    async function launch3d(){
+      if(!canRender3d || listView || disposed) return;
+      await startInversion({
+        state: inv,
+        arm,
+        guided: guided(),
+        onChange: (result)=>draw(result),
+      });
+      if(disposed){ stopInversion(); return; }
+      draw();
+    }
+
+    function toggleView(){
+      listView = !listView;
+      SS.inversionListView = listView; saveSS();
+      if(listView){ stopInversion(); draw(); }
+      else launch3d().then(()=>draw());
+    }
+
+    function finish(){
+      const result = evaluate();
+      // Teaching mode will not leave tubes unmixed that CAN still be mixed. A
+      // specimen already ruined does not hold the step open, because nothing
+      // the learner does now would put it right.
+      if(guided() && !result.allHandled) return;
+      const measurements = measureInversion(inv, result);
+      applyInversionOutcome(c, measurements);
+      if(c.encounter){
+        c.encounter.specimens = inv;
+        c.encounter.measurements.inversion = measurements;
+      }
+      cleanupOnly();
+      advance();
+    }
+
+    function cleanupOnly(){
+      disposed = true;
+      stopInversion();
+      try{ delete document.body.dataset.staging; }catch(_){}
+    }
+
+    try{ document.body.dataset.staging = "on"; }catch(_){}
+    draw();
+    launch3d();
+    return cleanupOnly;
   },
 };
 

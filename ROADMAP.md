@@ -19,11 +19,14 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Model registry | `rendering/modelRegistry.js` — 13 real `supply.*` registrations, all resolving to procedural builders until licence-cleared `.glb`s exist (see `docs/ASSET_PIPELINE.md` and `docs/ASSET_SOURCES.md`) |
 | Patient | Cylinder body + sphere head, hair/glasses/beard variants (`world/patient.js`) in the room. In the draw close-up, a real arm with real vessels (`venipuncture/arm/`) |
 | Real pickable objects | 13 rack tubes, sharps bin, monitor, patient, mascot, sticker book — via raycast `input/raycasting.js` → `main.js`'s dispatch |
-| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`); the other 3 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
+| Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`), `pressure`/`bandage` are a real force held on the real puncture and a dressing that waits for haemostasis (`postdraw/`), and `invert` is each filled tube turned end over end to its own additive's count (`inversion/`). **All 16 are physical**; the 2D `VP_STEPS` survive as the accessibility fallback. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that let one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 1 of the 16 venipuncture steps is still the 2D DOM
-panel — `invert`.
+**The gap that remains:** none of the 16 venipuncture steps is a 2D DOM widget
+any more. What remains is not step conversion but assessment: the photographed
+0–4 rubric, the three separated game modes, a distinct butterfly/dorsal-hand
+procedure, the introduction-and-identification dialogue, session replay and the
+final-practical report. See Phase 3 onward.
 
 Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
@@ -42,8 +45,9 @@ and the first whose interactions are dispatched from the state of the arm
 rather than from which step is running; pressure and bandage (Phase 2h) is the
 first where the quantity being controlled is a FORCE rather than a position,
 and the first where the patient's own body is still changing after the
-procedure is technically over. Each branch after it converts one more step, in
-order, on that same arm.
+procedure is technically over; and tube inversion (Phase 2i) is the last step to
+convert, and the first where the thing being judged is no longer the patient at
+all but the specimen in the learner's hand.
 
 ---
 
@@ -592,6 +596,68 @@ Both the gestures and the controls are again built from the state of the arm
 rather than the step id, so a site that starts bleeding again is pressable from
 the bandage step.
 
+## Phase 2i — `feature/tube-inversion` ✅ complete
+
+The last of the sixteen. `invert` was a row of buttons you tapped six times
+each, with a counter that went up. Tapping is not mixing, and six is not the
+answer for any particular tube. It is now **each tube the collection step
+actually filled, picked up off the rack one at a time and turned end over end
+as many times as its own additive requires.**
+
+- **The count belongs to the additive, not to the step.** EDTA needs eight,
+  sodium citrate four, a clot-activator tube five — and a plain red tube must
+  NOT be inverted at all, because it has to sit still and clot undisturbed.
+  Inverting it is a blocking error rather than a harmless extra, and there is
+  no "invert" control offered for it. The requirements live in one table in the
+  rules file, so a school with a different protocol changes a number.
+- **An inversion is over AND back, through two gates.** Past 150° is over;
+  back under 30° completes one. The gap between those is what makes rocking
+  physically distinct from mixing: a hand oscillating in the middle never
+  crosses either gate, so it accumulates hundreds of degrees of travel and
+  zero inversions — which is exactly what rocking a tube achieves.
+- **The blood slumps to whichever end is down**, so the learner can see the
+  additive at the closed end actually being reached. A tube that never goes
+  over never moves its contents past the middle.
+- **Shaking haemolyses, cumulatively and irreversibly.** Speed is real degrees
+  per second; past the threshold it shears red cells, and mixing it beautifully
+  afterwards does not give the specimen back. A haemolysed tube is a false
+  potassium and a false LDH — rejected, not merely imperfect.
+- **Additive only works if the blood reaches it in time.** Each tube's delay is
+  measured from the moment it genuinely came off the holder, so a tube left on
+  the bench and then mixed perfectly is still full of micro-clots — and past a
+  further threshold it has clotted and needs a redraw. A clotted tube does not
+  hold the step open, because nothing the learner does now can fix it.
+- **What collection left behind comes with it.** A short draw or an
+  additive-carryover tube arrives here still short and still contaminated;
+  this step judges the MIXING and does not pretend to repair the draw.
+
+**The geometry.** Nothing here touches the limb, so none of armScene's limb
+solves are involved: the rack is on the bench, a known plane, so
+`pointerToPlane` is exact for picking a tube up. The turn is the one new
+reading and deliberately the simplest honest one — turning a tube over is a
+rotation IN the image plane, so the tilt is just the pointer's angle about the
+hand, with nothing inferred.
+
+Two bugs worth recording, both found by the tests rather than by reading:
+**carrying a tube is not turning it** — the carry-to-turn switch originally
+fired on a world distance while the pointer was still sweeping across the
+canvas, so a tube arrived in the hand already 140° over, having "travelled"
+280° at 970°/s; it now switches on screen proximity and SEEDS the tilt instead
+of accumulating it (the tourniquet's precedent). And the interval between
+pointer samples is itself a measurement here, so the runtime uses the wall
+clock rather than a synthesised event's `timeStamp`.
+
+Delivered alongside: `venipuncture/inversion/`, a persistent `inversion` on the
+encounter, an `inversion` measurement category reporting each tube's own
+required count against what it got, peak angle, peak degrees per second against
+the shearing threshold, seconds of delay and a per-specimen verdict, an
+accessible control path exercising the identical pure helpers (including its
+own rock, shake and turn-it-very-slowly, which fail exactly as the drags do),
+29 unit tests and 16 browser tests.
+
+**All 16 physical steps are now real interactions.** The 2D `VP_STEPS` remain
+as the accessibility fallback, exactly as intended — nothing was thrown away.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -603,7 +669,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 ~~`feature/aseptic-site-cleaning`~~ ✅ → ~~`feature/needle-holder-assembly`~~ ✅ →
 ~~`feature/anchor-and-insert`~~ ✅ → ~~`feature/tube-collection`~~ ✅ →
 ~~`feature/withdraw-safety-sharps`~~ ✅ → ~~`feature/post-draw-care`~~ ✅ →
-`feature/tube-inversion`.
+~~`feature/tube-inversion`~~ ✅ — **all sixteen steps converted.**
 
 | Step | Today | Becomes |
 |---|---|---|
@@ -622,7 +688,7 @@ Branch order (one branch each, verified and deployed before the next starts):
 | dispose | ✅ **done** — the whole unit carried into a real container | — |
 | pressure | ✅ **done** — a real force held on the real puncture | — |
 | bandage | ✅ **done** — dressed once it has actually stopped | — |
-| invert | button | grab the tube and rotate it 5–10× — counted for real; shaking causes hemolysis |
+| invert | ✅ **done** — each tube turned end over end, to its own count | — |
 
 **Accessibility:** today's `VP_STEPS` survive as an opt-in **2D fallback mode** for
 touch, low-end GPUs, and reduced-motion. Nothing is thrown away.
