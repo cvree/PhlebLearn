@@ -44,19 +44,22 @@ async function open(page, mode, step){
 /**
  * Waits for the camera to stop moving.
  *
- * fitCamera re-frames on an aspect change and every 30 frames, so anchors read
- * the instant the scene appears can still be projected against a frame that is
- * about to move. A press aimed with stale anchors lands off the puncture, which
- * is a real failure of the test rather than of the mechanic.
+ * fitCamera re-frames on the first rendered frame and every 30 after it, so
+ * anchors read the instant the scene appears are projected against a camera
+ * that is about to move — and two such reads agree with each other, so
+ * stability alone is not enough. Requiring frames to have actually rendered
+ * first is what makes this real. A press aimed with stale anchors lands off the
+ * puncture, which is a failure of the test rather than of the mechanic.
  */
 async function settle(page){
+  await page.evaluate(()=>{ delete window.__pdPrevAnchor; });
   await page.waitForFunction(async ()=>{
     const a = await window.__phlebTest.postDrawAnchors();
-    if(!a) return false;
+    if(!a || a.frame < 4) return false;
     const prev = window.__pdPrevAnchor;
     window.__pdPrevAnchor = a.site;
     return !!prev && Math.hypot(prev.x - a.site.x, prev.y - a.site.y) < 0.5;
-  }, null, { timeout: 10000 });
+  }, null, { timeout: 15000 });
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.postDrawSnapshot());
@@ -289,6 +292,12 @@ test("the bandage step inherits the clot the pressure step formed", async ({ pag
   const errors = attachDiagnostics(page);
   await open(page, "teach", "pressure");
   await pressHoldRelease(page, 0.75, 45);
+  // asserted before the click so a failure here names the cause rather than
+  // just reporting that a button stayed disabled
+  const done = await snapshot(page);
+  expect(done.padOffSite).toBe(false);
+  expect(done.meanForce).toBeGreaterThan(done.requiredForce);
+  expect(done.pressureReady).toBe(true);
   await page.locator("#pdReady").click();
 
   await expect(page.locator(".asm-coach")).toBeVisible();

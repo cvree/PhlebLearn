@@ -629,6 +629,14 @@ export function postDrawAnchors(){
   const axisUnderSite = new THREE.Vector3(ctx.siteX, ARM_Y + flexOffsetY(), 0);
   return {
     mode: ctx.mode,
+    /**
+     * Rendered frames so far. The camera is re-framed on the first one, so a
+     * test that reads anchors before any frame has rendered gets values
+     * projected against a camera that is about to move — and two such reads
+     * agree with each other, which makes a naive "has it stopped moving?"
+     * check pass on stale numbers.
+     */
+    frame: ctx.frame,
     site: at(siteTop),
     axisUnderSite: at(axisUnderSite),
     hand: at(hand),
