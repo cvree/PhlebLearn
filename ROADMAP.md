@@ -26,7 +26,12 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 any more. What remains is not step conversion but assessment: the photographed
 0–4 rubric, the three separated game modes, a distinct butterfly/dorsal-hand
 procedure, the introduction-and-identification dialogue, session replay and the
-final-practical report. See Phase 3 onward.
+final-practical report.
+
+👉 **`docs/HANDOFF.md` is the entry point for that work** — recommended branch
+order, which measurement keys already feed which rubric row, what exists for the
+butterfly draw and what does not, the conventions that must not be broken, and
+the testing and deployment traps. Read it before starting Phase 3.
 
 Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
