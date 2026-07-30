@@ -159,7 +159,11 @@ export const EVENTS=[
      {t:"Tell them to skip the test entirely.",ok:false,reply:"Can you even decide that?"}],
    learn:"Fasting status affects tests like glucose and lipids. Flag it — don't hide it or change the order yourself.",
    why:"Flag fasting issues, don't hide them."},
-  {type:"respond", emoji:"🙂", safety:true,
+  // `anticoagulated` is explicit trigger DATA, not something to infer from the
+  // words in `lines`. The post-draw care branch reads it to make this patient
+  // genuinely bleed and clot more slowly, so "apply firm pressure longer" is a
+  // thing the learner has to actually do rather than a sentence they read.
+  {type:"respond", emoji:"🙂", safety:true, anticoagulated:true,
    lines:["I should mention,","I'm on blood thinners."],
    options:[{t:"Note it and plan to apply firm pressure longer afterward.",ok:true,reply:"Thanks — that makes me feel cared for."},
      {t:"Ignore it; it doesn't matter.",ok:false,reply:"Are you sure? I bruise easily."},

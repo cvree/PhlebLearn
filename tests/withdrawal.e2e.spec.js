@@ -313,8 +313,13 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   await carryUnitTo(page, "sharps");
   await page.locator("#wdReady").click();
 
-  // and the next step is pressure — the 2D fallback, still to be converted
-  await expect(page.locator("#vpPress")).toBeVisible({ timeout: 10000 });
+  // and it hands straight on to the pressure step, which inherits the puncture
+  // this sequence just left — and knows the band was off before the needle was
+  await expect(page.locator(".asm-coach")).toBeVisible({ timeout: 10000 });
+  await page.waitForFunction(async ()=>!!(await window.__phlebTest.postDrawSnapshot()), null, { timeout: 10000 });
+  const pd = await page.evaluate(()=>window.__phlebTest.postDrawSnapshot());
+  expect(pd.haemostatic).toBe(false);
+  expect(pd.pressureStarted).toBe(false);
   expect(errors).toEqual([]);
 });
 

@@ -22,8 +22,8 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`); the other 3 are still 2D DOM. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that lets one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** 3 of the 16 venipuncture steps are still the 2D DOM
-panel — `pressure`, `bandage` and `invert`.
+**The gap that remains:** 1 of the 16 venipuncture steps is still the 2D DOM
+panel — `invert`.
 
 Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
@@ -39,8 +39,11 @@ another, and the first where some errors can be put right and some genuinely
 cannot; withdraw/safety/sharps (Phase 2g) is the first where the danger stops
 being to the specimen and becomes a danger to the person holding the needle,
 and the first whose interactions are dispatched from the state of the arm
-rather than from which step is running. Each branch after it converts one more
-step, in order, on that same arm.
+rather than from which step is running; pressure and bandage (Phase 2h) is the
+first where the quantity being controlled is a FORCE rather than a position,
+and the first where the patient's own body is still changing after the
+procedure is technically over. Each branch after it converts one more step, in
+order, on that same arm.
 
 ---
 
@@ -529,6 +532,66 @@ score, an accessible control path exercising the identical pure helpers
 (including its own recap, set-down and strike-the-bench, which fail exactly as
 the drags do), 38 unit tests and 15 browser tests.
 
+## Phase 2h — `feature/post-draw-care` ✅ complete
+
+Two steps, one patient. `pressure` was a hold-to-fill button wired to a 1.2
+second timer; `bandage` was an "Apply bandage" button gated on it. They are now
+**a pad pressed into the same arm hard enough to actually close the vein, for as
+long as this puncture and this patient genuinely need, and a dressing put on
+once the learner has looked and seen it stop.**
+
+- **Pressure is a MAGNITUDE, and that is the whole lesson.** Below the
+  adequacy band the vein is not occluded, so the clock runs with *nothing
+  happening* — a light pad makes no progress at all rather than slow progress,
+  and the site goes on leaking underneath it the entire time. Above the
+  comfort threshold it hurts, and it does not clot any faster for it.
+- **The force is a real reading, not a slider.** How far the pointer is driven
+  from the skin toward the limb's axis IS how hard the pad is pressed. Both
+  reference points are exactly-known world points projected forward through
+  `toScreen()`, and the basis is frozen when the press begins — an earlier cut
+  re-projected it every move, and since the coach panel resizes the moment
+  pressure starts, `fitCamera` re-framed and silently re-scaled the force under
+  a stationary hand. The camera now refuses to re-frame at all while a hand is
+  on the arm.
+- **A patient on anticoagulants genuinely needs longer.** That comes from
+  explicit `anticoagulated` trigger data on the patient's own event — never
+  from matching the words "blood thinners" in their dialogue — and it very
+  nearly doubles the hold. The same press that works on a normal patient
+  visibly does not finish on this one.
+- **The flexed elbow, which is the classic.** The patient's hand can be dragged
+  up, because that is what learners suggest and what patients do unprompted,
+  and it holds the puncture open: the fascia takes the pressure instead of the
+  vein, the clot makes no progress, and the site bleeds *faster*. Straightening
+  the arm recovers it.
+- **Haemostasis is found out by looking.** Taking the hand off the pad IS
+  lifting the gauze to check, and what it shows is whatever is actually true.
+  Look too early and there is blood — and the peek itself costs a third of the
+  progress, so peeking repeatedly is genuinely slower than holding on. The
+  step will not finish on a site that was never actually looked at.
+- **The blood goes somewhere.** Every second uncovered or under-pressed
+  extravasates real millilitres, painted onto the skin as a spreading bruise
+  and soaking visibly through the pad. Past a threshold it is a hematoma, and
+  that blocks.
+- **The dressing's alignment and tightness are the gesture's.** Dragged
+  squarely over the puncture or not; how far it is then pulled down onto the
+  limb is how tight it ends up, measured from the shallowest point of the
+  approach rather than absolutely (the carry starts down at the bench, so an
+  absolute reading made every dressing a tourniquet). Too tight is refused and
+  can be taken off and redone, counted.
+
+Delivered alongside: `venipuncture/postdraw/`, a persistent `postDraw` on the
+encounter, a `postDraw` measurement category reporting mean and peak force
+against this site's own band, effective versus required seconds, pressure
+consistency as a real coefficient of variation, millilitres extravasated and
+the dressing's millimetres and tension, an accessible control path exercising
+the identical pure helpers (including its own too-light, too-hard, off-site and
+bend-the-arm, which fail exactly as the drags do), 35 unit tests and 18 browser
+tests.
+
+Both the gestures and the controls are again built from the state of the arm
+rather than the step id, so a site that starts bleeding again is pressable from
+the bandage step.
+
 ## Phase 2 — Real instruments
 
 Each step converts from DOM widget → 3D interaction, reusing the existing raycaster.
@@ -539,7 +602,8 @@ Branch order (one branch each, verified and deployed before the next starts):
 ~~`feature/real-tourniquet`~~ ✅ → ~~`feature/tactile-palpation`~~ ✅ →
 ~~`feature/aseptic-site-cleaning`~~ ✅ → ~~`feature/needle-holder-assembly`~~ ✅ →
 ~~`feature/anchor-and-insert`~~ ✅ → ~~`feature/tube-collection`~~ ✅ →
-~~`feature/withdraw-safety-sharps`~~ ✅ → `feature/post-draw-care`.
+~~`feature/withdraw-safety-sharps`~~ ✅ → ~~`feature/post-draw-care`~~ ✅ →
+`feature/tube-inversion`.
 
 | Step | Today | Becomes |
 |---|---|---|
@@ -556,7 +620,8 @@ Branch order (one branch each, verified and deployed before the next starts):
 | withdraw | ✅ **done** — out along the line it went in, gauze ready | — |
 | safety | ✅ **done** — the device's own shield, slid until it locks | — |
 | dispose | ✅ **done** — the whole unit carried into a real container | — |
-| pressure / bandage | drag 🩹 | real gauze on the real site; hold timer checks arm position |
+| pressure | ✅ **done** — a real force held on the real puncture | — |
+| bandage | ✅ **done** — dressed once it has actually stopped | — |
 | invert | button | grab the tube and rotate it 5–10× — counted for real; shaking causes hemolysis |
 
 **Accessibility:** today's `VP_STEPS` survive as an opt-in **2D fallback mode** for

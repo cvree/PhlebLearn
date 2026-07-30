@@ -110,6 +110,21 @@ import {
   slideSafetyProgrammatically, recapProgrammatically, setDownProgrammatically,
   disposeProgrammatically,
 } from "./withdrawal/withdrawalRuntime.js";
+import {
+  evaluatePostDraw, modeReady as postDrawModeReady, SITE_KIND,
+} from "./postdraw/postDrawRules.js";
+import {
+  createPostDrawState, holdPressureFor, flexArm, checkSite,
+  applyBandage, removeBandage, giveAftercare,
+} from "./postdraw/postDrawState.js";
+import { measurePostDraw, applyPostDrawOutcome } from "./postdraw/postDrawScoring.js";
+import { renderPostDrawCoach } from "./postdraw/postDrawCoach.js";
+import {
+  startPostDraw, stopPostDraw, isPostDrawActive,
+  pressProgrammatically, holdUntilHaemostasisProgrammatically,
+  flexArmProgrammatically, checkSiteProgrammatically,
+  bandageProgrammatically, removeBandageProgrammatically, aftercareProgrammatically,
+} from "./postdraw/postDrawRuntime.js";
 import { evaluateCleaning } from "./cleaning/cleaningRules.js";
 import { measureCleaning, applyCleaningOutcome } from "./cleaning/cleaningScoring.js";
 import { renderCleaningCoach } from "./cleaning/cleaningCoach.js";
@@ -368,6 +383,57 @@ export function ensureWithdrawalSession(c){
   });
   if(c.encounter) c.encounter.disposal = c.withdrawal;
   return c.withdrawal;
+}
+
+/**
+ * Patient care after the sharp is gone — created once and carried across both
+ * the pressure and the bandage step, as one continuous piece of work.
+ *
+ * Everything it needs is inherited: the puncture is the one insert made, the
+ * vein is the one it went into, the pad is the gauze the withdrawal step put
+ * in the learner's hand, and whether this patient bleeds more comes from
+ * explicit trigger data on their own event rather than from any text.
+ */
+export function ensurePostDrawSession(c){
+  if(c.postDraw) return c.postDraw;
+  const wd = ensureWithdrawalSession(c);
+  const col = ensureCollectionSession(c);
+  const ins = ensureInsertSession(c);
+  // Reached directly (a resumed draw, or the test seam jumping straight in)
+  // with the needle still in the arm: it came out off-screen. A withdrawal
+  // that DID happen keeps exactly what it produced, band still on and all.
+  if(wd.withdrawnAt == null){
+    if(c.tourniquet && isOnPatient(c.tourniquet)) markReleased(c.tourniquet, { byTail: true });
+    markBandReleased(wd, { byTail: true, collectionDone: true });
+    takeGauze(wd, { itemId: wd.gauzeItemId, clean: wd.gauzeClean });
+    placeGauze(wd, { offsetM: 0.012, pressing: false });
+    withdrawSmoothly(wd, { tubeOn: false, tourniquetOn: false });
+    activateSafetyCleanly(wd);
+    disposeUnit(wd, { target: "sharps", fully: true });
+  }
+  const bandageDef = stagedDef(c, CATEGORY.BANDAGE);
+  const patientEvent = c.patient && c.patient.event;
+  c.postDraw = createPostDrawState({
+    // The butterfly/dorsal-hand procedure will pass SITE_KIND.HAND here; the
+    // straight-needle antecubital draw this build simulates is the fossa.
+    siteKind: SITE_KIND.ANTECUBITAL,
+    vessel: col.vessel,
+    gauge: wd.device ? (c.needleUnit ? c.needleUnit.gauge : 21) : 21,
+    // explicit trigger data, never inferred from the words in the dialogue
+    anticoagulated: !!(patientEvent && patientEvent.anticoagulated),
+    withdrawnAt: wd.withdrawnAt,
+    tourniquetOnAtWithdraw: !!wd.tourniquetOnAtWithdraw,
+    gauze: { itemId: wd.gauzeItemId, clean: wd.gauzeClean },
+    bandage: bandageDef
+      ? { itemId: bandageDef.id, clean: !(bandageDef.flaws && bandageDef.flaws.length) }
+      : { itemId: null, clean: true },
+  });
+  c.postDrawSite = {
+    x: ins.entryX == null ? ins.markX : ins.entryX,
+    z: ins.entryZ == null ? ins.markZ : ins.entryZ,
+  };
+  if(c.encounter) c.encounter.aftercare = c.postDraw;
+  return c.postDraw;
 }
 
 /** The fingers' record for this encounter — created once, carried onward. */
@@ -1252,6 +1318,23 @@ export const PHYSICAL_STEPS = {
   dispose(c, stage, advance){
     return runWithdrawal(c, stage, advance, "dispose");
   },
+
+  /* ---------------------------------------------------------------------------
+     PRESSURE — the pad pressed straight down onto the puncture, hard enough to
+     actually close the vein, for as long as this puncture and this patient
+     genuinely need, with the arm kept straight.
+     ------------------------------------------------------------------------ */
+  pressure(c, stage, advance){
+    return runPostDraw(c, stage, advance, "pressure");
+  },
+
+  /* ---------------------------------------------------------------------------
+     BANDAGE — over the puncture, firm but not a tourniquet, and only once the
+     learner has actually looked and seen it stop.
+     ------------------------------------------------------------------------ */
+  bandage(c, stage, advance){
+    return runPostDraw(c, stage, advance, "bandage");
+  },
 };
 
 /* ===========================================================================
@@ -1569,6 +1652,140 @@ function runCollection(c, stage, advance, mode){
   function cleanupOnly(){
     disposed = true;
     stopCollection();
+    try{ delete document.body.dataset.staging; }catch(_){}
+  }
+
+  try{ document.body.dataset.staging = "on"; }catch(_){}
+  draw();
+  launch3d();
+  return cleanupOnly;
+}
+
+/* ===========================================================================
+   PRESSURE AND BANDAGE — shared by both steps.
+
+   They differ in exactly one thing: when they are finished. `pressure` is done
+   once the bleeding has actually stopped AND the learner has looked and seen
+   it; `bandage` is done once a dressing is on that is neither a tourniquet nor
+   over a bleeding puncture. Same state, same rules, same gestures.
+   ======================================================================== */
+function runPostDraw(c, stage, advance, mode){
+  const arm = ensureArmSession(c);
+  const pd = ensurePostDrawSession(c);
+  const canRender3d = !!getRenderer();
+  let listView = !canRender3d || !!SS.postDrawListView;
+  let disposed = false;
+
+  const evaluate = ()=>evaluatePostDraw(pd);
+
+  function draw(result){
+    if(disposed) return;
+    renderPostDrawCoach(stage, {
+      state: pd,
+      result: result || evaluate(),
+      mode,
+      ready: postDrawModeReady(pd, mode),
+      guided: guided(),
+      listView, canRender3d,
+      handlers: {
+        onReady: finish,
+        onToggleView: toggleView,
+        onAction: (kind)=>draw(doAction(kind)),
+      },
+    });
+  }
+
+  // The controls tear the 3D scene down, so these cannot go through the
+  // runtime — but they run the SAME pure technique helpers it does, so the
+  // forces, seconds, volumes and tightness that come out are identical.
+  function doAction(kind){
+    const live = isPostDrawActive();
+    switch(kind){
+      case "hold":
+        if(live) return holdUntilHaemostasisProgrammatically() || evaluate();
+        holdPressureFor(pd, pd.holdSeconds + 2, { offsetM: 0.003 }); break;
+      case "press":
+        if(live) return pressProgrammatically("firm", 5) || evaluate();
+        holdPressureFor(pd, 5, { offsetM: 0.004 }); break;
+      case "light":
+        if(live) return pressProgrammatically("light", 5) || evaluate();
+        holdPressureFor(pd, 5, { force: 0.20, offsetM: 0.004 }); break;
+      case "hard":
+        if(live) return pressProgrammatically("hard", 5) || evaluate();
+        holdPressureFor(pd, 5, { force: 0.98, offsetM: 0.004 }); break;
+      case "beside":
+        if(live) return pressProgrammatically("beside", 5) || evaluate();
+        holdPressureFor(pd, 5, { offsetM: 0.026 }); break;
+      case "flex":
+        if(live) return flexArmProgrammatically(true) || evaluate();
+        flexArm(pd, true); break;
+      case "straighten":
+        if(live) return flexArmProgrammatically(false) || evaluate();
+        flexArm(pd, false); break;
+      case "check":
+        if(live) return checkSiteProgrammatically() || evaluate();
+        checkSite(pd); break;
+      case "bandage":
+        if(live) return bandageProgrammatically("square") || evaluate();
+        applyBandage(pd, { alignM: 0.003, tightness: 0.45 }); break;
+      case "bandage-off":
+        if(live) return bandageProgrammatically("off-site") || evaluate();
+        applyBandage(pd, { alignM: 0.020, tightness: 0.45 }); break;
+      case "bandage-tight":
+        if(live) return bandageProgrammatically("tight") || evaluate();
+        applyBandage(pd, { alignM: 0.003, tightness: 0.95 }); break;
+      case "bandage-loose":
+        if(live) return bandageProgrammatically("loose") || evaluate();
+        applyBandage(pd, { alignM: 0.003, tightness: 0.10 }); break;
+      case "bandage-remove":
+        if(live) return removeBandageProgrammatically() || evaluate();
+        removeBandage(pd); break;
+      case "aftercare":
+        if(live) return aftercareProgrammatically() || evaluate();
+        giveAftercare(pd); break;
+      default: break;
+    }
+    return evaluate();
+  }
+
+  async function launch3d(){
+    if(!canRender3d || listView || disposed) return;
+    await startPostDraw({
+      mode,
+      state: pd,
+      arm,
+      site: c.postDrawSite,
+      guided: guided(),
+      onChange: (result)=>draw(result),
+    });
+    if(disposed){ stopPostDraw(); return; }
+    draw();
+  }
+
+  function toggleView(){
+    listView = !listView;
+    SS.postDrawListView = listView; saveSS();
+    if(listView){ stopPostDraw(); draw(); }
+    else launch3d().then(()=>draw());
+  }
+
+  function finish(){
+    if(guided() && !postDrawModeReady(pd, mode)) return;
+    const measurements = measurePostDraw(pd, evaluate());
+    applyPostDrawOutcome(c, measurements);
+    if(c.encounter){
+      c.encounter.aftercare = pd;
+      c.encounter.measurements.postDraw = measurements;
+    }
+    cleanupOnly();
+    advance();
+  }
+
+  // Leaving a step must not undo the patient: a clot that is holding stays
+  // holding, a bruise stays, a dressing stays on. Only the scene is torn down.
+  function cleanupOnly(){
+    disposed = true;
+    stopPostDraw();
     try{ delete document.body.dataset.staging; }catch(_){}
   }
 

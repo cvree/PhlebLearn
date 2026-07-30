@@ -60,6 +60,10 @@ import {
   isWithdrawalActive, renderWithdrawal,
   withdrawalPointerDown, withdrawalPointerMove, withdrawalPointerUp, withdrawalPointerCancel,
 } from "./venipuncture/withdrawal/withdrawalRuntime.js";
+import {
+  isPostDrawActive, renderPostDraw,
+  postDrawPointerDown, postDrawPointerMove, postDrawPointerUp, postDrawPointerCancel,
+} from "./venipuncture/postdraw/postDrawRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -124,6 +128,7 @@ function setupInput(canvasEl){
     if(isInsertActive()){ insertPointerDown(e, canvasEl); return; }
     if(isCollectionActive()){ collectionPointerDown(e, canvasEl); return; }
     if(isWithdrawalActive()){ withdrawalPointerDown(e, canvasEl); return; }
+    if(isPostDrawActive()){ postDrawPointerDown(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -136,6 +141,7 @@ function setupInput(canvasEl){
     if(isInsertActive()){ insertPointerMove(e, canvasEl); return; }
     if(isCollectionActive()){ collectionPointerMove(e, canvasEl); return; }
     if(isWithdrawalActive()){ withdrawalPointerMove(e, canvasEl); return; }
+    if(isPostDrawActive()){ postDrawPointerMove(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
@@ -148,6 +154,7 @@ function setupInput(canvasEl){
     if(isInsertActive()){ insertPointerUp(e, canvasEl); return; }
     if(isCollectionActive()){ collectionPointerUp(e, canvasEl); return; }
     if(isWithdrawalActive()){ withdrawalPointerUp(e, canvasEl); return; }
+    if(isPostDrawActive()){ postDrawPointerUp(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -163,6 +170,7 @@ function setupInput(canvasEl){
     else if(isInsertActive()) insertPointerCancel(e, canvasEl);
     else if(isCollectionActive()) collectionPointerCancel(e, canvasEl);
     else if(isWithdrawalActive()) withdrawalPointerCancel(e, canvasEl);
+    else if(isPostDrawActive()) postDrawPointerCancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -250,6 +258,7 @@ function animate(){
   if(isInsertActive()){ renderInsert(getRenderer(), dt); return; }
   if(isCollectionActive()){ renderCollection(getRenderer(), dt); return; }
   if(isWithdrawalActive()){ renderWithdrawal(getRenderer(), dt); return; }
+  if(isPostDrawActive()){ renderPostDraw(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -940,6 +949,80 @@ function installTestSeam(){
     async withdrawalAnchors(){
       const { withdrawalAnchors } = await import("./venipuncture/withdrawal/withdrawalRuntime.js");
       return withdrawalAnchors();
+    },
+    /** The bleeding, the clot and the dressing, as the rules see them. */
+    async postDrawSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.postDraw;
+      if(!s) return null;
+      const { evaluatePostDraw, forceBandFor, modeReady } =
+        await import("./venipuncture/postdraw/postDrawRules.js");
+      const { pressureConsistency, meanForce, secondsRemaining } =
+        await import("./venipuncture/postdraw/postDrawState.js");
+      const r = evaluatePostDraw(s);
+      const band = forceBandFor(s.siteKind);
+      return {
+        siteKind: s.siteKind,
+        anticoagulated: s.anticoagulated,
+        requiredForce: band.min,
+        idealForce: band.ideal,
+        discomfortForce: band.discomfort,
+        force: s.force,
+        peakForce: s.peakForce,
+        meanForce: meanForce(s),
+        consistency: pressureConsistency(s),
+        padOffSite: s.padOffSite,
+        padOffsetM: s.padOffsetM,
+        pressureStarted: s.pressureStartedAt != null,
+        timeToPressureS: s.timeToPressureS,
+        heldSeconds: s.heldSeconds,
+        effectiveSeconds: s.effectiveSeconds,
+        holdSeconds: s.holdSeconds,
+        secondsRemaining: secondsRemaining(s),
+        discomfortSeconds: s.discomfortSeconds,
+        armFlexed: s.armFlexed,
+        armFlexedSeconds: s.armFlexedSeconds,
+        clotProgress: s.clotProgress,
+        haemostatic: r.haemostatic,
+        releasedEarlyCount: s.releasedEarlyCount,
+        extravasatedMl: s.extravasatedMl,
+        hematomaGrade: r.hematomaGrade,
+        checked: s.checkedAt != null,
+        checkCount: s.checkCount,
+        bleedingAtCheck: s.bleedingAtCheck,
+        bandaged: s.bandagedAt != null,
+        bandageAlignM: s.bandageAlignM,
+        bandageTightness: s.bandageTightness,
+        bandagedWhileBleeding: s.bandagedWhileBleeding,
+        gauzeShifted: s.gauzeShifted,
+        bandageAttempts: s.bandageAttempts,
+        aftercareGiven: s.aftercareGiven,
+        pressureReady: modeReady(s, "pressure"),
+        bandageReady: modeReady(s, "bandage"),
+        blocking: r.blocking.map(i=>i.code),
+        issues: r.issues.map(i=>i.code),
+      };
+    },
+    async postDrawAnchors(){
+      const { postDrawAnchors } = await import("./venipuncture/postdraw/postDrawRuntime.js");
+      return postDrawAnchors();
+    },
+    /** Runs the bleed/clot clock forward without waiting in real time. */
+    async fastForwardPressure(seconds){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.postDraw;
+      if(!s) return false;
+      const rt = await import("./venipuncture/postdraw/postDrawRuntime.js");
+      // While the scene is up this has to go THROUGH the runtime, or the state
+      // moves on without the coach ever being told and the panel freezes on
+      // whatever a rendered frame last reported. The controls path tears the
+      // scene down, so there it calls the same pure helper directly.
+      if(rt.isPostDrawActive()){ rt.fastForwardPressure(seconds || 10); return true; }
+      const { pressSample } = await import("./venipuncture/postdraw/postDrawState.js");
+      for(let t = 0; t < (seconds || 10); t += 0.1){
+        pressSample(s, s.force, s.padOffsetM == null ? 0 : s.padOffsetM, 0.1);
+      }
+      return true;
     },
     async screenPointForZone(zone){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
