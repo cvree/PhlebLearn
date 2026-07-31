@@ -147,7 +147,7 @@ export function renderCollectionCoach(host, o){
   const clean = ready && !(issue && issue.severity === "block");
 
   const signature = [
-    listView, guided, ready,
+    listView, guided, ready, o.hint || "-",
     cur ? cur.key : "-",
     cur ? cur.pierced : "-",
     cur ? cur.collapsed : "-",
@@ -187,7 +187,7 @@ export function renderCollectionCoach(host, o){
           </div>
           <p class="tq-next">Order of draw: ${order.map(k=>esc(tubeName(k))).join(" → ")}</p>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Fill each tube and change them over. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Fill each tube and change them over. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView

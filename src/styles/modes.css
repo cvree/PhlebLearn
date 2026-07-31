@@ -1,0 +1,73 @@
+/* =========================================================================
+   MODE STYLING — what the Final Practical is not allowed to show.
+
+   Loaded LAST, and every rule here is scoped to an attribute the panel sets
+   on the venipuncture stage from `reveal()`. That keeps the "which mode am
+   I in" decision in one place (game/gameState.js) rather than duplicated
+   through ten coach modules' class expressions.
+
+   `data-verdicts="0"` — the coach may report the OBSERVATION (the angle is
+   22°, the tube is at 80%, the band has been on 47s) but must not say
+   whether it is right. Every verdict in this app is expressed as colour, so
+   neutralising the colour neutralises the verdict completely. The selectors
+   are more specific than the ones they override, including the ones inside
+   the high-contrast media query, so load order cannot break this.
+
+   `data-reveal="learn|practice|final"` is set alongside for anything that
+   needs the mode itself rather than one capability.
+   ========================================================================= */
+
+.vp-stage[data-verdicts="0"] .asm-val.good,
+.vp-stage[data-verdicts="0"] .asm-val.bad,
+.vp-stage[data-verdicts="0"] .asm-val.wait,
+.vp-stage[data-verdicts="0"] .cln-val.good,
+.vp-stage[data-verdicts="0"] .cln-val.bad,
+.vp-stage[data-verdicts="0"] .cln-val.wait,
+.vp-stage[data-verdicts="0"] .tq-obsval.bad,
+.vp-stage[data-verdicts="0"] .tq-clock.warn,
+.vp-stage[data-verdicts="0"] .tq-clock.over{
+  color:var(--ink);
+  text-decoration:none;
+}
+
+.vp-stage[data-verdicts="0"] .stg-tag.bad{
+  border-color:var(--line);
+  color:var(--ink);
+  background:#fff;
+}
+
+.vp-stage[data-verdicts="0"] .stg-msg.block,
+.vp-stage[data-verdicts="0"] .stg-msg.warn,
+.vp-stage[data-verdicts="0"] .stg-msg.ready,
+.vp-stage[data-verdicts="0"] .tq-gesture.ready{
+  border-left-color:var(--line);
+  background:transparent;
+}
+
+.vp-stage[data-verdicts="0"] .stg-chk.ok,
+.vp-stage[data-verdicts="0"] .stg-slot.ok,
+.vp-stage[data-verdicts="0"] .vp-invtube.vp-mixed{
+  border-color:var(--line);
+  background:#fff;
+  color:var(--ink);
+}
+
+.vp-stage[data-verdicts="0"] .stg-inspect.flagged,
+.vp-stage[data-verdicts="0"] .stg-inspect.clear{
+  border-left-color:var(--line);
+  background:transparent;
+}
+
+/* ---------- the practice-mode section card ------------------------------- */
+.sec-card{border:2px solid var(--line);border-radius:16px;padding:12px 14px;margin:10px 0;
+  background:#fff;box-shadow:var(--shadow)}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
+.sec-title{font-weight:900;font-size:14px;color:var(--ink)}
+.sec-score{font-weight:900;font-size:13px;color:var(--plum)}
+.sec-narrative{font-size:12.5px;color:var(--ink);margin:4px 0 6px}
+.sec-mistakes{margin:4px 0 0;padding-left:18px;font-size:12px;color:var(--ink-soft)}
+.sec-mistakes li{margin:3px 0}
+.sec-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+/* ---------- the mode picker on the idle screen --------------------------- */
+.mode-note{font-size:11.5px;color:var(--ink-soft);margin:-4px 0 8px;text-align:center}

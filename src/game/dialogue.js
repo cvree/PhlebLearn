@@ -11,7 +11,7 @@
    ========================================================================= */
 import { $, panel } from "../dom.js";
 import { shuffle } from "../utils.js";
-import { ENC, MODE } from "./gameState.js";
+import { ENC, guided } from "./gameState.js";
 import { sfx } from "../audio/audioManager.js";
 
 export const DOT = {name:"Dot",emoji:"🩸"};
@@ -37,7 +37,7 @@ export const LESSONS = {
   respond:{h:"Step 8 · Professional response",what:"Respond to the patient kindly and safely.",why:"Communication and safety matter as much as technical accuracy.",tip:"Patient safety first, stop if they feel faint; never skip ID under pressure."}
 };
 export function teach(key){
-  if(MODE!=="teach"||!LESSONS[key])return "";
+  if(!guided()||!LESSONS[key])return "";
   const l=LESSONS[key];
   return `<div class="lesson"><span class="modetag">🎓 TEACHING MODE</span>
     <span class="lh">${l.h}</span>
@@ -54,7 +54,7 @@ export function optionStep(options,onAccept,teachWhy){
     const b=document.createElement("button"); b.className="opt"; b.textContent=o.t;
     b.style.animationDelay=(i*55)+"ms";
     b.onclick=()=>{
-      if(MODE==="teach"){
+      if(guided()){
         if(o.ok){ b.classList.add("good"); sfx("good"); clearHint(box); setTimeout(()=>onAccept(o),320); }
         else { b.classList.add("bad"); sfx("bad"); showHint(box, teachWhy||"Not quite, choose the safest, most correct option, then try again."); }
       } else { sfx(o.ok?"good":"bad"); onAccept(o); }
@@ -86,7 +86,7 @@ export function runDialogue(stepKey,cfg){
     shuffle(d.options).forEach((o,i)=>{
       const b=document.createElement("button"); b.className="opt"; b.textContent=o.t; b.style.animationDelay=(i*55)+"ms";
       b.onclick=()=>{
-        if(MODE==="teach" && !o.ok){ b.classList.add("bad"); sfx("bad");
+        if(guided() && !o.ok){ b.classList.add("bad"); sfx("bad");
           showHint(box,(o.reply?('Reaction: "'+o.reply+'", '):"")+(cfg.teachWhy||"Try the safest, most correct option.")); return; }
         b.classList.add(o.ok?"good":"bad"); sfx(o.ok?"good":"bad"); d.chosen=o; d.phase="reaction"; setTimeout(()=>cfg.rerender(),280);
       };

@@ -373,7 +373,9 @@ function installTestSeam(){
       const [{ setEnc, SHIFT, setShift, setMode }, { makePatient }, { go }] = await Promise.all([
         import("./game/gameState.js"), import("./game/encounter.js"), import("./ui/panels.js"),
       ]);
-      setMode(mode==="teach" ? "teach" : "play");
+      // setMode normalises: "teach"/"play" are the legacy names, and
+      // "learn"/"practice"/"final" the three the game now has.
+      setMode(mode);
       setShift({ len:1, index:0, patients:[], ratings:[], orderAllOk:true, safetyAllOk:true, coins:0, startMs:Date.now(), patientTimes:[], missed:[] });
       const p = makePatient();
       const selected = tubes || ["lightblue","lavender"];

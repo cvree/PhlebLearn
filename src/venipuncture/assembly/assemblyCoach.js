@@ -19,10 +19,10 @@ import {
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
-function msgBlock(guided, ready, issue, action, readyText){
+function msgBlock(guided, ready, issue, action, readyText, hint){
   if(!guided){
     return `<div class="stg-msg neutral" role="status" aria-live="polite">
-      Build the unit and carry on when you judge it right. Your technique is assessed after the patient.
+      ${hint ? `<b>Reminder.</b> ${esc(hint)}` : `Build the unit and carry on when you judge it right. Your technique is assessed after the patient.`}
     </div>`;
   }
   return `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
@@ -124,7 +124,7 @@ export function renderAssemblyCoach(host, o){
       ${threadHTML(state, o.unit)}
 
       ${msgBlock(guided, ready, issue, nextAssemblyAction(state),
-        `<b>Threaded and finger-tight.</b> ${state.turns.toFixed(1)} turns, square on the hub. Leave the sheath on until you are ready to stick.`)}
+        `<b>Threaded and finger-tight.</b> ${state.turns.toFixed(1)} turns, square on the hub. Leave the sheath on until you are ready to stick.`, o.hint)}
 
       ${listView ? assembleControlsHTML(state) : `<p class="stg-help">
         ${!state.pouchOpen
@@ -259,7 +259,7 @@ export function renderUncapCoach(host, o){
       ${uncapHTML(state)}
 
       ${msgBlock(guided, ready, issue, nextUncapAction(state),
-        `<b>Bevel up, needle intact.</b> The sheath is clear of the field and the patient has been told. Go in.`)}
+        `<b>Bevel up, needle intact.</b> The sheath is clear of the field and the patient has been told. Go in.`, o.hint)}
 
       ${listView ? uncapControlsHTML(state) : `<p class="stg-help">
         ${state.capOn

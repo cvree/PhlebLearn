@@ -12,7 +12,13 @@ import { musicForState } from "../audio/audioManager.js";
 import { toast, confetti, floatXP } from "./notifications.js";
 import { shuffle, pick, arraysEqual } from "../utils.js";
 import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, VERIFY_CORRECT, VERIFY_WRONG, NICK_CORRECT, NICK_WRONG, ALL_CATCHES } from "../config.js";
-import { SS, ENC, setEnc, SHIFT, setShift, state, setState, MODE, setMode, guided, saveSS } from "../game/gameState.js";
+import {
+  SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
+  MODE, MODES, guided, reveal,
+} from "../game/gameState.js";
+import { summaryLine } from "../game/modeProgress.js";
+import { sectionForStep, endsSection, sectionMeasurements, resetFromSection } from "../venipuncture/sections.js";
+import { MEASUREMENT_LABELS } from "../venipuncture/rubric/policy.js";
 import { awardBadge, difficultyName, addXP, addCoins } from "../game/saveSystem.js";
 import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
@@ -62,10 +68,16 @@ function renderStep(){
 }
 
 /* ---------- idle / clock in ------------------------------------------------ */
+// Shift length per mode: Learn is a short guided walk, Practice is long
+// enough to repeat what went badly, the Final Practical is one assessed
+// attempt — an examiner does not give you five goes at it.
+const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PRACTICE]:4, [MODES.FINAL]:1 };
+
 function renderIdle(){
+  const line = m => summaryLine(SS.modeProgress, m);
   panel.innerHTML=`
     <h2>🩺 Clock in</h2>
-    <p class="sub">New here? Start with <b>Teaching mode</b>, it walks you through every step with no pressure. Ready to test yourself? Run a scored shift.</p>
+    <p class="sub">Three ways to work. <b>Learn</b> talks you through every step. <b>Practice</b> stays quiet until the end of each section, then lets you replay it. The <b>Final Practical</b> says nothing at all until the report.</p>
     <div class="tubechips">
       <span class="pill">⭐ XP ${SS.xp}</span>
       <span class="pill">🪙 ${SS.coins}</span>
@@ -73,17 +85,22 @@ function renderIdle(){
       <span class="pill">📋 Shifts ${SS.shifts}</span>
       <span class="pill">🏠 ${getRoomLevel().name}</span>
     </div>
-    <button class="btn alt cta-pulse starborder" id="teachMode">🎓 Teaching mode (guided, 3 patients)</button>
-    <button class="btn cta-pulse starborder" id="clockIn">▶️ Start scored shift (5 patients)</button>
+    <button class="btn alt cta-pulse starborder" id="modeLearn">🎓 Learn (guided, ${SHIFT_LEN[MODES.LEARN]} patients)</button>
+    <div class="mode-note">${line(MODES.LEARN)}</div>
+    <button class="btn alt" id="modePractice">🔁 Practice (${SHIFT_LEN[MODES.PRACTICE]} patients, feedback per section)</button>
+    <div class="mode-note">${line(MODES.PRACTICE)}</div>
+    <button class="btn cta-pulse starborder" id="modeFinal">📋 Final Practical (1 patient, full rubric report)</button>
+    <div class="mode-note">${line(MODES.FINAL)}</div>
     ${SS.weak.length?`<div class="hint">Weak topics queued for Learn Mode: ${SS.weak.length}</div>`:""}
   `;
   blurText(panel.querySelector("h2"));
-  $("teachMode").onclick=()=>{ sfx("win"); startShift("teach"); };
-  $("clockIn").onclick=()=>{ sfx("win"); startShift("play"); };
+  $("modeLearn").onclick=()=>{ sfx("win"); startShift(MODES.LEARN); };
+  $("modePractice").onclick=()=>{ sfx("win"); startShift(MODES.PRACTICE); };
+  $("modeFinal").onclick=()=>{ sfx("win"); startShift(MODES.FINAL); };
 }
 function startShift(mode){
-  setMode(mode==="teach"?"teach":"play");
-  setShift({len:MODE==="teach"?3:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[]});
+  setMode(mode);
+  setShift({len:SHIFT_LEN[MODE]||1,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[]});
   nextPatient();
 }
 function nextPatient(){
@@ -102,7 +119,7 @@ function renderArrive(){
   const greet=pick(["Hi, I'm here for my blood draw.","Hello! Ready when you are.","Hi there. I've got my lab order right here.","Morning! Hope this is quick."]);
   panel.innerHTML=`
     <h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
-    ${MODE==="teach"&&SHIFT.index===0?teach("arrive"):""}
+    ${guided()&&SHIFT.index===0?teach("arrive"):""}
     ${says(p.first,pEmoji(p),greet,p.mood)}
     <button class="btn" id="greet">🙋 Greet & begin</button>
   `;
@@ -199,7 +216,7 @@ export function onTubePicked(tubeMeshObj){
 }
 function renderSelect(){
   const p=ENC.p;
-  const hint = MODE==="teach"
+  const hint = guided()
     ? `<div class="lesson"><span class="lh">Which tube for each test?</span>${p.orders.map(o=>`${o} → <b>${TUBES[TESTS[o].tube].name}</b>`).join("<br>")}</div>`
     : "";
   panel.innerHTML=`
@@ -217,7 +234,7 @@ function renderSelect(){
   `;
   $("confirmTubes").onclick=()=>{
     if(!ENC.selected.length){toast("Pick at least one tube from the rack.");return;}
-    if(MODE==="teach"){
+    if(guided()){
       const sel=[...ENC.selected].sort(), req=[...p.reqSet].sort();
       if(!arraysEqual(sel,req)){
         const missing=req.filter(k=>!sel.includes(k)).map(k=>TUBES[k].name);
@@ -255,7 +272,7 @@ function renderOrder(){
     const b=document.createElement("button"); b.className="opt";
     b.innerHTML=`<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#${TUBES[k].color.toString(16).padStart(6,'0')};margin-right:8px;vertical-align:middle"></span>${TUBES[k].name}`;
     b.onclick=()=>{
-      if(MODE==="teach" && k!==nextCorrect){
+      if(guided() && k!==nextCorrect){
         sfx("bad"); showHint(optsBox, `In the order of draw, <b>${TUBES[nextCorrect].name}</b> comes next.`); return;
       }
       ENC.ordered.push(k); sfx("click"); renderOrder();
@@ -304,14 +321,20 @@ function renderCollect(){
   const info=VP_TIPS[id];
   const done=c.step, total=c.steps.length;
   const dots=c.steps.map((s,i)=>`<span class="vp-pip ${i<done?'done':i===done?'now':''}" title="${VP_TIPS[s].t}">${VP_ICON[s]}</span>`).join("");
-  const lesson = MODE==="teach"
+  const r = reveal();
+  // Learn teaches the step. Practice is reminded what the step is FOR.
+  // The Final Practical is told the step's name and nothing else — the
+  // examiner does not read you the tip sheet.
+  const lesson = r.instruction
     ? `<div class="lesson"><span class="modetag">🎓 TEACHING</span><span class="lh">${VP_ICON[id]} ${info.t}</span>${info.tip}<br><span class="why">Why it matters: ${info.why}</span></div>`
-    : `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b> ${info.tip}</div>`;
+    : r.hints
+      ? `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b> ${info.tip}</div>`
+      : `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b></div>`;
   panel.innerHTML=`
     <h2>🩸 Venipuncture <span class="vp-count">step ${done+1}/${total}</span></h2>
     <div class="vp-progress">${dots}</div>
     ${lesson}
-    <div class="vp-stage" id="vpStage"></div>
+    <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
     <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`;
   const stage=$("vpStage");
   wireLeaveDraw();
@@ -322,9 +345,64 @@ function renderCollect(){
     onMidDrawEvent: (resumeStep)=>{ ENC.drawResumeBeat=resumeStep; go("drawresp"); },
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
     onCleanup: ()=>{ if(ENC._collectCleanup) ENC._collectCleanup(); },
+    // Practice mode only. The driver asks; the mode decision lives here.
+    sectionFeedbackFor: (finishedId, nextId)=>{
+      if(!reveal().sectionFeedback) return null;
+      if(!endsSection(finishedId, nextId)) return null;
+      const section = sectionForStep(finishedId);
+      const readings = sectionMeasurements(c, section);
+      if(!readings.length) return null;
+      return { section, readings, done: !nextId };
+    },
+    onSectionFeedback: renderSectionFeedback,
   });
   if(FX.gsap && !SS.reduceMotion){ FX.gsap.from(stage,{opacity:0,y:12,duration:.3,ease:"power2.out"}); }
 }
+/* ---------- Practice mode: feedback at the end of each section --------------
+   The brief puts Practice's feedback here rather than after every screen, and
+   makes the section repeatable. Both are the same data the rubric will use
+   later — this is the step's own measurement object, shown early, not a
+   second opinion invented for the practice loop.
+
+   Repeating clears this section AND everything downstream of it, because the
+   later sessions are built from the earlier ones: a re-done insertion with a
+   stale collection session would draw from a puncture that no longer exists.
+   ------------------------------------------------------------------------- */
+function renderSectionFeedback({ section, readings, done }){
+  const cards = readings.map(({ key, measurement:m })=>`
+    <div class="sec-card">
+      <div class="sec-head">
+        <span class="sec-title">${MEASUREMENT_LABELS[key]||key}</span>
+        <span class="sec-score">${m.score}/100</span>
+      </div>
+      <p class="sec-narrative">${m.narrative}</p>
+      ${m.mistakes && m.mistakes.length
+        ? `<ul class="sec-mistakes">${m.mistakes.slice(0,5).map(x=>`<li>${x.item?`<b>${x.item}</b> — `:""}${x.message}</li>`).join("")}</ul>`
+        : `<p class="sec-narrative"><b>Nothing was recorded against this section.</b></p>`}
+    </div>`).join("");
+  panel.innerHTML=`
+    <h2>🔁 ${section.label}</h2>
+    <p class="sub">Section finished. This is what was measured — the same numbers the report is built from.</p>
+    ${cards}
+    <div class="sec-actions">
+      <button class="btn" id="secOn">${done?"Finish the draw ▶":"Carry on ▶"}</button>
+      <button class="btn ghost" id="secAgain">↺ Repeat this section</button>
+    </div>
+    <div class="hint">Repeating replays from the start of this section. Everything after it is cleared too, so nothing downstream is left describing work you have just redone.</div>`;
+  $("secOn").onclick=()=>{ sfx("tap"); renderCollect(); };
+  $("secAgain").onclick=()=>{
+    sfx("click");
+    const c=ENC.collect;
+    if(ENC._collectCleanup) ENC._collectCleanup();
+    const index = resetFromSection(c, section.id);
+    if(index < 0){ renderCollect(); return; }
+    c.step = index;
+    c.sectionRepeats = (c.sectionRepeats||0) + 1;
+    (c.repeatedSections = c.repeatedSections || []).push(section.id);
+    renderCollect();
+  };
+}
+
 /* Ends the venipuncture early. Two-step so a mis-tap can't abandon a patient:
    the button asks for confirmation before it does anything. The encounter is
    then scored on what was actually completed — nothing is faked as done. */
@@ -367,7 +445,7 @@ function vpFinish(){
   const sm = c.stagingMeasurements;
   // Teaching mode reports technique immediately; a scored shift holds it back
   // to the encounter score, after the patient interaction is over.
-  const stagingBlock = (sm && MODE==="teach") ? `
+  const stagingBlock = (sm && guided()) ? `
     <div class="vp-technique">
       <div class="vt-head"><span class="vt-title">🧺 Work-area preparation</span><span class="vt-score">${sm.score}/100</span></div>
       <p class="vt-narrative">${sm.narrative}</p>
@@ -388,7 +466,7 @@ function vpFinish(){
     <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
     ${stagingBlock}
     <div class="vp-scorewrap">${items.map(([k,l])=>`<span class="vp-chip ${c[k]?'ok':'mid'}">${c[k]?'✓':'•'} ${l}</span>`).join("")}</div>
-    ${MODE==="teach"?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}
+    ${guided()?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}
     <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
   $("vpToLabel").onclick=()=>{ sfx("tap"); go(hasPostDraw?"drawresp":"label"); };
 }
@@ -415,7 +493,7 @@ function renderLabel(){
     $("lr-"+k).onclick=()=>{ ENC.labelFields[k]=!ENC.labelFields[k]; sfx("click"); renderLabel(); };
   });
   $("print").onclick=()=>{
-    if(MODE==="teach"){
+    if(guided()){
       const f2=ENC.labelFields, miss=[];
       if(!f2.name)miss.push("full name"); if(!f2.iddob)miss.push("ID/DOB");
       if(!f2.datetime)miss.push("date & time"); if(!f2.initials)miss.push("your initials");
@@ -460,7 +538,7 @@ function renderRespond(){
   const c=ENC.convo;
   const who=ENC.p.first, ava=ev.emoji||"🙂";
   const lines=ev.lines||[ev.prompt||"…"];
-  const head=`<h2>💬 ${who} says…</h2>${MODE==="teach"?teach("respond"):""}`;
+  const head=`<h2>💬 ${who} says…</h2>${guided()?teach("respond"):""}`;
   const bubble=(txt,sub)=>`<div class="dlg"><div class="ava">${ava}</div><div class="bubble"><div class="who">${who}${sub?` • ${sub}`:""}</div>${txt}</div></div>`;
 
   if(c.phase==="lines"){
@@ -476,7 +554,7 @@ function renderRespond(){
     shuffle(ev.options).forEach((o,i)=>{
       const b=document.createElement("button"); b.className="opt"; b.textContent=o.t; b.style.animationDelay=(i*55)+"ms";
       b.onclick=()=>{
-        if(MODE==="teach" && !o.ok){ b.classList.add("bad"); sfx("bad");
+        if(guided() && !o.ok){ b.classList.add("bad"); sfx("bad");
           showHint(box, (o.reply?('They\'d react: "'+o.reply+'", '):"")+(ev.why||"Try a kinder, safer response.")); return; }
         b.classList.add(o.ok?"good":"bad"); sfx(o.ok?"good":"bad");
         ENC.respondChoice=o.ok; (ENC.answers=ENC.answers||{}).professional={your:o.t,correct:(ev.options.find(x=>x.ok)||{}).t}; c.chosen=o; c.phase="reaction"; setTimeout(()=>renderRespond(),280);
@@ -519,7 +597,7 @@ function renderDrawResp(){
     shuffle(ev.options).forEach((o,i)=>{
       const b=document.createElement("button"); b.className="opt"; b.textContent=o.t; b.style.animationDelay=(i*55)+"ms";
       b.onclick=()=>{
-        if(MODE==="teach" && !o.ok){ b.classList.add("bad"); sfx("bad");
+        if(guided() && !o.ok){ b.classList.add("bad"); sfx("bad");
           showHint(box, (o.reply?('"'+o.reply+'", '):"")+(ev.learn||"Choose the safest response.")); return; }
         b.classList.add(o.ok?"good":"bad"); sfx(o.ok?"good":"bad");
         ENC.drawChoice=o.ok; (ENC.answers=ENC.answers||{}).draw={your:o.t,correct:(ev.options.find(x=>x.ok)||{}).t}; c.chosen=o; c.phase="reaction"; setTimeout(()=>renderDrawResp(),280);
@@ -567,7 +645,7 @@ function renderScore(){
   const s=ENC.scores, cats=Object.keys(s);
   const correct=cats.filter(c=>s[c]).length, pct=Math.round(correct/cats.length*100);
   const stars = pct>=95?5:pct>=80?4:pct>=65?3:pct>=45?2:1;
-  const teaching = MODE==="teach";
+  const teaching = guided();
   const timeStr = fmtDuration(ENC.elapsedMs);
   panel.innerHTML=`
     <h2>${teaching?"🎓 Lesson complete":"📊 Encounter score"}, ${ENC.p.name}</h2>
@@ -615,7 +693,7 @@ function showScoreDetail(c,silent){
 /* ---------- shift summary --------------------------------------------------------------- */
 function endShift(){
   SS.shifts++;
-  if(MODE==="teach"){
+  if(guided()){
     awardBadge("trainee");
   }else{
     awardBadge("shift-done");
@@ -632,7 +710,7 @@ function renderSummary(){
   const avg=Math.round(SHIFT.ratings.reduce((a,b)=>a+b,0)/(SHIFT.ratings.length||1));
   const stars = avg>=95?5:avg>=80?4:avg>=65?3:avg>=45?2:1;
   const newBadges=SS.badges.map(b=>BADGE_NAMES[b]||b);
-  const teaching = MODE==="teach";
+  const teaching = guided();
   const shiftTAT = fmtDuration(Date.now()-(SHIFT.startMs||Date.now()));
   const times=SHIFT.patientTimes||[];
   const avgDrawTAT = fmtDuration(times.length? times.reduce((a,b)=>a+b,0)/times.length : 0);

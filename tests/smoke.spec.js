@@ -41,11 +41,14 @@ test("production build loads with a Three.js canvas and no fatal errors", async 
   expect(errors, `Unexpected console/page errors:\n${errors.join("\n")}`).toEqual([]);
 });
 
-test("main interaction panel shows Clock In and can start Teaching mode", async ({ page }) => {
+test("main interaction panel shows Clock In and offers the three modes", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
-  await page.getByRole("button", { name: /Teaching mode/i }).click();
+  await expect(page.locator("#modeLearn")).toBeVisible();
+  await expect(page.locator("#modePractice")).toBeVisible();
+  await expect(page.locator("#modeFinal")).toBeVisible();
+  await page.locator("#modeLearn").click();
   await expect(page.getByRole("heading", { name: /Patient 1 of/i })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -53,7 +56,7 @@ test("main interaction panel shows Clock In and can start Teaching mode", async 
 test("patient-identification options render and a correct choice advances the encounter", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
-  await page.getByRole("button", { name: /Teaching mode/i }).click();
+  await page.locator("#modeLearn").click();
   await page.getByRole("button", { name: /Greet & begin/i }).click();
   await expect(page.getByRole("heading", { name: /Verify identity/i })).toBeVisible();
 
@@ -111,10 +114,10 @@ test("camera receives pointer input (orbit drag changes the room framing)", asyn
 test("a tube can be selected through the raycaster", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
-  await page.getByRole("button", { name: /Teaching mode/i }).click();
+  await page.locator("#modeLearn").click();
   await page.getByRole("button", { name: /Greet & begin/i }).click();
   // Fastest path to the tube rack regardless of which patient/event was rolled.
-  // Teaching mode keeps re-showing the same options with a hint on a wrong
+  // Learn mode keeps re-showing the same options with a hint on a wrong
   // pick, so this tries each option in turn (rather than always index 0)
   // until the screen actually advances, instead of assuming the first
   // option is correct.
@@ -123,7 +126,7 @@ test("a tube can be selected through the raycaster", async ({ page }) => {
     const optCount = await page.locator("#opts .opt").count();
     if(optCount > 0){
       for(let j=0;j<optCount;j++){
-        // in Teaching mode a wrong pick just appends a hint and keeps #opts
+        // in Learn mode a wrong pick just appends a hint and keeps #opts
         // around for another try; #opts disappearing is the real "advanced" signal.
         if(await page.locator("#opts").count() === 0) break;
         await page.locator("#opts .opt").nth(j).click();

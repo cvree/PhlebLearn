@@ -15,7 +15,11 @@ import { KEY } from "../config.js";
 export function defaultSS(){
   return {xp:0,coins:0,earned:0,badges:[],mastery:{},weak:[],shifts:0,bestRating:0,reduceMotion:false,music:true,musicVol:0.55,ownedUpgrades:[],placements:{},wallPlace:{},rotations:{},wallRot:{},stickers:{},stickerClaimed:{},dark:false,
     // physical-interaction preferences (branch: physical supply staging)
-    handedness:"right", assistedSnapping:false, stagingListView:false};
+    handedness:"right", assistedSnapping:false, stagingListView:false,
+    // per-mode progress: Learn, Practice and Final Practical are tracked
+    // separately, because a best set with the coach talking is not the same
+    // achievement as one set in silence. See game/modeProgress.js.
+    modeProgress:{}};
 }
 function loadSS(){
   try{ const r=localStorage.getItem(KEY); if(r) return Object.assign(defaultSS(),JSON.parse(r)); }catch(e){}
@@ -29,10 +33,66 @@ export function saveSS(){ try{ localStorage.setItem(KEY, JSON.stringify(SS)); }c
 export let state = "idle";
 export function setState(s){ state = s; }
 
-// "play" = scored shift | "teach" = guided learning
-export let MODE = "play";
-export function setMode(m){ MODE = m; }
-export function guided(){ return MODE==="teach"; }
+/* =========================================================================
+   THE THREE MODES
+
+   Learn, Practice and Final Practical are not difficulty settings — they
+   differ in WHAT THE LEARNER IS TOLD WHILE THEY WORK. One boolean could not
+   express that, so `MODE` is a three-way value and `reveal()` is the single
+   descriptor every coach and panel reads instead of re-deriving it.
+
+     instruction      full teaching prose, the specific error, the correct
+                      next action, and a Continue button gated on being right
+     hints            a standing reminder of what this step is for — never
+                      what is currently wrong with it
+     verdicts         may colour a measured value good/bad, or say "ready"
+     liveNumbers      may show the measured value at all
+     gateContinue     may refuse to advance until the step is correct
+     sectionFeedback  shows the section's own measurements when it ends
+     repeatSections   may offer to replay a section that went badly
+     highlights       may highlight anatomy and tool regions in the scene
+
+   The legacy strings "teach" and "play" still map in, because the ?e2e=1
+   seam and saved links pass them.
+   ========================================================================= */
+export const MODES = { LEARN:"learn", PRACTICE:"practice", FINAL:"final" };
+
+const LEGACY_MODES = { teach:MODES.LEARN, play:MODES.FINAL };
+
+export function normaliseMode(m){
+  if(LEGACY_MODES[m]) return LEGACY_MODES[m];
+  return (m===MODES.LEARN || m===MODES.PRACTICE || m===MODES.FINAL) ? m : MODES.FINAL;
+}
+
+export const MODE_REVEAL = {
+  [MODES.LEARN]: {
+    instruction:true, hints:true, verdicts:true, liveNumbers:true,
+    gateContinue:true, sectionFeedback:false, repeatSections:false, highlights:true,
+  },
+  [MODES.PRACTICE]: {
+    // No immediate answers: the hint says what the step is for, the verdict
+    // waits for the end of the section, and nothing blocks the learner from
+    // finishing a step badly — that is the thing being practised.
+    instruction:false, hints:true, verdicts:false, liveNumbers:true,
+    gateContinue:false, sectionFeedback:true, repeatSections:true, highlights:false,
+  },
+  [MODES.FINAL]: {
+    instruction:false, hints:false, verdicts:false, liveNumbers:true,
+    gateContinue:false, sectionFeedback:false, repeatSections:false, highlights:false,
+  },
+};
+
+export const MODE_NAMES = {
+  [MODES.LEARN]:"Learn", [MODES.PRACTICE]:"Practice", [MODES.FINAL]:"Final Practical",
+};
+
+export let MODE = MODES.FINAL;
+export function setMode(m){ MODE = normaliseMode(m); }
+export function guided(){ return MODE===MODES.LEARN; }
+export function practiceMode(){ return MODE===MODES.PRACTICE; }
+export function finalPractical(){ return MODE===MODES.FINAL; }
+/** The descriptor above for the current mode. Never mutate the result. */
+export function reveal(){ return MODE_REVEAL[MODE] || MODE_REVEAL[MODES.FINAL]; }
 
 export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true};
 export function setShift(next){ SHIFT = next; }

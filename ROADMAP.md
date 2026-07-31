@@ -698,7 +698,76 @@ Branch order (one branch each, verified and deployed before the next starts):
 **Accessibility:** today's `VP_STEPS` survive as an opt-in **2D fallback mode** for
 touch, low-end GPUs, and reduced-motion. Nothing is thrown away.
 
-## Phase 3 — Consequences
+## Phase 3 — Assessment
+
+Step conversion is finished; what remains is turning the measurements every
+step already produces into the photographed 0–4 rubric, separating the three
+game modes, adding the butterfly/dorsal-hand draw, and building the report.
+`docs/HANDOFF.md` holds the reasoning; this is the running score.
+
+### ✅ `feature/rubric-policy` — the grading layer
+
+`src/venipuncture/rubric/` — three pure modules and nothing else:
+
+- **`policy.js`** is the only file with numbers in it. The five rubric rows and
+  which measurement keys feed each, the 0–4 cut points, the excellence gates,
+  the qualified critical-event codes (`withdrawal.recapAttempted`, not
+  `recapAttempted`, because codes are only unique within a step module) with
+  their automatic-failure flags, and the pass mark. Every value is a
+  **documented default**, marked as ours rather than any programme's published
+  policy — the brief is explicit that the real automatic-failure rules must not
+  be invented.
+- **`rubricRules.js`** — `scoreCategory()`. The arithmetic sets a *ceiling*;
+  five gates decide whether the top band was *earned*: complete, independent,
+  in sequence, inside every configured tolerance, free of warnings. A gate can
+  only ever cost the 4. "Technically completed" is never automatically
+  excellent.
+- **`rubricReport.js`** — the whole result as serialisable data: procedure
+  type, total against the pass mark, per-row evidence, the exact measured
+  deviations, critical events, per-tube specimen results merged across
+  collection and mixing, patient outcomes, strongest actions, and a practice
+  plan prioritised automatic-failures-first.
+
+The policy names measurement fields by *string*, so a typo would silently block
+every Excellent rather than throw. `tests/rubric.spec.js` therefore builds each
+measurement object from the **real step modules** and asserts every field the
+policy references exists on it — plus the two guarantees the brief names by
+name: an honest 4 is reachable, and above-and-beyond observations never add
+score. 36 unit tests.
+
+### ✅ `feature/three-modes` — Learn, Practice, Final Practical
+
+One boolean (`MODE === "teach"`) could not express three modes that differ in
+*what the learner is told while they work*, so `gameState.js` now owns a
+three-way `MODE` and a `reveal()` descriptor every coach and panel reads:
+`instruction`, `hints`, `verdicts`, `liveNumbers`, `gateContinue`,
+`sectionFeedback`, `repeatSections`, `highlights`. The legacy `"teach"` and
+`"play"` strings still normalise in, because the `?e2e=1` seam passes them.
+
+- **Learn** — the existing guided path: teaching prose, the specific error, the
+  correct next action, and a Continue button gated on being right.
+- **Practice** — a standing reminder of what the step is *for* (never what is
+  wrong with it right now), no gate, and feedback **at the end of each
+  section**, which is then **repeatable**. `venipuncture/sections.js` groups the
+  steps by technique so a section can be replayed: repeating clears that
+  section *and everything downstream of it*, because the later sessions are
+  built from the earlier ones.
+- **Final Practical** — nothing. No teaching, no reminder, no gate, and no
+  verdict.
+
+**Every judgement in this app is expressed as colour**, so withholding the
+verdict is done in one place — `src/styles/modes.css`, scoped to a
+`data-verdicts="0"` attribute the panel sets from `reveal()` — rather than
+duplicated through ten coaches' class expressions. `tests/modes.e2e.spec.js`
+asserts it at the pixel: the same nodes with the same `good`/`bad` classes
+render in one colour in the Final Practical and in several in Learn.
+
+Bests are kept **per mode** (`game/modeProgress.js`, persisted on
+`SS.modeProgress`): a 19/20 scored with the coach naming every error is not the
+same achievement as one scored in silence, so they are never pooled.
+27 unit tests, 8 browser tests.
+
+## Phase 3b — Consequences
 
 - Complications rendered in 3D: hematoma swelling, blown vein, dry stick, vein
   collapse under vacuum, patient flinch and syncope (`DRAW_EVENTS` already exists).

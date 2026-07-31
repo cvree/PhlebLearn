@@ -168,7 +168,7 @@ export function renderPostDrawCoach(host, o){
   const clean = ready && !(issue && issue.severity === "block");
 
   const signature = [
-    mode, listView, guided, ready,
+    mode, listView, guided, ready, o.hint || "-",
     state.clotProgress >= 1,
     state.pressureStartedAt != null,
     state.padOffSite,
@@ -204,7 +204,7 @@ export function renderPostDrawCoach(host, o){
           </div>
           ${state.anticoagulated ? `<p class="tq-next">This patient is on anticoagulants — this puncture needs about ${Math.round(state.holdSeconds)}s of firm pressure, not the usual half-minute.</p>` : ""}`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Control the bleeding and dress the site. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Control the bleeding and dress the site. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView

@@ -12,7 +12,8 @@
    ========================================================================= */
 import { LAST } from "../config.js";
 import { pick } from "../utils.js";
-import { SS, saveSS, guided } from "../game/gameState.js";
+import { SS, saveSS, guided, reveal } from "../game/gameState.js";
+import { VP_TIPS } from "./questions.js";
 import { getRenderer } from "../rendering/renderer.js";
 import { drawArmFor } from "../game/encounter.js";
 import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
@@ -150,6 +151,23 @@ import {
 const ZONE_BY_NAME = { tray:ZONE.TRAY, rack:ZONE.RACK, reach:ZONE.REACH, across:ZONE.ACROSS, counter:ZONE.COUNTER };
 
 function handednessOf(){ return SS.handedness===HAND.LEFT ? HAND.LEFT : HAND.RIGHT; }
+
+/**
+ * Practice mode's "limited hint": a standing reminder of what this step is
+ * FOR. Deliberately the step's static tip and not `nextAction(state)` —
+ * telling the learner what is currently wrong with their work is the
+ * immediate answer Practice mode is defined by not giving.
+ *
+ * Learn mode gets the real coaching instead (reveal.instruction), and the
+ * Final Practical gets nothing.
+ */
+function stepHint(c){
+  const r = reveal();
+  if(!r.hints || r.instruction) return null;
+  const id = c && c.steps ? c.steps[c.step] : null;
+  const tip = id ? VP_TIPS[id] : null;
+  return tip ? `${tip.t}. ${tip.tip}` : null;
+}
 function viewportOrientation(){
   try{ return orientationForAspect(window.innerWidth/Math.max(1, window.innerHeight)); }
   catch(_){ return orientationForAspect(1.6); }
@@ -503,7 +521,7 @@ export const PHYSICAL_STEPS = {
         catalog: session.catalog,
         result: result || evaluate(),
         inspecting, listView, canRender3d,
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         handlers: {
           onReady: finish,
           onToggleHandedness: toggleHandedness,
@@ -579,7 +597,7 @@ export const PHYSICAL_STEPS = {
       // Teaching mode walks the learner to a correct tray before the draw can
       // start. A scored shift lets them commit to whatever they prepared — the
       // consequences and the assessment come after the patient, not before.
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       session.state.completedAt = Date.now();
       session.measurements = measureStaging(session.state, session.catalog, result);
       c.gatherOk = result.ready;   // honest on the recap chips, even when the learner chose to proceed anyway
@@ -628,7 +646,7 @@ export const PHYSICAL_STEPS = {
         state: tqState,
         result: result || liveResult(),
         gesture: isTourniquetActive() ? currentGesture() : null,
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -688,7 +706,7 @@ export const PHYSICAL_STEPS = {
       const ctx = await startTourniquet({
         state: tqState,
         arm,
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         onChange: (result)=>draw(result),
       });
       if(disposed){ stopTourniquet(); return; }
@@ -710,7 +728,7 @@ export const PHYSICAL_STEPS = {
       // Teaching mode will not start a draw on a band that is wrong. A scored
       // shift lets the learner commit — and the arm, the sample and the recap
       // all carry the consequence.
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       const measurements = measureTourniquet(tqState, result);
       applyTourniquetOutcome(c, measurements);
       // The clock the release step reads is this band's, not a fresh timer.
@@ -759,7 +777,7 @@ export const PHYSICAL_STEPS = {
         state: palp,
         result: result || evaluate(),
         touch: touch || (isPalpationActive() ? currentTouch() : null),
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -820,7 +838,7 @@ export const PHYSICAL_STEPS = {
 
     function finish(){
       const result = evaluate();
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       const measurements = measurePalpation(palp, result, c.armVessels || []);
       applyPalpationOutcome(c, measurements);
       // The vein found here is the vein every later step works on.
@@ -864,7 +882,7 @@ export const PHYSICAL_STEPS = {
       renderCleaningCoach(stage, {
         state: clean,
         result: result || evaluate(),
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -918,7 +936,7 @@ export const PHYSICAL_STEPS = {
 
     function finish(){
       const result = evaluate();
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       const measurements = measureCleaning(clean, result);
       applyCleaningOutcome(c, measurements);
       if(c.encounter) c.encounter.measurements.cleaning = measurements;
@@ -960,7 +978,7 @@ export const PHYSICAL_STEPS = {
         state: unit,
         result: result || evaluate(),
         unit: isAssemblyActive() ? currentUnit() : null,
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -1029,7 +1047,7 @@ export const PHYSICAL_STEPS = {
 
     function finish(){
       const result = evaluate();
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       const measurements = measureAssembly(unit, result);
       applyAssemblyOutcome(c, measurements);
       if(c.encounter){
@@ -1082,7 +1100,7 @@ export const PHYSICAL_STEPS = {
         state: unit,
         result: result || evaluate(),
         unit: isAssemblyActive() ? currentUnit() : null,
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -1157,7 +1175,7 @@ export const PHYSICAL_STEPS = {
 
     function finish(){
       const result = evaluate();
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       const measurements = measureUncap(unit, result);
       applyUncapOutcome(c, measurements);
       if(c.encounter){
@@ -1204,7 +1222,7 @@ export const PHYSICAL_STEPS = {
         state: ins,
         result: result || evaluate(),
         bevelDeg: bevelDeg(),
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -1285,7 +1303,7 @@ export const PHYSICAL_STEPS = {
       // Teaching mode will not let a bad stick proceed. A scored shift lets
       // the learner commit — the tube fill and the recap both carry whatever
       // this step actually produced.
-      if(guided() && !result.ready) return;
+      if(reveal().gateContinue && !result.ready) return;
       const measurements = measureInsert(ins, result, bevelDeg());
       applyInsertOutcome(c, measurements);
       if(c.encounter){
@@ -1398,7 +1416,7 @@ export const PHYSICAL_STEPS = {
       renderInversionCoach(stage, {
         state: inv,
         result: result || evaluate(),
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
@@ -1453,7 +1471,7 @@ export const PHYSICAL_STEPS = {
       await startInversion({
         state: inv,
         arm,
-        guided: guided(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
         onChange: (result)=>draw(result),
       });
       if(disposed){ stopInversion(); return; }
@@ -1472,7 +1490,7 @@ export const PHYSICAL_STEPS = {
       // Teaching mode will not leave tubes unmixed that CAN still be mixed. A
       // specimen already ruined does not hold the step open, because nothing
       // the learner does now would put it right.
-      if(guided() && !result.allHandled) return;
+      if(reveal().gateContinue && !result.allHandled) return;
       const measurements = measureInversion(inv, result);
       applyInversionOutcome(c, measurements);
       if(c.encounter){
@@ -1530,7 +1548,7 @@ function runWithdrawal(c, stage, advance, mode){
       mode,
       ready: withdrawalModeReady(wd, lc, mode),
       live: lc,
-      guided: guided(),
+      guided: guided(), reveal: reveal(), hint: stepHint(c),
       listView, canRender3d,
       handlers: {
         onReady: finish,
@@ -1619,7 +1637,7 @@ function runWithdrawal(c, stage, advance, mode){
       insert: c.insert,
       collection: c.collection,
       tourniquet: c.tourniquet,
-      guided: guided(),
+      guided: guided(), reveal: reveal(), hint: stepHint(c),
       onChange: (result)=>draw(result),
     });
     if(disposed){ stopWithdrawal(); return; }
@@ -1635,7 +1653,7 @@ function runWithdrawal(c, stage, advance, mode){
 
   function finish(){
     const lc = liveCtx();
-    if(guided() && !withdrawalModeReady(wd, lc, mode)) return;
+    if(reveal().gateContinue && !withdrawalModeReady(wd, lc, mode)) return;
     const measurements = measureWithdrawal(wd, evaluate(), {
       tourniquetSeconds: wd.tourniquetSecondsAtRelease == null
         ? lc.tourniquetSeconds : wd.tourniquetSecondsAtRelease,
@@ -1716,7 +1734,7 @@ function runCollection(c, stage, advance, mode){
         ? "That tube is off and filled to its draw volume."
         : "Every tube is filled to its draw volume, in order. The band comes off next.",
       readyLabel: mode === "fill" ? "Next tube ▶" : "All tubes collected ▶",
-      guided: guided(),
+      guided: guided(), reveal: reveal(), hint: stepHint(c),
       listView, canRender3d,
       handlers: {
         onReady: finish,
@@ -1793,7 +1811,7 @@ function runCollection(c, stage, advance, mode){
 
   function finish(){
     const result = evaluate();
-    if(guided() && !stepReady(result)) return;
+    if(reveal().gateContinue && !stepReady(result)) return;
     const measurements = measureCollection(col, result, {
       tourniquetSeconds: tourniquetSecondsFor(c),
     });
@@ -1844,7 +1862,7 @@ function runPostDraw(c, stage, advance, mode){
       result: result || evaluate(),
       mode,
       ready: postDrawModeReady(pd, mode),
-      guided: guided(),
+      guided: guided(), reveal: reveal(), hint: stepHint(c),
       listView, canRender3d,
       handlers: {
         onReady: finish,
@@ -1914,7 +1932,7 @@ function runPostDraw(c, stage, advance, mode){
       state: pd,
       arm,
       site: c.postDrawSite,
-      guided: guided(),
+      guided: guided(), reveal: reveal(), hint: stepHint(c),
       onChange: (result)=>draw(result),
     });
     if(disposed){ stopPostDraw(); return; }
@@ -1929,7 +1947,7 @@ function runPostDraw(c, stage, advance, mode){
   }
 
   function finish(){
-    if(guided() && !postDrawModeReady(pd, mode)) return;
+    if(reveal().gateContinue && !postDrawModeReady(pd, mode)) return;
     const measurements = measurePostDraw(pd, evaluate());
     applyPostDrawOutcome(c, measurements);
     if(c.encounter){
