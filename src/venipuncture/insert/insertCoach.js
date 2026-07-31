@@ -126,7 +126,7 @@ export function renderInsertCoach(host, o){
           </div>
           <p class="tq-next">${esc(nextAction(state, result))}</p>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Anchor, then go in. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Anchor, then go in. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView

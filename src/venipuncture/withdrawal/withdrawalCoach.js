@@ -179,7 +179,7 @@ export function renderWithdrawalCoach(host, o){
   const clean = ready && !(issue && issue.severity === "block");
 
   const signature = [
-    mode, listView, guided, ready,
+    mode, listView, guided, ready, o.hint || "-",
     o.live ? o.live.tourniquetOn : "-",
     state.fistRelaxed,
     state.releasedAt != null,
@@ -219,7 +219,7 @@ export function renderWithdrawalCoach(host, o){
                       : esc(nextAction(state, { tourniquetReleased: live.tourniquetReleased }, mode))}
           </div>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Finish the draw and make the sharp safe. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Finish the draw and make the sharp safe. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView

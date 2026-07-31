@@ -165,7 +165,7 @@ export function renderInversionCoach(host, o){
             return `${esc(tubeName(k))} ${spec.mustNotMix ? "none" : spec.ideal + "×"}`;
           }).join(" · ")}</p>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Mix each tube as its additive requires. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Mix each tube as its additive requires. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView

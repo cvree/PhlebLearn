@@ -67,6 +67,15 @@ export function renderCurrentStep(c, stage, hooks){
       hooks.onMidDrawEvent(c.step);
       return;
     }
+    // End of a section. Whether anything is SHOWN is the caller's decision —
+    // this module knows nothing about modes. Practice mode returns a payload
+    // and renders the section's own measurements; Learn and the Final
+    // Practical return nothing and fall straight through.
+    if(hooks.sectionFeedbackFor){
+      const nextId = c.step < c.steps.length ? c.steps[c.step] : null;
+      const payload = hooks.sectionFeedbackFor(finishedId, nextId);
+      if(payload && hooks.onSectionFeedback){ hooks.onSectionFeedback(payload); return; }
+    }
     if(c.step>=c.steps.length){ hooks.onComplete(); return; }
     hooks.rerender();
   };

@@ -137,7 +137,7 @@ export function renderPalpationCoach(host, o){
           </div>
           <p class="tq-next">${esc(nextAction(state))}</p>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Feel for the vein yourself. What you chose, and whether you actually palpated it, is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Feel for the vein yourself. What you chose, and whether you actually palpated it, is assessed after the patient.`}
           </div>`}
 
       ${listView ? controlsHTML(state, guided) : `<p class="stg-help">

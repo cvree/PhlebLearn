@@ -207,7 +207,7 @@ export function renderStagingCoach(host, o){
                       : "Stage the equipment this draw needs."}
           </div>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Stage what this draw needs, then continue whenever you're satisfied. Your preparation is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Stage what this draw needs, then continue whenever you're satisfied. Your preparation is assessed after the patient.`}
           </div>`}
 
       ${listView ? listHTML(state, catalog) : `<p class="stg-help">

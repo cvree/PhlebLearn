@@ -234,6 +234,11 @@ test("a tube filled to volume and pulled off is collected, and the coach says so
 /* ---------- order of draw --------------------------------------------------------- */
 
 test("reaching for the wrong tube first carries additive into the next one", async ({ page })=>{
+  // The longest walk in this file: two tubes carried to the holder and three
+  // seat drags between them. It sat just inside the 30s budget and now sits
+  // just outside it, which is the flake docs/TESTING.md warns about — the
+  // remedy is the same one every other multi-step walk here uses.
+  test.slow();
   await open(page, "teach");
   // lavender (EDTA) before light blue (citrate) — the classic
   await carryToHolder(page, "lavender");

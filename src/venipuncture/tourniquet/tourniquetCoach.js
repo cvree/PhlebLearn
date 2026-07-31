@@ -247,7 +247,7 @@ export function renderTourniquetCoach(host, o){
           </div>
           <p class="tq-next">${esc(nextAction(state))}</p>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Apply the band and carry on whenever you judge it right. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Apply the band and carry on whenever you judge it right. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView ? controlsHTML(state) : `<p class="stg-help">

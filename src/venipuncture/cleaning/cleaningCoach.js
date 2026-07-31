@@ -91,7 +91,7 @@ export function renderCleaningCoach(host, o){
           </div>
           <p class="tq-next">${esc(nextAction(state, result))}</p>`
         : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            Prep the site and carry on when you judge it ready. Your technique is assessed after the patient.
+            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Prep the site and carry on when you judge it ready. Your technique is assessed after the patient.`}
           </div>`}
 
       ${listView ? controlsHTML(state) : `<p class="stg-help">
