@@ -81,23 +81,34 @@ export function circumferenceAt(x, build){
 export const BAND_IDEAL = { min: 0.076, max: 0.102 };
 export const BAND_ACCEPTABLE = { min: 0.064, max: 0.120 };
 
-/** Distance from the draw site to a band position, signed: +proximal. */
-export function distanceAboveSite(bandX){ return bandX - SITE.x; }
+/**
+ * Distance from a draw site to a band position, signed: +proximal.
+ * `siteX` defaults to the antecubital fossa so every existing caller is
+ * unaffected; the butterfly/dorsal-hand procedure passes `HAND_SITE.x`.
+ */
+export function distanceAboveSite(bandX, siteX){
+  return bandX - (siteX == null ? SITE.x : siteX);
+}
 
 /** Metres → the inches a phlebotomy instructor actually says out loud. */
 export function metresToInches(m){ return m / 0.0254; }
 
 /**
  * Classifies where a band has been placed.
+ * `siteX`/`idealBand`/`acceptableBand` default to the antecubital numbers;
+ * a hand draw's tourniquet sits on the forearm above the wrist, a shorter
+ * distance from its own site, and passes its own windows.
  * @returns {"ideal"|"acceptableLow"|"acceptableHigh"|"tooLow"|"onSite"|"distal"|"tooHigh"}
  */
-export function classifyBandPosition(bandX){
-  const d = distanceAboveSite(bandX);
+export function classifyBandPosition(bandX, siteX, idealBand, acceptableBand){
+  const ideal = idealBand || BAND_IDEAL;
+  const acceptable = acceptableBand || BAND_ACCEPTABLE;
+  const d = distanceAboveSite(bandX, siteX);
   if(d <= 0.012) return d < -0.005 ? "distal" : "onSite";
-  if(d < BAND_ACCEPTABLE.min) return "tooLow";
-  if(d < BAND_IDEAL.min) return "acceptableLow";
-  if(d <= BAND_IDEAL.max) return "ideal";
-  if(d <= BAND_ACCEPTABLE.max) return "acceptableHigh";
+  if(d < acceptable.min) return "tooLow";
+  if(d < ideal.min) return "acceptableLow";
+  if(d <= ideal.max) return "ideal";
+  if(d <= acceptable.max) return "acceptableHigh";
   return "tooHigh";
 }
 
@@ -202,6 +213,82 @@ export function buildVessels(){
     }),
   ];
 }
+
+/**
+ * The dorsal-hand pattern for the butterfly/winged-set procedure.
+ *
+ * Positioned in x ∈ [HAND_X, WRIST_X] — the wrist taper of the SAME
+ * cylindrical limb mesh `buildVessels()` sits on, not a new surface. That
+ * is deliberate: it means every already-tested piece of projection code
+ * (`surfaceY`, `radiusAt`, the runtime's `toScreen`/`pointerToLimb`, the
+ * camera math) works for these veins with zero changes, because as far as
+ * that code is concerned this is just another point on the limb.
+ *
+ * The veins themselves are what a straight-needle antecubital draw has
+ * nothing to compare with: shallower (1.8–2.2mm depth vs 2.6–4.8mm),
+ * narrower (1.7–2.2mm calibre vs 3.0–4.0mm), and they roll more (0.55–0.65
+ * compliance vs 0.10–0.60) — a dorsal hand vein is a much easier target to
+ * lose than the median cubital.
+ */
+export function buildHandVessels(){
+  return [
+    vessel("dorsal-metacarpal-3", VESSEL_KIND.VEIN, {
+      label: "3rd dorsal metacarpal vein",
+      calibre: 0.0020,
+      depth: 0.0020,
+      compliance: 0.60,
+      preferred: true,
+      path: [
+        { x: HAND_X + 0.010, z: 0.000 },
+        { x: HAND_X + 0.028, z: 0.004 },
+        { x: HAND_X + 0.048, z: 0.008 },
+        { x: WRIST_X - 0.006, z: 0.010 },
+      ],
+    }),
+    vessel("dorsal-metacarpal-4", VESSEL_KIND.VEIN, {
+      label: "4th dorsal metacarpal vein",
+      calibre: 0.0017,
+      depth: 0.0022,
+      compliance: 0.65,
+      path: [
+        { x: HAND_X + 0.008, z: -0.014 },
+        { x: HAND_X + 0.026, z: -0.010 },
+        { x: HAND_X + 0.046, z: -0.006 },
+        { x: WRIST_X - 0.008, z: -0.004 },
+      ],
+    }),
+    vessel("dorsal-venous-arch", VESSEL_KIND.VEIN, {
+      label: "dorsal venous arch",
+      calibre: 0.0022,
+      depth: 0.0018,
+      compliance: 0.55,
+      path: [
+        { x: HAND_X + 0.006, z: 0.020 },
+        { x: HAND_X + 0.014, z: 0.006 },
+        { x: HAND_X + 0.014, z: -0.010 },
+        { x: HAND_X + 0.010, z: -0.022 },
+      ],
+    }),
+    // --- the trap that feels hard and doesn't give, same role as the
+    // biceps tendon plays on the forearm.
+    vessel("extensor-tendon", VESSEL_KIND.TENDON, {
+      label: "extensor tendon",
+      calibre: 0.0030,
+      depth: 0.0028,
+      compliance: 0.0,
+      path: [
+        { x: HAND_X + 0.012, z: 0.002 },
+        { x: HAND_X + 0.034, z: 0.002 },
+        { x: WRIST_X - 0.010, z: 0.002 },
+      ],
+    }),
+  ];
+}
+
+/** The primary draw target for the dorsal-hand procedure — the 3rd dorsal
+    metacarpal vein where it is easiest to anchor, mirroring what `SITE` is
+    for the antecubital fossa. */
+export const HAND_SITE = { x: HAND_X + 0.028, z: 0.004 };
 
 /** A left arm is the mirror image — of the geometry, not of a label. */
 export function mirrorForArm(vessels, side){

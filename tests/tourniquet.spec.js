@@ -467,3 +467,63 @@ test("an over-time band cannot be scored as good even if perfectly placed", ()=>
   applyTourniquetOutcome(c, measureTourniquet(s, evaluateTourniquet(s, ARM)));
   assert.equal(c.tqGood, false);
 });
+
+/* =========================================================================
+   THE SITE IS A PARAMETER — the butterfly/dorsal-hand procedure's band
+   sits closer, on the forearm above the wrist, not the fossa. Every number
+   here has an antecubital default so the tests above are untouched; these
+   assert the override path itself.
+   ========================================================================= */
+
+const HAND_SITE_LIKE = {
+  x: -0.287, ideal: { min: 0.050, max: 0.076 }, acceptable: { min: 0.038, max: 0.090 },
+  label: "the back of the hand", windowLabel: "2–3″",
+};
+
+test("distanceAboveSite defaults to the fossa, and accepts any other site", () => {
+  assert.equal(distanceAboveSite(0.089), 0.089);              // SITE.x === 0
+  assert.equal(distanceAboveSite(0.089, 0), 0.089);
+  assert.equal(Math.round(distanceAboveSite(-0.225, HAND_SITE_LIKE.x) * 1000), 62);
+});
+
+test("classifyBandPosition judges a hand-sized band against its own window, not the fossa's", () => {
+  // -0.225 is 62mm above HAND_SITE_LIKE.x — inside its ideal band
+  assert.equal(
+    classifyBandPosition(-0.225, HAND_SITE_LIKE.x, HAND_SITE_LIKE.ideal, HAND_SITE_LIKE.acceptable),
+    "ideal");
+  // the SAME absolute position is nowhere near the fossa's own window
+  assert.notEqual(classifyBandPosition(-0.225), "ideal");
+});
+
+test("evaluateTourniquet judges heightAboveSite against arm.site when one is given", () => {
+  const s = goodBand({ bandX: -0.225 });
+  const withoutSite = evaluateTourniquet(s, ARM);
+  const withSite = evaluateTourniquet(s, Object.assign({}, ARM, { site: HAND_SITE_LIKE }));
+  assert.notEqual(withoutSite.heightAboveSite, withSite.heightAboveSite);
+  assert.equal(Math.round(withSite.heightAboveSite * 1000), 62);
+});
+
+test("checkPosition's band-on-site message names the procedure's own site label", () => {
+  const s = goodBand({ bandX: HAND_SITE_LIKE.x + 0.005 });
+  const issue = checkPosition(s, HAND_SITE_LIKE);
+  assert.equal(issue.code, "bandOnSite");
+  assert.match(issue.message, /the back of the hand/);
+  assert.doesNotMatch(issue.message, /antecubital fossa/);
+});
+
+test("measureTourniquet scores heightAboveSiteM against arm.site, not raw bandX", () => {
+  const s = goodBand({ bandX: -0.225 });
+  const antecubital = measureTourniquet(s, evaluateTourniquet(s, ARM), undefined, undefined);
+  const hand = measureTourniquet(s, evaluateTourniquet(s, Object.assign({}, ARM, { site: HAND_SITE_LIKE })),
+    undefined, HAND_SITE_LIKE);
+  assert.equal(antecubital.positionOk, false);   // -0.225 is nowhere near the fossa
+  assert.equal(hand.positionIdeal, true);        // but it is exactly where a hand draw's band belongs
+  assert.equal(Math.round(hand.heightAboveSiteM * 1000), 62);
+});
+
+test("an antecubital measurement taken with no site override is unchanged from before", () => {
+  const s = goodBand({});
+  const m = measureTourniquet(s, evaluateTourniquet(s, ARM));
+  assert.equal(m.positionIdeal, true);
+  assert.equal(m.heightAboveSiteM, 0.089);
+});

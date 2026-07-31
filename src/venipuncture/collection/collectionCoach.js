@@ -20,6 +20,7 @@ import {
   expectedOrder, lumenToleranceM, SEAT_GUIDELINE, SEAT_ENGAGE,
 } from "./collectionRules.js";
 import { current } from "./collectionState.js";
+import { wingStatusHTML, infiltrationBannerHTML, postEntryControlsHTML, patchWingLive } from "../butterfly/butterflyCoach.js";
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function mm(m){ return Math.round((m || 0)*1000); }
@@ -146,6 +147,7 @@ export function renderCollectionCoach(host, o){
   // lie the learner would believe.
   const clean = ready && !(issue && issue.severity === "block");
 
+  const bf = o.butterfly || null;
   const signature = [
     listView, guided, ready, o.hint || "-",
     cur ? cur.key : "-",
@@ -157,9 +159,10 @@ export function renderCollectionCoach(host, o){
     result.remaining.length,
     result.redrawable.length,
     issue ? issue.code : "-",
+    bf ? bf.secured : "-", bf ? (bf.infiltratedMl > 0) : "-", bf ? bf.infiltrationNoticed : "-",
   ].join("|");
 
-  if(host.dataset.colSig === signature){ patchLive(host, state, result); return; }
+  if(host.dataset.colSig === signature){ patchLive(host, state, result, bf); return; }
   host.dataset.colSig = signature;
 
   const order = expectedOrder(state.order);
@@ -176,7 +179,10 @@ export function renderCollectionCoach(host, o){
       <div class="asm-panel">
         ${tubeRowsHTML(state, result)}
         ${collectedHTML(state)}
+        ${bf ? wingStatusHTML(bf) : ""}
       </div>
+
+      ${bf ? infiltrationBannerHTML(bf) : ""}
 
       ${guided
         ? `<div class="stg-msg ${clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
@@ -194,6 +200,8 @@ export function renderCollectionCoach(host, o){
         ? controlsHTML(state, result)
         : `<p class="stg-help">${helpHTML(state, result)}</p>`}
 
+      ${bf ? postEntryControlsHTML(bf) : ""}
+
       <button class="btn vp-tap" id="colReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? esc(o.readyLabel || "All tubes collected ▶") : "Not finished yet") : "Carry on ▶"}
       </button>
@@ -206,9 +214,12 @@ export function renderCollectionCoach(host, o){
   host.querySelectorAll("[data-col]").forEach(b=>{
     b.onclick = ()=>h.onAction && h.onAction(b.dataset.col);
   });
+  host.querySelectorAll("[data-wing]").forEach(b=>{
+    b.onclick = ()=>h.onWing && h.onWing(b.dataset.wing);
+  });
 }
 
-function patchLive(host, state, result){
+function patchLive(host, state, result, bf){
   const set = (name, text)=>{
     const el = host.querySelector(`[data-live="${name}"]`);
     if(el && el.textContent !== text) el.textContent = text;
@@ -224,4 +235,5 @@ function patchLive(host, state, result){
     const t = state.tubes[k];
     return `${tubeName(k)} ${pct(t.drawnMl/t.volumeMl)}%`;
   }).join(" · "));
+  patchWingLive(host, bf);
 }

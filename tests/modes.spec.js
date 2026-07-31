@@ -186,6 +186,20 @@ test("repeating never rebuilds the arm — it is the same patient's limb", () =>
   assert.equal(c.arm, arm);
 });
 
+test("the winged set replays with insert, not with collection", () => {
+  const insertSection = SECTIONS.find(s => s.id === "insert");
+  assert.ok(insertSection.sessions.includes("butterfly"));
+  assert.ok(insertSection.measurements.includes("butterfly"));
+  assert.ok(!SECTIONS.find(s => s.id === "collection").sessions.includes("butterfly"));
+
+  const c = procedureState(2);
+  const index = resetFromSection(c, "insert");
+  assert.equal(c.steps[index], "insert");
+  assert.equal(c.butterfly, null);
+  assert.equal(c.butterflyMeasurements, null);
+  assert.equal(c.butterflyOk, undefined);
+});
+
 test("assembly and uncapping replay together, because they share one needle unit", () => {
   const equipment = SECTIONS.find(s => s.id === "equipment");
   assert.deepEqual(equipment.steps, ["assemble", "uncap"]);

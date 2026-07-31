@@ -8,9 +8,9 @@
 
    Pure maths.
    ========================================================================= */
-import { metresToInches, TENSION, BAND_IDEAL, BAND_ACCEPTABLE } from "../arm/armAnatomy.js";
+import { metresToInches, TENSION, distanceAboveSite } from "../arm/armAnatomy.js";
 import { WRAP, TUCK, secondsOn } from "./tourniquetState.js";
-import { TIME, SKEW_LIMIT } from "./tourniquetRules.js";
+import { TIME, SKEW_LIMIT, DEFAULT_SITE } from "./tourniquetRules.js";
 
 function round(v, dp){ const m = Math.pow(10, dp || 0); return Math.round(v*m)/m; }
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
@@ -19,17 +19,23 @@ function clamp01(v){ return Math.max(0, Math.min(1, v)); }
  * @param {object} state   tourniquetState
  * @param {object} result  the final evaluateTourniquet() result
  * @param {number} [now]
+ * @param {object} [site]  {x, ideal, acceptable} — defaults to the fossa.
+ *   `bandX` is a world-space coordinate; "height above site" is always
+ *   measured relative to WHATEVER the draw site actually is, not assumed to
+ *   be zero. The antecubital default has site.x = 0, which is why using
+ *   `bandX` directly used to look right — it was a coincidence, not a rule.
  */
-export function measureTourniquet(state, result, now){
-  const heightM = state.bandX == null ? null : state.bandX;
+export function measureTourniquet(state, result, now, site){
+  const s = site || DEFAULT_SITE;
+  const heightM = state.bandX == null ? null : distanceAboveSite(state.bandX, s.x);
   const inches = heightM == null ? null : round(metresToInches(heightM), 2);
   const seconds = round(secondsOn(state, now), 1);
   const tension = state.heldTension || state.tension || 0;
 
   const positionOk = heightM != null &&
-    heightM >= BAND_ACCEPTABLE.min && heightM <= BAND_ACCEPTABLE.max;
+    heightM >= s.acceptable.min && heightM <= s.acceptable.max;
   const positionIdeal = heightM != null &&
-    heightM >= BAND_IDEAL.min && heightM <= BAND_IDEAL.max;
+    heightM >= s.ideal.min && heightM <= s.ideal.max;
   const tensionOk = tension >= TENSION.GOOD_MIN && tension <= TENSION.GOOD_MAX;
   const tensionSafe = tension >= TENSION.VENOUS_ONSET && tension <= TENSION.ARTERIAL_ONSET;
   const wrappedUnder = state.wrap === WRAP.UNDER;
@@ -40,9 +46,9 @@ export function measureTourniquet(state, result, now){
   const mistakes = [];
   if(!wrappedUnder && state.wrap) mistakes.push({ code:"wrappedOver", message:"The band was laid across the top of the arm instead of being passed underneath." });
   if(heightM != null && !positionOk){
-    mistakes.push({ code:"position", message: heightM < BAND_ACCEPTABLE.min
+    mistakes.push({ code:"position", message: heightM < s.acceptable.min
       ? `The band sat ${inches}″ above the site — inside the field you had to clean and puncture.`
-      : `The band sat ${inches}″ above the site — too far up to fill the antecubital veins properly.` });
+      : `The band sat ${inches}″ above the site — too far up to fill the veins properly.` });
   }
   if(tension < TENSION.VENOUS_ONSET) mistakes.push({ code:"tooLoose", message:"It was never tight enough to stop venous return, so the veins never filled." });
   else if(tension > TENSION.ARTERIAL_ONSET) mistakes.push({ code:"tooTight", message:"It was tight enough to cut off arterial inflow — the hand blanched and the veins collapsed again." });

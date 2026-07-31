@@ -369,13 +369,24 @@ function installTestSeam(){
   if(!e2e) return;
   window.__phlebTest = {
     /** Jumps into the venipuncture procedure at a given step id. */
-    async gotoProcedureStep(stepId, tubes, mode){
-      const [{ setEnc, SHIFT, setShift, setMode }, { makePatient }, { go }] = await Promise.all([
+    /**
+     * @param {string} stepId
+     * @param {string[]} [tubes]
+     * @param {string} [mode]
+     * @param {string} [procedureId]  "straight-antecubital" (default, matches
+     *   normal play's own indicatedProcedure() roll) or "butterfly-hand" — a
+     *   forced override, because a real patient only rolls the winged-set
+     *   draw for specific arm conditions, and a test needs it on demand.
+     */
+    async gotoProcedureStep(stepId, tubes, mode, procedureId){
+      const [{ setEnc, SS, setMode }, { makePatient }, { go }, { createProcedureState }] = await Promise.all([
         import("./game/gameState.js"), import("./game/encounter.js"), import("./ui/panels.js"),
+        import("./venipuncture/accessibilityFallback.js"),
       ]);
       // setMode normalises: "teach"/"play" are the legacy names, and
       // "learn"/"practice"/"final" the three the game now has.
       setMode(mode);
+      const { setShift } = await import("./game/gameState.js");
       setShift({ len:1, index:0, patients:[], ratings:[], orderAllOk:true, safetyAllOk:true, coins:0, startMs:Date.now(), patientTimes:[], missed:[] });
       const p = makePatient();
       const selected = tubes || ["lightblue","lavender"];
@@ -389,8 +400,15 @@ function installTestSeam(){
       // between runs. Fixing it here keeps a failure meaning "the mechanic
       // broke" rather than "a bigger patient got rolled".
       if(p.appearance){ p.appearance.width = 1; p.appearance.height = 1; }
-      go("collect");
       const { ENC } = await import("./game/gameState.js");
+      if(procedureId){
+        // Built directly, with the override already on it, rather than
+        // letting renderCollect() build the default one on first render —
+        // ensureArmSession() reads `forcedProcedure` the first time ANY step
+        // runs, which is before this function would get a second chance.
+        ENC.collect = createProcedureState(selected, { patient: p, handedness: SS.handedness, forcedProcedure: procedureId });
+      }
+      go("collect");
       const idx = ENC.collect ? ENC.collect.steps.indexOf(stepId) : -1;
       if(idx > 0){ ENC.collect.step = idx; go("collect"); }
       return true;
@@ -408,6 +426,33 @@ function installTestSeam(){
       const s = ENC.collect && ENC.collect.introduction;
       if(s) s.patient = ENC.p;
       return true;
+    },
+    /** Which procedure the current draw actually is, and the arm it built. */
+    async procedureSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const c = ENC && ENC.collect;
+      if(!c || !c.procedure) return null;
+      return {
+        procedureId: c.procedureId, device: c.procedure.device, siteKind: c.procedure.siteKind,
+        gauge: c.procedure.gauge, angle: c.procedure.angle,
+        armVessels: (c.armVessels || []).map(v => v.id),
+      };
+    },
+    /** The winged set as the rules see it, once the butterfly draw has one. */
+    async butterflySnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const bf = ENC && ENC.collect && ENC.collect.butterfly;
+      if(!bf) return null;
+      const { evaluateButterfly } = await import("./venipuncture/butterfly/butterflyRules.js");
+      const r = evaluateButterfly(bf, {});
+      return {
+        wingsHeld: bf.wingsHeld, wings: bf.wings, secured: bf.secured,
+        entered: bf.entered, entryAngleDeg: bf.entryAngleDeg,
+        tubingSlackM: bf.tubing.slackM, tipOffsetMm: Math.round(bf.tipOffsetM*10000)/10,
+        infiltratedMl: Math.round(bf.infiltratedMl*100)/100,
+        infiltrationNoticed: bf.infiltrationNoticed, stoppedOnInfiltration: bf.stoppedOnInfiltration,
+        ready: r.ready, blocking: r.blocking.map(i => i.code), issues: r.issues.map(i => i.code),
+      };
     },
     /** The introduction as the rules see it: who has been identified, how. */
     async introductionSnapshot(){
@@ -474,7 +519,8 @@ function installTestSeam(){
       const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
       const { evaluateTourniquet } = await import("./venipuncture/tourniquet/tourniquetRules.js");
       const ctx = getTourniquetContext();
-      const arm = { vessels: ctx ? ctx.view.arm.vessels : [], vigour: s.vigour };
+      const site = ENC.collect.arm && ENC.collect.arm.site;
+      const arm = { vessels: ctx ? ctx.view.arm.vessels : (ENC.collect.armVessels || []), vigour: s.vigour, site };
       const r = evaluateTourniquet(s, arm);
       return {
         phase: s.phase, wrap: s.wrap, tuck: s.tuck, tuckedUnder: s.tuckedUnder,
@@ -749,7 +795,8 @@ function installTestSeam(){
       const unit = ENC.collect.needleUnit;
       const bevelDeg = unit ? (unit.bevelDeg == null ? bevelFromTurns(unit.turns) : unit.bevelDeg) : null;
       const vessels = ENC.collect.armVessels || [];
-      const r = evaluateInsert(s, vessels, bevelDeg);
+      const procedure = ENC.collect.procedure;
+      const r = evaluateInsert(s, vessels, bevelDeg, procedure && procedure.angle, procedure && procedure.anchor);
       return {
         chosenId: s.chosenId, markX: s.markX, markZ: s.markZ,
         anchorSet: s.anchorSet, anchorX: s.anchorX, anchorPull: s.anchorPull,
@@ -762,7 +809,8 @@ function installTestSeam(){
         flashAt: s.flashAt, bevelDeg,
         inVein: r.inVein, through: r.through, ready: r.ready,
         blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
-        angleIdeal: ANGLE_IDEAL, bevelToleranceDeg: BEVEL_TOLERANCE_DEG,
+        angleIdeal: (procedure && procedure.angle && procedure.angle.ideal) || ANGLE_IDEAL,
+        bevelToleranceDeg: BEVEL_TOLERANCE_DEG,
       };
     },
     /**

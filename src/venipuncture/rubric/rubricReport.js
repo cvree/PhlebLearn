@@ -248,7 +248,15 @@ export function buildRubricReport(procedureState, options){
   const o = options || {};
   const policy = o.policy || DEFAULT_POLICY;
   const measurements = collectMeasurements(procedureState, policy);
-  const categories = scoreAllCategories(measurements, policy, o.context);
+  // The procedure is read off the attempt itself — `ensureArmSession()` sets
+  // `c.procedureId` once, at the start of the draw — so a caller never has
+  // to remember to pass it, and a category's procedure-restricted feeds
+  // (the winged set's, so far) resolve correctly with no extra wiring.
+  const context = Object.assign(
+    { procedureId: procedureState && procedureState.procedureId },
+    o.context,
+  );
+  const categories = scoreAllCategories(measurements, policy, context);
 
   const total = categories.reduce((s, c) => s + c.score, 0);
   const maxTotal = categories.length * policy.maxCategoryScore;

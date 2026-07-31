@@ -145,19 +145,36 @@ function gestureHTML(gesture, guided){
 
 /* ---------- accessible control path -------------------------------------------- */
 
-function controlsHTML(state){
+/**
+ * Five preset heights above THIS site, close/low/ideal/high/far — the same
+ * five steps in the antecubital's own terms (1.5″/2.5″/3.5″/4.5″/5.5″) always
+ * used, just measured from wherever the site actually is. `site.x` defaults
+ * to 0 (the fossa), so the straight-needle draw sees the exact numbers it
+ * always has; a hand draw's band sits nearer, as its own ideal window says.
+ */
+function heightPresets(siteX){
+  const x = siteX == null ? 0 : siteX;
+  return [0.038, 0.064, 0.089, 0.114, 0.140].map(off => x + off);
+}
+
+function controlsHTML(state, siteX, siteIdeal){
   const on = state.phase === PHASE.SECURED;
+  const presets = heightPresets(siteX);
+  const ideal = siteIdeal || { min: 0.076, max: 0.102 };
+  const idealMid = (ideal.min + ideal.max)/2;
+  // whichever preset lands closest to this site's own ideal midpoint is the
+  // one pre-selected, so opening the dropdown for a hand draw does not
+  // default to a height that was only ever right for the fossa
+  const closest = presets.reduce((best, x, i) =>
+    Math.abs(x - (siteX == null ? 0 : siteX) - idealMid) < Math.abs(presets[best] - (siteX == null ? 0 : siteX) - idealMid) ? i : best, 0);
+  const labels = ["1.5″ — close to the site", "2.5″", "3.5″", "4.5″", "5.5″ — high on the upper arm"];
   return `<div class="tq-controls">
     <fieldset>
       <legend>Apply the band without dragging</legend>
       <label class="tq-field">
         <span>Distance above the site</span>
         <select id="tqHeight">
-          <option value="0.038">1.5″ — close to the site</option>
-          <option value="0.064">2.5″</option>
-          <option value="0.089" selected>3.5″</option>
-          <option value="0.114">4.5″</option>
-          <option value="0.140">5.5″ — high on the upper arm</option>
+          ${presets.map((x, i) => `<option value="${x.toFixed(3)}" ${i === closest ? "selected" : ""}>${labels[i]}</option>`).join("")}
         </select>
       </label>
       <label class="tq-field">
@@ -250,7 +267,7 @@ export function renderTourniquetCoach(host, o){
             ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Apply the band and carry on whenever you judge it right. Your technique is assessed after the patient.`}
           </div>`}
 
-      ${listView ? controlsHTML(state) : `<p class="stg-help">
+      ${listView ? controlsHTML(state, o.site && o.site.x, o.site && o.site.ideal) : `<p class="stg-help">
         <b>Take an end of the tourniquet and drag it round the arm</b> — underneath and up the far side, about a hand's width above the bend.
         Then <b>pull that end away from the arm</b> to tighten it, <b>sweep it across</b> the other end, and
         <b>push a loop back under the band, pointing up the arm</b>. Let go before the loop is under and it will spring off.

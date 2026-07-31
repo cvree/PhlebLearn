@@ -34,7 +34,7 @@ async function open(page, mode, step){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
-  await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m),
+  await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m, "straight-antecubital"),
     [step || "fill", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.collectionAnchors()), null, { timeout:10000 });

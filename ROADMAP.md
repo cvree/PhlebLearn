@@ -22,21 +22,18 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`), `pressure`/`bandage` are a real force held on the real puncture and a dressing that waits for haemostasis (`postdraw/`), and `invert` is each filled tube turned end over end to its own additive's count (`inversion/`). **All 16 are physical**; the 2D `VP_STEPS` survive as the accessibility fallback. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that let one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains: one branch.** Step conversion finished in Phase 2, and
-the assessment phase is four branches in — the 0–4 rubric and its configurable
-policy, the three separated game modes, the practical report with session
-replay, and the introduction-and-identification step that was the last rubric
-row with no instrumentation. What is left is
-**`feature/butterfly-hand-draw`**: a dorsal-hand site geometry, the winged set
-as a physical object whose tubing has consequences, and the procedure model
-that makes the two draws genuinely different rather than one animation with a
-different model.
+**Assessment phase is complete.** Step conversion finished in Phase 2, and all
+five assessment-phase branches have landed — the 0–4 rubric and its
+configurable policy, the three separated game modes, the practical report with
+session replay, the introduction-and-identification step that was the last
+rubric row with no instrumentation, and the butterfly/dorsal-hand draw that
+makes venipuncture a choice between two genuinely different procedures rather
+than one animation with a different model.
 
-👉 **`docs/HANDOFF.md` is the entry point for that branch** — what already
-exists to build on, what does not, the procedure model's numbers, the
-conventions that must not be broken, and the testing traps (including that this
-machine's headless renderer crashes under load and those failures are not
-real). Read it before starting.
+👉 **`docs/HANDOFF.md`** still holds the reasoning behind each of those five
+branches and the conventions and testing traps that outlive any one of them
+(including that this machine's headless renderer crashes under load and those
+failures are not real) — useful background for Phase 3b onward.
 
 Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
@@ -703,12 +700,12 @@ Branch order (one branch each, verified and deployed before the next starts):
 **Accessibility:** today's `VP_STEPS` survive as an opt-in **2D fallback mode** for
 touch, low-end GPUs, and reduced-motion. Nothing is thrown away.
 
-## Phase 3 — Assessment
+## Phase 3 — Assessment ✅ complete
 
-Step conversion is finished; what remains is turning the measurements every
-step already produces into the photographed 0–4 rubric, separating the three
-game modes, adding the butterfly/dorsal-hand draw, and building the report.
-`docs/HANDOFF.md` holds the reasoning; this is the running score.
+Step conversion turned the measurements every step already produces into the
+photographed 0–4 rubric, separated the three game modes, added the
+butterfly/dorsal-hand draw, and built the report. `docs/HANDOFF.md` holds the
+reasoning; this is the record of how each branch landed.
 
 ### ✅ `feature/rubric-policy` — the grading layer
 
@@ -843,6 +840,70 @@ sink. The rule that matters is unchanged — every technique is a pure helper in
 control call the same ones, which a unit test asserts.
 
 31 unit tests, 12 browser tests.
+
+### ✅ `feature/butterfly-hand-draw` — the second procedure
+
+Until now there was one draw, and its numbers lived as module constants
+scattered through the steps that used them. `src/venipuncture/procedure.js` is
+what makes the dorsal-hand draw a genuinely different procedure rather than the
+same animation with a different model: a single `procedureFor(id)` lookup —
+device, site, gauge, angle window, anchor window, and (for the butterfly) a
+tubing spec — that every consumer now reads through instead of branching on a
+string. `indicatedProcedure(patient)` reads it off the patient's own trigger
+data (a "dry", flat-vein arm, or a child), never off a mode flag.
+
+- **The site is real geometry, not a relabelled fossa.** Four vessels — two
+  dorsal metacarpals, the dorsal venous arch, an extensor tendon as a hazard —
+  sit on the *same* cylindrical limb mesh's wrist-taper region the antecubital
+  vessels already use, so every existing projection solve
+  (`pointerToLimb`/`surfaceY`/`radiusAt`) works on hand geometry unchanged with
+  zero new 3D code. Building actual hand-mesh geometry (new anatomy, new
+  raycasting, a new camera frame) was scoped out as too large and too risky
+  for one branch, in favour of reusing math already proven correct.
+- **Wherever a step's interaction is centrally about vessel geometry**
+  (tourniquet's clearance, palpation's vessel-choosing, insert's stick,
+  collection's implicit "a needle is in this arm"), the hand draw forces the
+  accessible controls-only path — there is no 3D drag, because there is no
+  hand mesh to drag against. Cleaning, assembly, withdrawal and post-draw's 3D
+  paths are untouched, since those interactions don't depend on which vessel
+  set is active.
+- **The window is narrower and the physics are different, not just relabelled
+  numbers.** 23G, not 21G. 5–15° entry, not 15–30° — a 2mm hand vein sits
+  under 1.5–2.5mm of skin, and the old 30° ceiling would put the tip in the
+  metacarpal. The anchor is distal, firm, and much closer, because a hand is
+  small.
+- **The winged set has a tubing, and the tubing has consequences.** Slack
+  absorbs the first part of any pull on the line; taut, it transmits fully.
+  Securing the wings with tape before touching the tubes cuts what reaches the
+  tip by roughly 9×. Carrying the set by its tubing instead of its wings is a
+  real, selectable — and scored — mistake, fixed permanently at the moment of
+  entry so it is still caught however long collection runs afterward.
+- **Infiltration is quiet and missable, on purpose.** A tip nudged out of the
+  lumen leaks slowly rather than announcing itself; noticing it and stopping
+  is a real timed action, and failing to notice — or noticing and continuing
+  anyway — are both automatic failures.
+- **The rubric grades both procedures honestly without penalizing either.**
+  `proceduresOnly` (opt-in, excluded when the procedure is unknown) and
+  `excludeProcedures` (opt-out, included when unknown) let the same technique
+  category add a butterfly-only row and swap the angle-window gate, without
+  docking a straight-needle attempt for a measurement it will never produce.
+  Pushed into every individually-exported rubric helper, not just the
+  top-level orchestrator, because dozens of existing unit tests call those
+  helpers directly without ever passing a procedure context.
+
+Three real bugs surfaced only by driving the actual browser, not by reading
+the code: an insert-depth preset hardcoded to 6mm (harmless on a 2.6–4.8mm
+antecubital vein, a through-and-through on a 2mm hand vein); tourniquet's and
+palpation's 3D-scene launch silently rebuilding the forearm vessel set over
+the hand's; and the tourniquet height dropdown's presets computed as absolute
+world positions, off by the hand site's own offset. A fourth surfaced only
+once the *existing* suites were re-run against the new random procedure
+selection: several pre-existing e2e specs assumed every patient draws
+straight-needle and broke intermittently once some genuinely didn't — fixed
+by having each spec force the procedure it actually means to test, the same
+seam `?forcedProcedure` already gave the butterfly suite.
+
+34 unit tests, 16 browser tests.
 
 ## Phase 3b — Consequences
 

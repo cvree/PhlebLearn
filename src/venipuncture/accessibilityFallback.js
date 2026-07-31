@@ -40,6 +40,11 @@ export function createProcedureState(tubeKeys, opts){
     // which arm, and whether the veins are deep or flat.
     patient,
     encounter: createEncounterState({ tubes, patient, handedness:o.handedness }),
+    // Real play never sets this — ensureArmSession() rolls indicatedProcedure()
+    // from the patient's own arms. The test seam is the only caller that
+    // forces a specific procedure, so a scenario can be exercised on demand
+    // rather than waiting for the right arm condition to come up at random.
+    forcedProcedure: o.forcedProcedure || null,
   };
 }
 

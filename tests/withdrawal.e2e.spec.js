@@ -34,7 +34,7 @@ async function open(page, mode, step){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
-  await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m),
+  await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m, "straight-antecubital"),
     [step || "release", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
@@ -334,7 +334,7 @@ test("a tube left engaged on the holder is still engaged here, and blocks", asyn
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
-  await page.evaluate(([t])=>window.__phlebTest.gotoProcedureStep("fill", t, "play"), [TUBES]);
+  await page.evaluate(([t])=>window.__phlebTest.gotoProcedureStep("fill", t, "play", "straight-antecubital"), [TUBES]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
 
   // push a tube on and deliberately leave it there

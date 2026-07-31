@@ -47,6 +47,7 @@ export const MEASUREMENT_SOURCES = {
   withdrawal: "withdrawalMeasurements",
   postDraw: "postDrawMeasurements",
   inversion: "inversionMeasurements",
+  butterfly: "butterflyMeasurements",
 };
 
 export const MEASUREMENT_LABELS = {
@@ -62,6 +63,7 @@ export const MEASUREMENT_LABELS = {
   withdrawal: "Withdrawal, safety and sharps",
   postDraw: "Pressure and bandaging",
   inversion: "Specimen mixing",
+  butterfly: "Winged set handling",
 };
 
 /* =========================================================================
@@ -170,7 +172,14 @@ export const CATEGORIES = [
   {
     id: "technique",
     label: "Venipuncture technique",
-    feeds: [["insert", 1.25], ["collection", 1], ["withdrawal", 0.75]],
+    // `butterfly` only applies to the dorsal-hand procedure. A straight
+    // draw's attempt never produces that measurement, and `proceduresOnly`
+    // means it is correctly EXCLUDED from the row's mean rather than scored
+    // as a 0 for something that was never applicable in the first place.
+    feeds: [
+      ["insert", 1.25], ["collection", 1], ["withdrawal", 0.75],
+      ["butterfly", 0.75, { proceduresOnly: ["butterfly-hand"] }],
+    ],
     excellence: {
       requireAll: true,
       maxMistakes: 0,
@@ -179,10 +188,24 @@ export const CATEGORIES = [
           label: "the vein was anchored before the stick" },
         { key: "collection", field: "orderAccuracy", equals: 1,
           label: "tubes came off in the order of draw" },
+        { key: "butterfly", field: "carriedByWings", equals: true,
+          label: "the set was carried by its wings, not its tubing",
+          proceduresOnly: ["butterfly-hand"] },
+        { key: "butterfly", field: "wingsSecured", equals: true,
+          label: "the wings were taped down before the tubes were touched",
+          proceduresOnly: ["butterfly-hand"] },
       ],
+      // The entry-angle window is the whole reason this is a second
+      // procedure rather than a reskin: 15-30° for the antecubital, 5-15°
+      // for the dorsal hand. Each range is scoped to its own procedure so
+      // neither draw is ever judged against the other's window.
       ranges: [
+        // The antecubital window: unconditional, exactly as it always was,
+        // for every attempt except the one procedure that needs its own.
         { key: "insert", field: "angleDeg", min: 15, max: 30, unit: "°",
-          label: "entry angle" },
+          label: "entry angle", excludeProcedures: ["butterfly-hand"] },
+        { key: "insert", field: "angleDeg", min: 5, max: 15, unit: "°",
+          label: "entry angle", proceduresOnly: ["butterfly-hand"] },
         { key: "insert", field: "reapproaches", min: 0, max: 0, unit: "",
           label: "re-approaches" },
         { key: "collection", field: "peakNeedleShiftMm", min: 0, max: 1, unit: "mm",
@@ -281,6 +304,16 @@ export const CRITICAL_EVENTS = {
     why: "It is how a hematoma starts under a tourniquet." },
   "uncap.needleTouched": { label: "Bare needle contaminated before entry", automaticFailure: false,
     why: "It goes straight into the bloodstream." },
+
+  /* --- the winged set: only reachable on the dorsal-hand procedure */
+  "butterfly.carriedByTubing": { label: "Winged set carried by its tubing", automaticFailure: true,
+    why: "The needle then goes in at whatever angle the line happens to hang at, not a chosen one." },
+  "butterfly.tubingTaut": { label: "Tubing pulled taut against the needle", automaticFailure: false,
+    why: "A taut line is holding the set up — the needle is anchoring it, not the hand." },
+  "butterfly.infiltrationMissed": { label: "Infiltration never noticed", automaticFailure: true,
+    why: "Fluid kept going into the tissue with nobody watching for it." },
+  "butterfly.infiltrationNotActedOn": { label: "Infiltration recognised and ignored", automaticFailure: true,
+    why: "Seeing the swelling and continuing the draw anyway." },
   "assembly.contaminated": { label: "Contaminated needle used anyway", automaticFailure: false,
     why: "The sterile barrier was already lost." },
 };

@@ -386,3 +386,89 @@ test("nextIssue surfaces the most severe issue first", ()=>{
   const r = evaluateInsert(s, V, 0);
   assert.equal(nextIssue(r).code, "notAnchored");
 });
+
+/* =========================================================================
+   THE ANGLE AND ANCHOR WINDOWS ARE PARAMETERS — the butterfly/dorsal-hand
+   procedure enters at 5-15 degrees with a much closer anchor, not the
+   antecubital's 15-30 degrees and inch-and-a-half. Every call defaults to
+   the antecubital numbers, so the tests above are untouched; these assert
+   the override path.
+   ========================================================================= */
+import { DEFAULT_ANGLE_BAND, DEFAULT_ANCHOR_BAND, anglePresetsFor, anchorPresetsFor } from "../src/venipuncture/insert/insertRules.js";
+
+const HAND_ANGLE = { ideal: { min: 5, max: 15 }, acceptable: { min: 3, max: 22 } };
+const HAND_ANCHOR = { distalMin: 0.008, distalMax: 0.030, pullMin: 0.004, pullGood: 0.008 };
+
+test("DEFAULT_ANGLE_BAND and DEFAULT_ANCHOR_BAND are exactly the antecubital constants", () => {
+  assert.deepEqual(DEFAULT_ANGLE_BAND, { ideal: ANGLE_IDEAL, acceptable: ANGLE_ACCEPTABLE });
+  assert.deepEqual(DEFAULT_ANCHOR_BAND, {
+    distalMin: ANCHOR_DISTAL_MIN, distalMax: ANCHOR_DISTAL_MAX,
+    pullMin: ANCHOR_PULL_MIN, pullGood: ANCHOR_PULL_GOOD,
+  });
+});
+
+function anchoredAt10Deg(){
+  const s = state({});
+  anchorAt(s, MCmid.x - 0.035, ANCHOR_PULL_GOOD);
+  insertInto(s, MCmid.x, MCmid.z, 10, MC.depth);
+  return s;
+}
+
+test("a 10 degree entry is outside the antecubital window and inside the hand-draw one", () => {
+  const s = anchoredAt10Deg();
+  const antecubital = evaluateInsert(s, V, 0);
+  const hand = evaluateInsert(s, V, 0, HAND_ANGLE);
+  assert.ok(antecubital.issues.some(i => i.code === "angleOffIdeal" || i.code === "tooShallow"));
+  assert.ok(!hand.issues.some(i => i.code === "angleOffIdeal" || i.code === "tooShallow"));
+});
+
+test("measureInsert's angle mistake and score use the SAME band evaluateInsert was judged against", () => {
+  const s = anchoredAt10Deg();
+  const antecubital = measureInsert(s, evaluateInsert(s, V, 0), 0, 1000);
+  const hand = measureInsert(s, evaluateInsert(s, V, 0, HAND_ANGLE), 0, 1000, HAND_ANGLE);
+  assert.ok(antecubital.mistakes.some(m => m.code === "angle"));
+  assert.ok(!hand.mistakes.some(m => m.code === "angle"));
+  assert.ok(hand.score > antecubital.score);
+});
+
+test("a close, firm anchor is ideal for a hand draw and too close for the antecubital", () => {
+  // 15mm distal — inside the hand window (8-30mm), below the antecubital one (20-60mm)
+  const offset = 0.015;
+  assert.equal(classifyAnchorPosition(offset), "tooClose");
+  assert.equal(classifyAnchorPosition(offset, HAND_ANCHOR), "ideal");
+});
+
+test("anglePresetsFor and anchorPresetsFor derive concrete numbers from whatever band they are given", () => {
+  const straight = anglePresetsFor();
+  assert.equal(straight.ideal, 23);   // (15+30)/2, rounded
+  assert.equal(straight.shallow, 5);  // 8-3
+  assert.equal(straight.steep, 45);   // 42+3
+  const hand = anglePresetsFor(HAND_ANGLE);
+  assert.equal(hand.ideal, 10);
+  assert.equal(hand.shallow, 0);
+  assert.equal(hand.steep, 25);
+
+  const anchorHand = anchorPresetsFor(HAND_ANCHOR);
+  assert.ok(anchorHand.idealM > HAND_ANCHOR.distalMin && anchorHand.idealM < HAND_ANCHOR.distalMax);
+  assert.equal(anchorHand.pullGoodM, HAND_ANCHOR.pullGood);
+});
+
+test("unheldRollOffset's roll-cancelling pull threshold moves with the band it is given", () => {
+  const rolling = byId("cephalic");
+  const antecubitalFullyHeld = unheldRollOffset(rolling, ANCHOR_PULL_GOOD);
+  const handFullyHeld = unheldRollOffset(rolling, HAND_ANCHOR.pullGood, HAND_ANCHOR);
+  assert.equal(antecubitalFullyHeld, 0);
+  assert.equal(handFullyHeld, 0);
+  // the antecubital's own pullGood is nowhere near enough to fully hold
+  // still under the hand band's (much smaller) threshold's assumptions
+  assert.ok(unheldRollOffset(rolling, HAND_ANCHOR.pullGood) > 0);
+});
+
+test("an insert measurement taken with no band override is unchanged from before", () => {
+  const s = state({});
+  anchorAt(s, MCmid.x - 0.035, ANCHOR_PULL_GOOD);
+  insertInto(s, MCmid.x, MCmid.z, 20, MC.depth);
+  const m = measureInsert(s, evaluateInsert(s, V, 0), 0, 1000);
+  assert.equal(m.angleDeg, 20);
+  assert.ok(!m.mistakes.some(x => x.code === "angle"));
+});
