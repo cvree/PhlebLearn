@@ -14,6 +14,13 @@ import { LAST } from "../config.js";
 import { pick } from "../utils.js";
 import { SS, saveSS, guided, reveal } from "../game/gameState.js";
 import { VP_TIPS } from "./questions.js";
+import { evaluateIntroduction } from "./introduction/introductionRules.js";
+import {
+  createIntroductionState, say, beginScrub, scrubFor, endScrub, scrubBout,
+  dryFor, chooseGloves, reglove, finish as finishIntroduction,
+} from "./introduction/introductionState.js";
+import { measureIntroduction, applyIntroductionOutcome } from "./introduction/introductionScoring.js";
+import { renderIntroductionCoach } from "./introduction/introductionCoach.js";
 import { getRenderer } from "../rendering/renderer.js";
 import { drawArmFor } from "../game/encounter.js";
 import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
@@ -178,6 +185,26 @@ function viewportOrientation(){
  * the procedure state, so re-entering this step — or coming back from a
  * mid-draw interruption — finds the tray exactly as it was left.
  */
+/**
+ * The introduction session. Built once per encounter and kept on the
+ * procedure state, so leaving the step and coming back finds the same
+ * conversation rather than starting it over.
+ */
+export function ensureIntroductionSession(c){
+  if(c.introduction) return c.introduction;
+  const p = c.patient || {};
+  c.introduction = createIntroductionState({
+    patient: p,
+    tests: (p.orders || []).slice(),
+    tubeCount: (c.tubes || []).length || 1,
+    // Latex is what is on the tray. Switching to nitrile before gloving is a
+    // real decision with a real consequence for the patient who tells you
+    // they react to it — and they only tell you if you ask.
+    gloveMaterial: "latex",
+  });
+  return c.introduction;
+}
+
 export function ensureSupplySession(c){
   if(c.supplies) return c.supplies;
   const patientName = c.patientName || "This patient";
@@ -505,6 +532,72 @@ export function ensurePalpationSession(c){
 }
 
 export const PHYSICAL_STEPS = {
+  /* -----------------------------------------------------------------------
+     INTRODUCE — the one step conducted in speech rather than in objects.
+
+     There is no `introductionRuntime.js` and no scene: what the learner
+     manipulates is a conversation and a sink, and there is nothing to
+     raycast against. The rule that matters is unchanged — every technique
+     is a pure helper in `introductionState.js`, and both the held rub and
+     the "rub for 20 seconds" control call the same ones.
+     ----------------------------------------------------------------------- */
+  introduce(c, stage, advance){
+    const session = ensureIntroductionSession(c);
+    let disposed = false, raf = 0, last = 0, rubbing = false;
+
+    const evaluate = ()=>evaluateIntroduction(session);
+
+    function draw(){
+      if(disposed) return;
+      renderIntroductionCoach(stage, {
+        state: session,
+        result: evaluate(),
+        guided: guided(), reveal: reveal(), hint: stepHint(c),
+        gate: reveal().gateContinue,
+        handlers: {
+          onAct: (id)=>{ say(session, id); draw(); },
+          onScrub: (secs)=>{ scrubBout(session, secs); draw(); },
+          onGloveMaterial: (m)=>{ chooseGloves(session, m); draw(); },
+          onReglove: ()=>{ reglove(session); draw(); },
+          onRubStart: ()=>{ if(rubbing) return; rubbing = true; beginScrub(session); },
+          onRubEnd: ()=>{ if(!rubbing) return; rubbing = false; endScrub(session); draw(); },
+          onReady: finish,
+        },
+      });
+    }
+
+    /* The two clocks that only run while this step is on screen: the rub
+       itself, and the drying that has to happen before gloves go on. Driven
+       from `performance.now()`, not `e.timeStamp` — the latter is not the
+       wall clock for synthesised events, and here the interval IS the
+       measurement. The coach's signature gate turns these frame-by-frame
+       draws into a `[data-live]` patch, so the held button is never
+       destroyed under the hand holding it. */
+    function tick(){
+      if(disposed) return;
+      raf = requestAnimationFrame(tick);
+      const now = performance.now();
+      const dt = Math.min(0.25, (now - last)/1000);
+      last = now;
+      if(rubbing) scrubFor(session, dt);
+      else dryFor(session, dt);
+      draw();
+    }
+
+    function finish(){
+      const result = evaluate();
+      if(reveal().gateContinue && !result.ready) return;
+      finishIntroduction(session);
+      applyIntroductionOutcome(c, measureIntroduction(session, result));
+      advance();
+    }
+
+    draw();
+    last = performance.now();
+    raf = requestAnimationFrame(tick);
+    return ()=>{ disposed = true; if(raf) cancelAnimationFrame(raf); };
+  },
+
   gather(c, stage, advance){
     const session = ensureSupplySession(c);
     const canRender3d = !!getRenderer();

@@ -24,6 +24,7 @@ import { SECTIONS, measurementField } from "../sections.js";
  * `startedAt` rather than a wall clock.
  */
 export const EVENT_SOURCES = [
+  { section:"introduction", session:"introduction" },
   { section:"prep",       session:"supplies",  path:["state"], relative:true },
   { section:"tourniquet", session:"tourniquet" },
   { section:"palpation",  session:"palpation" },
@@ -133,6 +134,25 @@ export function stamp(offsetMs){
  * unrecognised event should look unrecognised, not plausible.
  */
 export const EVENT_LABELS = {
+  /* introduction — every act is its own event type */
+  greet: "introduced yourself",
+  askNameOpen: "asked them to state their name",
+  askNameLeading: "read the name out for them to agree with",
+  askDobOpen: "asked them to state their date of birth",
+  askDobLeading: "read the date of birth out for them to agree with",
+  checkWristband: "read the wristband",
+  confirmOrder: "confirmed the order",
+  explain: "explained what was about to happen",
+  askAllergies: "asked about allergies",
+  askFainting: "asked about fainting",
+  position: "seated them and supported the arm",
+  handHygiene: "went to the sink",
+  glove: "put gloves on",
+  touchPhone: "answered the phone",
+  touchDoor: "pulled the curtain",
+  scrub: "rubbed your hands",
+  chooseGloves: "changed which gloves were on the tray",
+  reglove: "changed to fresh gloves",
   /* staging */
   place: "moved an item",
   inspect: "turned a package over",

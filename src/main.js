@@ -395,6 +395,46 @@ function installTestSeam(){
       if(idx > 0){ ENC.collect.step = idx; go("collect"); }
       return true;
     },
+    /**
+     * Pins the patient's clinical history. The history is rolled at random
+     * per patient, which is right for play and wrong for a test that has to
+     * assert what an allergy does — this is the same reason the seam already
+     * pins the patient's build.
+     */
+    async setPatientHistory(history){
+      const { ENC } = await import("./game/gameState.js");
+      if(!ENC || !ENC.p) return false;
+      ENC.p.history = Object.assign({ latexAllergy:false, adhesiveAllergy:false, faintHistory:false }, history || {});
+      const s = ENC.collect && ENC.collect.introduction;
+      if(s) s.patient = ENC.p;
+      return true;
+    },
+    /** The introduction as the rules see it: who has been identified, how. */
+    async introductionSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.introduction;
+      if(!s) return null;
+      const { evaluateIntroduction, identifiersObtained } =
+        await import("./venipuncture/introduction/introductionRules.js");
+      const r = evaluateIntroduction(s);
+      return {
+        greeted: s.greeted,
+        identifiers: identifiersObtained(s),
+        leadingAsks: s.leadingAsks,
+        orderConfirmed: s.orderConfirmed, explained: s.explained,
+        asked: { allergies: s.asked.allergies, fainting: s.asked.fainting },
+        positioned: s.positioned,
+        hygieneSeconds: Math.round(s.hygieneSeconds*10)/10,
+        dryingSeconds: Math.round(s.dryingSeconds*10)/10,
+        gloved: s.gloved, gloveMaterial: s.gloveMaterial,
+        gloveContaminated: s.gloveContaminated,
+        transcript: s.transcript.map(t=>({ act:t.act, reply:t.reply })),
+        history: (s.patient && s.patient.history) || {},
+        ready: r.ready,
+        blocking: r.blocking.map(i=>i.code),
+        issues: r.issues.map(i=>i.code),
+      };
+    },
     async stagingSnapshot(){
       const { ENC } = await import("./game/gameState.js");
       const s = ENC && ENC.collect && ENC.collect.supplies;

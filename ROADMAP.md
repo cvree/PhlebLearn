@@ -799,6 +799,46 @@ Two deliberate honesty choices:
 
 17 unit tests, 13 browser tests.
 
+### ✅ `feature/introduction-and-id` — the row that had no instrumentation
+
+The old first step was `hygiene`: two icons and a "Sanitize & glove up" button.
+It is now `introduce`, and it is a **conversation the learner has to conduct**.
+
+What is measured, and why each is a number rather than a tick:
+
+- **Which identifiers were obtained, and HOW.** Every identifier has an open
+  form and a leading form side by side — "Could you tell me your full name?"
+  against "You're Jane Cooper, is that right?". The leading question *works*:
+  the patient agrees, because patients do. That is precisely why it is
+  dangerous, so it is **recorded, not refused** — `leadingQuestions` is a count
+  on the measurement and `introduction.leadingQuestion` is a critical event in
+  the policy. Fewer than two identifiers is `oneIdentifier`, an automatic
+  failure by default.
+- **What was already touched by the time the identity was settled.**
+  `identifiedBeforeTouching` compares the moment the second identifier arrived
+  with the moment the learner first handled the patient.
+- **Hand hygiene as a duration.** `handHygieneSeconds` accumulates while the
+  button is actually held, and the drying clock between finishing and gloving
+  runs in real time. Rubbing again restarts the drying clock.
+- **Gloves after gloving.** Answering the phone or pulling the curtain with
+  gloves on contaminates them and blocks — and changing them is a real
+  recovery, which is what a recoverable error is supposed to be.
+
+**Clinical facts are trigger data, never text.** `patient.history` is three
+booleans decided when the patient was generated —`latexAllergy`,
+`adhesiveAllergy`, `faintHistory`. What the patient discloses when asked
+follows those booleans; nothing anywhere reads a sentence to find out. A
+learner who never asks about allergies and gloves up in the latex that is on
+the tray by default gets `latexOnAllergicPatient`.
+
+**Four files, not five.** Every other step has a `*Runtime.js` because it has a
+scene. This one does not: what the learner manipulates is a conversation and a
+sink. The rule that matters is unchanged — every technique is a pure helper in
+`introductionState.js`, and both the held rub and the "rub for 20 seconds"
+control call the same ones, which a unit test asserts.
+
+31 unit tests, 12 browser tests.
+
 ## Phase 3b — Consequences
 
 - Complications rendered in 3D: hematoma swelling, blown vein, dry stick, vein

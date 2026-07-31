@@ -31,8 +31,8 @@ export const PHASES = {
 // "point of use" disposal and the explicit Phase 0 requirement that pressure
 // and bandaging happen *after* sharps disposal.
 export const VP_STEP_DEFS = [
-  { id:"hygiene",    phase:PHASES.PREP,      trigger:"start",              interaction:"tap-sequence",  requiredState:{} },
-  { id:"gather",     phase:PHASES.PREP,      trigger:"afterHygiene",       interaction:"tap-collect",   requiredState:{hygieneOk:true} },
+  { id:"introduce",  phase:PHASES.PREP,      trigger:"start",              interaction:"dialogue",      requiredState:{} },
+  { id:"gather",     phase:PHASES.PREP,      trigger:"afterIntroduction",  interaction:"tap-collect",   requiredState:{introOk:true} },
   { id:"tourniquet", phase:PHASES.ACCESS,    trigger:"afterGather",        interaction:"drag",          requiredState:{gatherOk:true} },
   { id:"palpate",    phase:PHASES.ACCESS,    trigger:"afterTourniquet",    interaction:"tap-choice",    requiredState:{tourniquetOn:true} },
   { id:"clean",      phase:PHASES.ACCESS,    trigger:"afterPalpate",       interaction:"drag-scrub",    requiredState:{veinOk:true} },
