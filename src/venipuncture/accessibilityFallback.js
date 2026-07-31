@@ -54,7 +54,7 @@ export function isPhysicalStep(id){
 // one) that the caller should invoke before re-rendering.
 export function renderCurrentStep(c, stage, hooks){
   const id = c.steps[c.step];
-  const fn = PHYSICAL_STEPS[id] || VP_STEPS[id] || VP_STEPS.hygiene;
+  const fn = PHYSICAL_STEPS[id] || VP_STEPS[id] || VP_STEPS.introduce;
   const advance = (stayOnStep)=>{
     if(hooks.onCleanup) hooks.onCleanup();
     if(stayOnStep){ hooks.rerender(); return; }

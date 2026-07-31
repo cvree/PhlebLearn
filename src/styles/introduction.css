@@ -1,0 +1,30 @@
+/* =========================================================================
+   INTRODUCTION AND IDENTIFICATION — the one step conducted in speech.
+
+   The transcript is the interaction, so it gets the visual weight a scene
+   gets in every other step: what you said on the left, what they said back
+   underneath it, most recent last.
+   ========================================================================= */
+
+.intro-convo{border:2px solid var(--line);border-radius:14px;background:#fff;
+  padding:8px 10px;margin:6px 0;max-height:190px;overflow-y:auto}
+.intro-empty{margin:2px 0;font-size:12px;color:var(--ink-soft)}
+.intro-script{list-style:none;margin:0;padding:0}
+.intro-script li{padding:5px 0;border-bottom:1px dotted var(--line)}
+.intro-script li:last-child{border-bottom:none}
+.intro-you{display:block;font-size:12.5px;font-weight:800;color:var(--ink)}
+.intro-them{display:block;font-size:12.5px;color:var(--plum);margin-top:2px;padding-left:12px}
+.intro-them::before{content:"↳ ";opacity:.6}
+
+.intro-group{border:1px solid var(--line);border-radius:12px;margin:8px 0;padding:6px 8px 8px}
+.intro-group legend{font-size:11px;font-weight:900;color:var(--ink-soft);
+  text-transform:uppercase;letter-spacing:.03em;padding:0 4px}
+.intro-coach .asm-actions{display:flex;flex-wrap:wrap;gap:6px}
+.intro-coach .stg-mini.used{opacity:.55}
+.intro-coach .stg-mini.used::after{content:" ✓";font-weight:900}
+#introRub{touch-action:none;user-select:none}
+
+@media (prefers-contrast:more){
+  .intro-convo,.intro-group{border-width:2px;border-color:#000}
+  .intro-them{color:#000;text-decoration:underline}
+}

@@ -78,6 +78,10 @@ import { createInversionState } from "../src/venipuncture/inversion/inversionSta
 import { evaluateInversion } from "../src/venipuncture/inversion/inversionRules.js";
 import { measureInversion } from "../src/venipuncture/inversion/inversionScoring.js";
 
+import { createIntroductionState } from "../src/venipuncture/introduction/introductionState.js";
+import { evaluateIntroduction } from "../src/venipuncture/introduction/introductionRules.js";
+import { measureIntroduction } from "../src/venipuncture/introduction/introductionScoring.js";
+
 const VESSELS = buildVessels();
 const VEIN = { id: "median-cubital", calibre: 0.0034, depth: 0.0035 };
 const ORDER = ["lightblue", "lavender"];
@@ -96,8 +100,12 @@ function realMeasurements(){
   const wd = createWithdrawalState({ vessel: VEIN });
   const pd = createPostDrawState({ vessel: VEIN, withdrawnAt: 1000, now: 1000 });
   const inv = createInversionState({ order: ORDER, now: 1000 });
+  const intro = createIntroductionState({
+    patient: { name: "A Patient", dob: "01/01/1970", id: "AP1", history: {} }, now: 1000,
+  });
 
   return {
+    introduction: measureIntroduction(intro, evaluateIntroduction(intro), { now: 1000 }),
     supplyStaging: measureStaging(staging, catalog, evaluateStaging(staging, catalog), 1000),
     tourniquet: measureTourniquet(tq, evaluateTourniquet(tq, { vessels: VESSELS, vigour: 1 }, 1000), 1000),
     palpation: measurePalpation(pal, evaluatePalpation(pal, VESSELS), VESSELS),
@@ -117,9 +125,6 @@ test("every measurement key the policy feeds from has a real source and a real o
   for(const cat of CATEGORIES){
     for(const [key] of cat.feeds){
       assert.ok(MEASUREMENT_SOURCES[key], `${key} has no procedure-state source`);
-      // `introduction` is Branch C and has no module yet — that is the honest
-      // state of the rubric and the report says so rather than pretending.
-      if(key === "introduction") continue;
       assert.ok(real[key], `${key} produced no measurement object`);
     }
   }
@@ -129,7 +134,6 @@ test("every sequence field the policy names exists on the real measurement", () 
   const real = realMeasurements();
   for(const cat of CATEGORIES){
     for(const check of (cat.excellence.sequence || [])){
-      if(check.key === "introduction") continue;
       assert.notEqual(real[check.key][check.field], undefined,
         `${cat.id}: ${check.key}.${check.field} does not exist on the measurement`);
     }
@@ -140,7 +144,6 @@ test("every tolerance field the policy names exists on the real measurement", ()
   const real = realMeasurements();
   for(const cat of CATEGORIES){
     for(const range of (cat.excellence.ranges || [])){
-      if(range.key === "introduction") continue;
       assert.notEqual(real[range.key][range.field], undefined,
         `${cat.id}: ${range.key}.${range.field} does not exist on the measurement`);
       assert.ok(range.min <= range.max, `${range.key}.${range.field} has an inverted range`);
@@ -151,7 +154,6 @@ test("every tolerance field the policy names exists on the real measurement", ()
 test("every commendation field the policy names exists on the real measurement", () => {
   const real = realMeasurements();
   for(const c of DEFAULT_POLICY.commendations){
-    if(c.key === "introduction") continue;
     assert.notEqual(real[c.key][c.field], undefined, `${c.key}.${c.field} does not exist`);
   }
 });

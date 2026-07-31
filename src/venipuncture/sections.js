@@ -23,11 +23,18 @@ import { MEASUREMENT_SOURCES } from "./rubric/policy.js";
 
 export const SECTIONS = [
   {
+    id: "introduction", label: "Introduction and identification",
+    steps: ["introduce"],
+    measurements: ["introduction"],
+    sessions: ["introduction"],
+    chips: ["introOk"],
+  },
+  {
     id: "prep", label: "Work-area preparation",
-    steps: ["hygiene", "gather"],
+    steps: ["gather"],
     measurements: ["supplyStaging"],
     sessions: ["supplies"],
-    chips: ["hygieneOk", "gatherOk"],
+    chips: ["gatherOk"],
   },
   {
     id: "tourniquet", label: "Tourniquet",

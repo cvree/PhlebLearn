@@ -169,6 +169,15 @@ export function makePatient(){
   const provider = pick(["Dr. Alvarez","Dr. Chen","Dr. Okafor","Dr. Patel","Dr. Romano","Dr. Singh"]);
   const drawPool = DRAW_EVENTS.filter(e=>!/IV running/i.test((e.lines||[]).join(" ")));
   const drawEvent = Math.random() < (0.26+dl*0.05) ? pick(drawPool) : null;  // a high-level draw complication to recognize and handle
-  return {first,last,decoyLast,name:first+" "+last,dob:pad(mo,2)+"/"+pad(da,2)+"/"+yr,id,age,ageCat,
+  // Clinical history as explicit TRIGGER DATA, never as prose to be matched.
+  // The introduction step keys off these booleans to decide what the patient
+  // discloses when they are asked — and what happens to a learner who never
+  // asks. Same pattern as the anticoagulated patient's event object.
+  const history = {
+    latexAllergy: Math.random() < 0.16,
+    adhesiveAllergy: Math.random() < 0.10,
+    faintHistory: Math.random() < 0.18,
+  };
+  return {first,last,decoyLast,name:first+" "+last,dob:pad(mo,2)+"/"+pad(da,2)+"/"+yr,id,age,ageCat,history,
     mood:pick(MOODS),orders,reqSet,handling,event,eventWhen,reqIssue,provider,drawEvent,site:(Math.random() < (0.28+dl*0.05) ? makeSiteScenario(dl) : null),appearance:makeAppearance(ageCat),shirt:pick(SHIRTS)};
 }

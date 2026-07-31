@@ -110,8 +110,6 @@ test("every rubric-fed measurement is produced by some section", () => {
   const produced = new Set(SECTIONS.flatMap(s => s.measurements));
   for(const cat of CATEGORIES){
     for(const [key] of cat.feeds){
-      // `introduction` is Branch C; it has no section until that step exists
-      if(key === "introduction") continue;
       assert.ok(produced.has(key), `${key} is graded but no section produces it`);
     }
   }
@@ -124,7 +122,7 @@ test("measurementField agrees with the rubric policy's own mapping", () => {
 });
 
 test("a section ends when the next step belongs to a different section", () => {
-  assert.equal(endsSection("hygiene", "gather"), false);
+  assert.equal(endsSection("introduce", "gather"), true);
   assert.equal(endsSection("gather", "tourniquet"), true);
   assert.equal(endsSection("release", "withdraw"), false);
   assert.equal(endsSection("dispose", "pressure"), true);

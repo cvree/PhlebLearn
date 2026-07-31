@@ -1,7 +1,7 @@
 /* Coaching copy shown for each venipuncture step — the "why it matters" and
    icon that accompany each entry in procedureState.js's VP_STEP_DEFS. */
 export const VP_TIPS={
-  hygiene:{t:"Hand hygiene & PPE",tip:"Wash or sanitize your hands and put on gloves before every patient — standard precautions protect you both.",why:"Prevents transmission of bloodborne pathogens."},
+  introduce:{t:"Meet and identify the patient",tip:"Introduce yourself, then ASK them to state their full name and date of birth — never read it out for them to agree with. Confirm the order, say what is about to happen, ask about allergies and about fainting, seat them with the arm supported, then wash your hands for 20 seconds, let them dry, and glove.",why:"Two actively-stated identifiers are the only thing standing between this patient and someone else's result. Everything after this step assumes you got it right."},
   gather:{t:"Prepare your work area",tip:"Check every package before it goes on the tray — expiry date, gauge, seal, and whose name is on it. Rack the tubes in order of draw, and put the sharps container in immediate reach on your dominant side before you touch the patient.",why:"A tray you have to leave mid-draw is how needles get set down and how the wrong tube gets grabbed. Everything you'll need has to be within arm's reach before the first stick."},
   assemble:{t:"Assemble the needle (while the alcohol dries)",tip:"While the cleaned site air-dries, thread the multi-sample needle into the holder until it's secure and inspect it. Keep the cap on until you're ready to stick.",why:"Assembling during the 30-second dry time is efficient, and a secure needle won't leak or fail the vacuum."},
   tourniquet:{t:"Apply the tourniquet",tip:"Place it 3–4 inches ABOVE the site, snug but not painful. Ask the patient to make a fist (no pumping). Keep it on ≤ 1 minute total.",why:"Too long or too tight causes hemoconcentration and skews results."},
@@ -19,4 +19,4 @@ export const VP_TIPS={
   bandage:{t:"Bandage the site",tip:"Apply a bandage and tell the patient to keep it on ~15 minutes and report any bleeding, swelling, or numbness.",why:"Aftercare instructions catch the rare complication early."},
   invert:{t:"Invert to mix",tip:"Gently invert each additive tube 5–10 times right after the draw is complete. NEVER shake — that hemolyzes the sample and ruins it.",why:"Even mixing activates the additive; shaking bursts the red cells."}
 };
-export const VP_ICON={hygiene:"🧼",gather:"🧺",tourniquet:"🎀",palpate:"🫳",clean:"🧴",assemble:"🔧",uncap:"🎯",insert:"💉",fill:"🩸",switch:"🔁",release:"🎈",withdraw:"↩️",safety:"🛡️",pressure:"🩹",bandage:"🩹",dispose:"🗑️",invert:"🔄"};
+export const VP_ICON={introduce:"🪪",gather:"🧺",tourniquet:"🎀",palpate:"🫳",clean:"🧴",assemble:"🔧",uncap:"🎯",insert:"💉",fill:"🩸",switch:"🔁",release:"🎈",withdraw:"↩️",safety:"🛡️",pressure:"🩹",bandage:"🩹",dispose:"🗑️",invert:"🔄"};
