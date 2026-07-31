@@ -14,11 +14,14 @@ import { shuffle, pick, arraysEqual } from "../utils.js";
 import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, VERIFY_CORRECT, VERIFY_WRONG, NICK_CORRECT, NICK_WRONG, ALL_CATCHES } from "../config.js";
 import {
   SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
-  MODE, MODES, guided, reveal,
+  MODE, MODES, MODE_NAMES, guided, finalPractical, reveal,
 } from "../game/gameState.js";
-import { summaryLine } from "../game/modeProgress.js";
+import { summaryLine, recordAttempt, recordFor, weakestCategories } from "../game/modeProgress.js";
 import { sectionForStep, endsSection, sectionMeasurements, resetFromSection } from "../venipuncture/sections.js";
-import { MEASUREMENT_LABELS } from "../venipuncture/rubric/policy.js";
+import { MEASUREMENT_LABELS, CATEGORIES } from "../venipuncture/rubric/policy.js";
+import { buildRubricReport } from "../venipuncture/rubric/rubricReport.js";
+import { buildReplay } from "../venipuncture/rubric/replay.js";
+import { renderPracticalReport, renderRubricSummary } from "./reportView.js";
 import { awardBadge, difficultyName, addXP, addCoins } from "../game/saveSystem.js";
 import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
@@ -461,14 +464,65 @@ function vpFinish(){
         <span>Staging time <b>${fmtDuration(sm.timeMs)}</b></span>
       </div>
     </div>` : "";
+  // The rubric is built for EVERY mode, because per-mode bests need it — but
+  // only the Final Practical is shown the full report. Learn and Practice keep
+  // the chips they have always had, with a compact rubric line under them;
+  // the report is the Final Practical's output, not a replacement for
+  // in-line coaching.
+  const { report, replay, progressLine } = gradeAttempt(c);
+  const body = finalPractical()
+    ? renderPracticalReport(report, replay, { progress: progressLine })
+    : `<div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
+       ${stagingBlock}
+       <div class="vp-scorewrap">${items.map(([k,l])=>`<span class="vp-chip ${c[k]?'ok':'mid'}">${c[k]?'✓':'•'} ${l}</span>`).join("")}</div>
+       ${renderRubricSummary(report)}
+       ${progressLine?`<div class="rep-policy">${progressLine}</div>`:""}
+       ${guided()?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}`;
   panel.innerHTML=`
-    <h2>✅ Draw complete — ${ENC.p.first}</h2>
-    <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
-    ${stagingBlock}
-    <div class="vp-scorewrap">${items.map(([k,l])=>`<span class="vp-chip ${c[k]?'ok':'mid'}">${c[k]?'✓':'•'} ${l}</span>`).join("")}</div>
-    ${guided()?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}
+    <h2>${finalPractical()?`📋 Practical report — ${ENC.p.first}`:`✅ Draw complete — ${ENC.p.first}`}</h2>
+    ${body}
     <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
   $("vpToLabel").onclick=()=>{ sfx("tap"); go(hasPostDraw?"drawresp":"label"); };
+}
+
+/**
+ * Grades the attempt once and folds it into this mode's own record.
+ *
+ * Idempotent: `vpFinish()` is reachable more than once (a post-draw
+ * complication returns to it), and a second visit must not count a second
+ * attempt or claim a second personal best.
+ */
+function gradeAttempt(c){
+  if(c.report) return { report:c.report, replay:c.replay, progressLine:c.progressLine };
+  const report = buildRubricReport(c, {
+    mode: MODE,
+    patient: ENC.p ? ENC.p.name : null,
+    attemptedAt: Date.now(),
+    elapsedMs: ENC.startedAt ? Date.now()-ENC.startedAt : null,
+    // Coached corrections cost the top band. Learn mode names the specific
+    // error and refuses to advance until it is fixed, so BY DEFINITION no row
+    // in a Learn attempt was done unaided — that is what Learn mode is. The
+    // rubric says so out loud rather than quietly awarding an Excellent for
+    // work the coach talked the learner through.
+    context: { assists: guided()
+      ? Object.fromEntries(CATEGORIES.map(x=>[x.id, 1]))
+      : {} },
+  });
+  const replay = buildReplay(c, { startedAt: ENC.startedAt });
+  const outcome = recordAttempt(SS.modeProgress, MODE, report);
+  SS.modeProgress = outcome.progress;
+  saveSS();
+
+  const weak = weakestCategories(SS.modeProgress, MODE, report, 2);
+  const bits = [`${MODE_NAMES[MODE]}: attempt ${recordFor(SS.modeProgress, MODE).attempts}`];
+  if(outcome.newBest) bits.push(`new best ${report.total}/${report.maxTotal}`);
+  else if(outcome.delta != null) bits.push(`${outcome.delta>=0?"+":""}${outcome.delta} on your last attempt`);
+  if(weak.length) bits.push(`weakest: ${weak.map(w=>w.label).join(", ")}`);
+
+  c.report = report;
+  c.replay = replay;
+  c.progressLine = bits.join(" · ");
+  return { report, replay, progressLine:c.progressLine };
 }
 
 /* ---------- labeling ------------------------------------------------------------ */

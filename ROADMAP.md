@@ -767,6 +767,38 @@ Bests are kept **per mode** (`game/modeProgress.js`, persisted on
 same achievement as one scored in silence, so they are never pooled.
 27 unit tests, 8 browser tests.
 
+### ✅ `feature/practical-report` — the result screen and the replay
+
+`vpFinish()` now grades the attempt through the rubric layer in **every** mode,
+because per-mode bests need the grade — but only the Final Practical is shown
+the full report. Learn and Practice keep the chips they have always had, with a
+compact rubric line under them: the report is the Final Practical's output, not
+a replacement for in-line coaching.
+
+`ui/reportView.js` renders and decides nothing; `rubricReport.js` decides and
+renders nothing. That separation is what lets the whole report be asserted on
+in a unit test without a browser, and what stops a grading threshold ending up
+inside a template.
+
+**Session replay** (`rubric/replay.js`) invents no new logging: every
+`*State.js` has kept an `events[]` since it was written, and this merges them,
+groups them by section, and shows each group against the measurement that
+graded it. The one real trap is that **staging logs a relative clock and every
+other module an absolute one** — merging them naïvely puts the whole supply-cart
+phase in 1970. `normaliseEvents()` reconciles that once, rather than in whatever
+renders the list, and a unit test holds it there.
+
+Two deliberate honesty choices:
+
+- **A Learn attempt can never claim an unaided Excellent.** Learn names the
+  specific error and refuses to advance until it is fixed, so by definition no
+  row was done unaided. The rubric's `assisted` gate says so out loud.
+- **`gradeAttempt()` is idempotent.** `vpFinish()` is reachable more than once
+  (a post-draw complication returns to it), and a second visit must not count a
+  second attempt or claim a second personal best.
+
+17 unit tests, 13 browser tests.
+
 ## Phase 3b — Consequences
 
 - Complications rendered in 3D: hematoma swelling, blown vein, dry stick, vein

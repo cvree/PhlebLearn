@@ -1099,6 +1099,40 @@ function installTestSeam(){
       const r = canvas.getBoundingClientRect();
       return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height };
     },
+    /**
+     * The graded practical, as the rubric layer built it. Present only once
+     * the draw has finished; the same object the report screen renders, so a
+     * test can assert on the grade rather than on the wording.
+     */
+    async practicalReport(){
+      const { ENC } = await import("./game/gameState.js");
+      return (ENC && ENC.collect && ENC.collect.report) || null;
+    },
+    /** The merged session replay for the finished draw. */
+    async sessionReplay(){
+      const { ENC } = await import("./game/gameState.js");
+      const r = ENC && ENC.collect && ENC.collect.replay;
+      if(!r) return null;
+      return {
+        count: r.count, durationMs: r.durationMs,
+        groups: r.groups.map(g=>({ id:g.id, score:g.score, events:g.events.length })),
+        sections: r.events.map(e=>e.section),
+      };
+    },
+    /** Per-mode bests, so a test can prove they are kept apart. */
+    async modeProgress(){
+      const { SS } = await import("./game/gameState.js");
+      return SS.modeProgress || {};
+    },
+    /** Walks the remaining steps of the current draw to its end. */
+    async finishDraw(){
+      const { ENC } = await import("./game/gameState.js");
+      const { go } = await import("./ui/panels.js");
+      if(!ENC || !ENC.collect) return false;
+      ENC.collect.step = ENC.collect.steps.length;
+      go("collect");
+      return true;
+    },
   };
 }
 

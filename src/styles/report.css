@@ -1,0 +1,82 @@
+/* =========================================================================
+   THE PRACTICAL REPORT — styling for the Final Practical's result screen
+   and the session replay under it.
+
+   Deliberately plain: this is a document a learner reads with an instructor,
+   not a celebration screen. The only colour that carries meaning is the
+   pass/fail band and the 0–4 chips, and both are labelled in text as well,
+   so nothing here depends on seeing colour.
+   ========================================================================= */
+
+.rep-head{border:2px solid var(--line);border-radius:16px;padding:12px 14px;margin:10px 0;background:#fff;box-shadow:var(--shadow)}
+.rep-proc{font-size:12px;color:var(--ink-soft);font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+.rep-total{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px}
+.rep-score{font-size:28px;font-weight:900;color:var(--ink);line-height:1}
+.rep-outof{font-size:14px;font-weight:800;color:var(--ink-soft)}
+.rep-verdict{font-size:13px;font-weight:900;border-radius:999px;padding:4px 12px;border:2px solid var(--line)}
+.rep-verdict.pass{border-color:var(--mint);background:#e9f8f1;color:#186a48}
+.rep-verdict.fail{border-color:var(--bad);background:#fdeaf0;color:#9c3552}
+.rep-why{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink)}
+.rep-why li{margin:3px 0}
+.rep-policy{font-size:11px;color:var(--ink-soft);margin-top:8px}
+
+.rep-alarm{border:2px solid var(--bad);background:#fdeaf0;border-radius:14px;padding:10px 12px;margin:10px 0}
+.rep-alarm h3{margin:0 0 6px;font-size:13px;color:#9c3552}
+.rep-alarm ul{margin:0;padding-left:18px;font-size:12.5px}
+.rep-alarm li{margin:4px 0}
+.rep-alarm .rep-auto{font-weight:900}
+
+.rep-sec{margin:14px 0 6px;font-size:14px;font-weight:900;color:var(--ink)}
+
+.rep-row{border:2px solid var(--line);border-radius:14px;padding:10px 12px;margin:8px 0;background:#fff}
+.rep-rowhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.rep-rowname{font-weight:900;font-size:13.5px;color:var(--ink)}
+.rep-band{font-size:12px;font-weight:900;color:var(--plum);white-space:nowrap}
+.rep-chip{display:inline-block;min-width:26px;text-align:center;border:2px solid var(--line);border-radius:8px;
+  font-weight:900;font-size:13px;padding:1px 6px;margin-right:6px}
+.rep-chip[data-score="4"]{border-color:var(--mint);background:#e9f8f1;color:#186a48}
+.rep-chip[data-score="3"]{border-color:var(--mint);background:#f3fbf7;color:#2f7d5b}
+.rep-chip[data-score="2"]{border-color:var(--gold);background:#fdf7e8;color:#8a6415}
+.rep-chip[data-score="1"]{border-color:var(--bad);background:#fdf2f5;color:#9c3552}
+.rep-chip[data-score="0"]{border-color:var(--bad);background:#fdeaf0;color:#9c3552}
+.rep-evidence{margin:6px 0 0;padding-left:0;list-style:none;font-size:12.5px;color:var(--ink)}
+.rep-evidence li{margin:4px 0}
+.rep-evkey{font-weight:800;color:var(--ink-soft)}
+.rep-blocked{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--ink-soft)}
+.rep-blocked li{margin:3px 0}
+.rep-commend{margin:6px 0 0;padding-left:18px;font-size:12px;color:#2f7d5b}
+
+.rep-table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
+.rep-table th,.rep-table td{border:1px solid var(--line);padding:5px 7px;text-align:left}
+.rep-table th{background:#f6f4fb;font-weight:900}
+.rep-usable{font-weight:900}
+
+.rep-outcomes{margin:6px 0;padding-left:18px;font-size:12.5px}
+.rep-outcomes li{margin:3px 0}
+.rep-outcomes li[data-good="0"]{color:#9c3552}
+
+.rep-plan{counter-reset:plan;margin:6px 0;padding-left:0;list-style:none}
+.rep-plan li{border-left:4px solid var(--line);padding:4px 0 4px 10px;margin:8px 0;font-size:12.5px}
+.rep-plan li[data-priority="1"]{border-left-color:var(--bad)}
+.rep-plan li[data-priority="2"]{border-left-color:var(--gold)}
+.rep-plan .rep-action{font-weight:900;display:block}
+.rep-plan .rep-whyplan{color:var(--ink-soft)}
+
+/* ---------- session replay ------------------------------------------------ */
+.rep-replay{border:2px solid var(--line);border-radius:14px;background:#fff;margin:8px 0;padding:0 12px}
+.rep-replay>summary{cursor:pointer;padding:10px 0;font-weight:900;font-size:13px;color:var(--ink)}
+.rep-rgroup{border-top:1px solid var(--line);padding:8px 0}
+.rep-rghead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-weight:900;font-size:12.5px}
+.rep-rgscore{color:var(--plum)}
+.rep-rgnarr{font-size:12px;color:var(--ink-soft);margin:3px 0 6px}
+.rep-timeline{list-style:none;margin:0;padding:0;font-size:11.5px;
+  max-height:220px;overflow-y:auto}
+.rep-timeline li{display:flex;gap:10px;padding:2px 0;border-bottom:1px dotted var(--line)}
+.rep-at{font-variant-numeric:tabular-nums;color:var(--ink-soft);min-width:52px}
+.rep-what{flex:1}
+.rep-detail{color:var(--ink-soft)}
+
+@media (prefers-contrast:more){
+  .rep-row,.rep-head,.rep-replay{border-width:2px;border-color:#000}
+  .rep-chip{border-color:#000}
+}
