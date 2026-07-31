@@ -82,6 +82,12 @@ import { createIntroductionState } from "../src/venipuncture/introduction/introd
 import { evaluateIntroduction } from "../src/venipuncture/introduction/introductionRules.js";
 import { measureIntroduction } from "../src/venipuncture/introduction/introductionScoring.js";
 
+import {
+  createButterflyState, pickUpByWings, layWingsFlat, secureWings, enter as enterButterfly,
+} from "../src/venipuncture/butterfly/butterflyState.js";
+import { evaluateButterfly } from "../src/venipuncture/butterfly/butterflyRules.js";
+import { measureButterfly } from "../src/venipuncture/butterfly/butterflyScoring.js";
+
 const VESSELS = buildVessels();
 const VEIN = { id: "median-cubital", calibre: 0.0034, depth: 0.0035 };
 const ORDER = ["lightblue", "lavender"];
@@ -103,9 +109,12 @@ function realMeasurements(){
   const intro = createIntroductionState({
     patient: { name: "A Patient", dob: "01/01/1970", id: "AP1", history: {} }, now: 1000,
   });
+  const bf = createButterflyState({ calibreM: 0.0020, now: 1000 });
+  pickUpByWings(bf); enterButterfly(bf, 10, { now: 1000 }); layWingsFlat(bf); secureWings(bf, { now: 1000 });
 
   return {
     introduction: measureIntroduction(intro, evaluateIntroduction(intro), { now: 1000 }),
+    butterfly: measureButterfly(bf, evaluateButterfly(bf, {}), { now: 1000 }),
     supplyStaging: measureStaging(staging, catalog, evaluateStaging(staging, catalog), 1000),
     tourniquet: measureTourniquet(tq, evaluateTourniquet(tq, { vessels: VESSELS, vigour: 1 }, 1000), 1000),
     palpation: measurePalpation(pal, evaluatePalpation(pal, VESSELS), VESSELS),
@@ -229,6 +238,13 @@ const PERFECT = {
   inversion: {
     score: 100, mistakes: [], narrative: "invert", clottedCount: 0,
     tubes: [{ key: "lavender", name: "Lavender", inversions: 8, required: 8, haemolysisGrade: "none", delaySeconds: 2, racked: true, usable: true, reason: null }],
+  },
+  butterfly: {
+    score: 100, mistakes: [], narrative: "butterfly", device: "butterfly",
+    entryAngleDeg: 10, carriedByWings: true, wingsLaidFlat: true, wingsSecured: true,
+    tubingSlackMm: 30, tubingTaut: false, disturbancesTransmitted: 0, disturbancesWhileLoose: 0,
+    peakTipOffsetMm: 0, infiltratedMl: 0, infiltrationNoticed: false, secondsToNotice: null,
+    stoppedOnInfiltration: false,
   },
 };
 
@@ -519,4 +535,109 @@ test("mistakesFor tags each mistake with the measurement it came from", () => {
   });
   const all = mistakesFor(catById("preparation"), m);
   assert.deepEqual(all.map(x => x.key), ["tourniquet", "cleaning"]);
+});
+
+/* =========================================================================
+   PROCEDURE-AWARE FEEDS — the winged set's `butterfly` feed only applies to
+   a butterfly-hand attempt, and the antecubital angle window only applies
+   to attempts that are NOT one. Two independent, deliberately asymmetric
+   knobs: `proceduresOnly` (opt IN, excluded when the procedure is unknown)
+   for anything brand new, `excludeProcedures` (opt OUT, included when the
+   procedure is unknown) for anything that used to be unconditional.
+   ========================================================================= */
+import { activeFeeds } from "../src/venipuncture/rubric/rubricRules.js";
+
+const BUTTERFLY_CTX = { procedureId: "butterfly-hand" };
+const STRAIGHT_CTX = { procedureId: "straight-antecubital" };
+
+test("activeFeeds excludes a proceduresOnly feed when the procedure is unknown", () => {
+  const feeds = activeFeeds(catById("technique"), undefined);
+  assert.ok(!feeds.some(([k]) => k === "butterfly"));
+});
+
+test("activeFeeds includes the butterfly feed only for a butterfly-hand context", () => {
+  assert.ok(activeFeeds(catById("technique"), BUTTERFLY_CTX).some(([k]) => k === "butterfly"));
+  assert.ok(!activeFeeds(catById("technique"), STRAIGHT_CTX).some(([k]) => k === "butterfly"));
+});
+
+test("a straight attempt's technique mean is identical with or without a context", () => {
+  const m = perfect();
+  const noContext = scoreCategory(catById("technique"), m);
+  const withContext = scoreCategory(catById("technique"), m, DEFAULT_POLICY, STRAIGHT_CTX);
+  assert.equal(noContext.mean, withContext.mean);
+  assert.deepEqual(noContext.present, withContext.present);
+});
+
+test("a butterfly attempt's technique row includes the winged-set feed and scores it", () => {
+  const m = perfect({
+    withdrawal: { device: "butterfly" }, postDraw: { siteKind: "hand" },
+    insert: { angleDeg: 10 },   // inside the hand window, outside the antecubital one
+  });
+  const row = scoreCategory(catById("technique"), m, DEFAULT_POLICY, BUTTERFLY_CTX);
+  assert.ok(row.present.includes("butterfly"));
+  assert.equal(row.score, 4);
+});
+
+test("the antecubital angle range fires for an unlabelled attempt but not for a butterfly one", () => {
+  const m = perfect({ insert: { angleDeg: 10 } });   // wrong for antecubital, right for a hand draw
+  const straight = scoreCategory(catById("technique"), m);
+  const butterfly = scoreCategory(catById("technique"), m, DEFAULT_POLICY, BUTTERFLY_CTX);
+  assert.ok(straight.score < 4);
+  assert.ok(straight.preventedExcellence.some(g => g.reason === "tolerance" && /entry angle/i.test(g.detail)));
+  assert.equal(butterfly.score, 4);
+});
+
+test("a straight attempt is never docked for missing the butterfly measurement", () => {
+  const m = perfect();       // m.butterfly is populated by the fixture, but no context names the procedure
+  assert.equal(m.butterfly.score, 100);
+  const row = scoreCategory(catById("technique"), m);   // no context: butterfly feed excluded
+  assert.equal(row.score, 4);
+  assert.ok(!row.missing.includes("butterfly"));
+});
+
+test("a butterfly attempt IS docked for a missing butterfly measurement, requireAll included", () => {
+  const m = perfect({ butterfly: null, withdrawal: { device: "butterfly" }, postDraw: { siteKind: "hand" } });
+  const row = scoreCategory(catById("technique"), m, DEFAULT_POLICY, BUTTERFLY_CTX);
+  assert.ok(row.missing.includes("butterfly"));
+  assert.ok(row.score < 4);
+});
+
+test("carrying the set by tubing, or leaving the wings pinched, blocks a butterfly Excellent", () => {
+  const pinched = perfect({
+    withdrawal: { device: "butterfly" }, postDraw: { siteKind: "hand" },
+    insert: { angleDeg: 10 },
+    butterfly: { carriedByWings: false },
+  });
+  const row = scoreCategory(catById("technique"), pinched, DEFAULT_POLICY, BUTTERFLY_CTX);
+  assert.ok(row.score < 4);
+  assert.ok(row.preventedExcellence.some(g => g.reason === "sequence" && /wings, not its tubing/.test(g.detail)));
+});
+
+test("buildRubricReport derives the procedure straight off the attempt — no context needed", () => {
+  const c = {};
+  for(const [key, field] of Object.entries(MEASUREMENT_SOURCES)) c[field] = perfect({
+    withdrawal: { device: "butterfly" }, postDraw: { siteKind: "hand" }, insert: { angleDeg: 10 },
+  })[key];
+  c.procedureId = "butterfly-hand";
+  const report = buildRubricReport(c);
+  const technique = report.categories.find(x => x.id === "technique");
+  assert.ok(technique.present.includes("butterfly"));
+  assert.match(report.procedure.label, /Butterfly/);
+});
+
+test("an explicit context.procedureId overrides the one read off the attempt", () => {
+  const c = {};
+  for(const [key, field] of Object.entries(MEASUREMENT_SOURCES)) c[field] = perfect()[key];
+  c.procedureId = "butterfly-hand";
+  const report = buildRubricReport(c, { context: { procedureId: "straight-antecubital" } });
+  const technique = report.categories.find(x => x.id === "technique");
+  assert.ok(!technique.present.includes("butterfly"));
+});
+
+test("the butterfly critical-event codes are wired into the policy", () => {
+  for(const code of ["carriedByTubing", "tubingTaut", "infiltrationMissed", "infiltrationNotActedOn"]){
+    assert.ok(criticalEventFor("butterfly", code), `butterfly.${code} is not in CRITICAL_EVENTS`);
+  }
+  assert.equal(criticalEventFor("butterfly", "carriedByTubing").automaticFailure, true);
+  assert.equal(criticalEventFor("butterfly", "infiltrationMissed").automaticFailure, true);
 });

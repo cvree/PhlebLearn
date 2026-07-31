@@ -6,17 +6,28 @@
    own depth, and the bevel inherited from uncap. Full re-renders are gated on
    a structural signature; the numbers that tick every frame are patched
    through [data-live] instead.
+
+   The window this is judged against is not fixed: `o.angleBand`/`o.anchorBand`
+   default to the antecubital numbers, but the butterfly/dorsal-hand procedure
+   passes its own — a hand draw's controls offer 10°/2°/25°, not 20°/5°/45°.
+   When `o.device === "butterfly"`, the wing/tubing status and controls from
+   butterflyCoach.js are embedded here too: the wings ARE how the set is held
+   during insertion, so their UI belongs in this coach, not a separate one.
    ========================================================================= */
 import {
-  nextIssue, nextAction,
-  ANGLE_IDEAL, BEVEL_TOLERANCE_DEG,
-  ANCHOR_PULL_MIN, ANCHOR_PULL_GOOD, ANCHOR_DISTAL_MIN, ANCHOR_DISTAL_MAX,
+  nextIssue, nextAction, BEVEL_TOLERANCE_DEG,
+  DEFAULT_ANGLE_BAND, DEFAULT_ANCHOR_BAND, anglePresetsFor, anchorPresetsFor,
 } from "./insertRules.js";
+import {
+  wingStatusHTML, infiltrationBannerHTML, wingControlsHTML, postEntryControlsHTML, patchWingLive,
+} from "../butterfly/butterflyCoach.js";
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function mm(m){ return Math.round((m || 0)*1000); }
+function mmR(m){ return Math.round((m || 0)*1000*10)/10; }
 
-function anchorRowsHTML(state, result){
+function anchorRowsHTML(state, result, anchorBand){
+  const band = anchorBand || DEFAULT_ANCHOR_BAND;
   const pullMm = mm(state.anchorPull);
   const offsetMm = result.anchorOffset == null ? null : mm(result.anchorOffset);
   return `<div class="asm-row">
@@ -25,19 +36,20 @@ function anchorRowsHTML(state, result){
     </div>
     ${state.anchorSet ? `<div class="asm-row">
       <span class="asm-lab">Offset</span>
-      <span class="asm-val ${offsetMm!=null && offsetMm>0 && offsetMm>=mm(ANCHOR_DISTAL_MIN) && offsetMm<=mm(ANCHOR_DISTAL_MAX) ? "good" : "bad"}" data-live="anchorOffset">${offsetMm==null?"—":offsetMm+"mm distal"}</span>
+      <span class="asm-val ${offsetMm!=null && offsetMm>0 && offsetMm>=mm(band.distalMin) && offsetMm<=mm(band.distalMax) ? "good" : "bad"}" data-live="anchorOffset">${offsetMm==null?"—":offsetMm+"mm distal"}</span>
     </div>
     <div class="asm-row">
       <span class="asm-lab">Traction</span>
-      <span class="asm-val ${pullMm>=mm(ANCHOR_PULL_GOOD)?"good":(pullMm>=mm(ANCHOR_PULL_MIN)?"":"bad")}" data-live="anchorPull">${pullMm}mm</span>
+      <span class="asm-val ${pullMm>=mm(band.pullGood)?"good":(pullMm>=mm(band.pullMin)?"":"bad")}" data-live="anchorPull">${pullMm}mm</span>
     </div>` : ""}`;
 }
 
-function insertRowsHTML(state, result, bevelDeg){
+function insertRowsHTML(state, result, bevelDeg, angleBand){
+  const band = angleBand || DEFAULT_ANGLE_BAND;
   const bevelOk = bevelDeg == null ? null : Math.abs(bevelDeg) <= BEVEL_TOLERANCE_DEG;
   return `<div class="asm-row">
       <span class="asm-lab">Angle</span>
-      <span class="asm-val ${state.angleDeg==null?"wait":(state.angleDeg>=ANGLE_IDEAL.min && state.angleDeg<=ANGLE_IDEAL.max?"good":"bad")}" data-live="angle">${state.angleDeg==null?"—":Math.round(state.angleDeg)+"°"}</span>
+      <span class="asm-val ${state.angleDeg==null?"wait":(state.angleDeg>=band.ideal.min && state.angleDeg<=band.ideal.max?"good":"bad")}" data-live="angle">${state.angleDeg==null?"—":Math.round(state.angleDeg)+"°"}</span>
     </div>
     <div class="asm-row">
       <span class="asm-lab">Depth</span>
@@ -50,28 +62,30 @@ function insertRowsHTML(state, result, bevelDeg){
     ${result.inVein ? `<div class="asm-row"><span class="ins-flash">🩸 Flash</span></div>` : ""}`;
 }
 
-function anchorControlsHTML(){
+function anchorControlsHTML(anchorBand){
+  const p = anchorPresetsFor(anchorBand);
   return `<div class="asm-controls"><fieldset>
     <legend>Anchor without dragging</legend>
     <div class="asm-actions">
-      <button class="stg-mini" data-ins="anchor-ideal">Anchor an inch and a half below, firm pull</button>
+      <button class="stg-mini" data-ins="anchor-ideal">Anchor ${mmR(p.idealM)}mm below, firm pull</button>
       <button class="stg-mini" data-ins="anchor-close">Anchor right on top of the site</button>
-      <button class="stg-mini" data-ins="anchor-far">Anchor three inches below</button>
+      <button class="stg-mini" data-ins="anchor-far">Anchor ${mmR(p.farM)}mm below</button>
       <button class="stg-mini" data-ins="anchor-wrongside">Pull toward the site instead of away</button>
       <button class="stg-mini" data-ins="anchor-weak">Anchor the right spot, barely pull</button>
     </div>
   </fieldset></div>`;
 }
 
-function insertControlsHTML(state, result){
+function insertControlsHTML(state, result, angleBand){
+  const p = anglePresetsFor(angleBand);
   if(state.entryX == null && !result.inVein){
     return `<div class="asm-controls"><fieldset>
       <legend>Insert without dragging</legend>
       <div class="asm-actions">
         <button class="stg-mini" data-ins="redo-anchor">Redo the anchor</button>
-        <button class="stg-mini" data-ins="insert-ideal">Go in at 20°</button>
-        <button class="stg-mini" data-ins="insert-shallow">Go in nearly flat, 5°</button>
-        <button class="stg-mini" data-ins="insert-steep">Go in steep, 45°</button>
+        <button class="stg-mini" data-ins="insert-ideal">Go in at ${p.ideal}°</button>
+        <button class="stg-mini" data-ins="insert-shallow">Go in nearly flat, ${p.shallow}°</button>
+        <button class="stg-mini" data-ins="insert-steep">Go in steep, ${p.steep}°</button>
       </div>
     </fieldset></div>`;
   }
@@ -90,18 +104,25 @@ export function renderInsertCoach(host, o){
   const guided = !!o.guided;
   const listView = !!o.listView;
   const bevelDeg = o.bevelDeg == null ? null : o.bevelDeg;
+  const angleBand = o.angleBand || DEFAULT_ANGLE_BAND;
+  const anchorBand = o.anchorBand || DEFAULT_ANCHOR_BAND;
+  const isButterfly = o.device === "butterfly";
+  const bf = o.butterfly || null;
   const issue = nextIssue(result);
   const ready = result.ready;
   const phase = state.anchorSet ? "insert" : "anchor";
 
   const signature = [
     listView, guided, ready, phase, state.anchorSet, state.entryX != null,
-    result.inVein, result.through,
+    result.inVein, result.through, isButterfly,
+    bf ? bf.wings : "-", bf ? bf.secured : "-", bf ? (bf.infiltratedMl > 0) : "-", bf ? bf.infiltrationNoticed : "-",
     issue ? issue.code : "-",
   ].join("|");
 
-  if(host.dataset.insSig === signature){ patchLive(host, state, result, bevelDeg); return; }
+  if(host.dataset.insSig === signature){ patchLive(host, state, result, bevelDeg, bf); return; }
   host.dataset.insSig = signature;
+
+  const angleWindow = `${angleBand.ideal.min}–${angleBand.ideal.max}°`;
 
   host.innerHTML = `
     <div class="asm-coach">
@@ -113,9 +134,12 @@ export function renderInsertCoach(host, o){
       </div>
 
       <div class="asm-panel">
-        ${anchorRowsHTML(state, result)}
-        ${state.anchorSet ? insertRowsHTML(state, result, bevelDeg) : ""}
+        ${anchorRowsHTML(state, result, anchorBand)}
+        ${state.anchorSet ? insertRowsHTML(state, result, bevelDeg, angleBand) : ""}
+        ${isButterfly && bf ? wingStatusHTML(bf) : ""}
       </div>
+
+      ${isButterfly && bf ? infiltrationBannerHTML(bf) : ""}
 
       ${guided
         ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
@@ -129,15 +153,19 @@ export function renderInsertCoach(host, o){
             ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Anchor, then go in. Your technique is assessed after the patient.`}
           </div>`}
 
+      ${isButterfly && bf ? wingControlsHTML(bf) : ""}
+
       ${listView
-        ? (phase === "anchor" ? anchorControlsHTML() : insertControlsHTML(state, result))
+        ? (phase === "anchor" ? anchorControlsHTML(anchorBand) : insertControlsHTML(state, result, angleBand))
         : `<p class="stg-help">
             ${phase === "anchor"
-              ? `<b>Press below the marked site and drag further away from it</b> to pull the skin taut — an inch or two below is the window. Let go to lock it in.`
+              ? `<b>Press below the marked site and drag further away from it</b> to pull the skin taut. Let go to lock it in.`
               : state.entryX == null
-                ? `<b>Bring the needle down onto the skin at a shallow angle.</b> ${ANGLE_IDEAL.min}–${ANGLE_IDEAL.max}° is the window — much flatter skates over the vein, much steeper drives through it.`
+                ? `<b>Bring the needle down onto the skin at a shallow angle.</b> ${angleWindow} is the window — much flatter skates over the vein, much steeper drives through it.`
                 : `<b>Keep dragging the same way to advance; the other way to ease back.</b> The depth is what you cannot see from here either way — watch for the flash.`}
           </p>`}
+
+      ${isButterfly && bf ? postEntryControlsHTML(bf) : ""}
 
       <button class="btn vp-tap" id="insReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "In the vein — hold ▶" : "Not ready yet") : "Carry on ▶"}
@@ -151,9 +179,12 @@ export function renderInsertCoach(host, o){
   host.querySelectorAll("[data-ins]").forEach(b=>{
     b.onclick = ()=>h.onAction && h.onAction(b.dataset.ins);
   });
+  host.querySelectorAll("[data-wing]").forEach(b=>{
+    b.onclick = ()=>h.onWing && h.onWing(b.dataset.wing);
+  });
 }
 
-function patchLive(host, state, result, bevelDeg){
+function patchLive(host, state, result, bevelDeg, bf){
   const set = (name, text)=>{
     const el = host.querySelector(`[data-live="${name}"]`);
     if(el && el.textContent !== text) el.textContent = text;
@@ -168,4 +199,5 @@ function patchLive(host, state, result, bevelDeg){
     const bevelOk = bevelDeg == null ? null : Math.abs(bevelDeg) <= 25;
     set("bevel", bevelOk == null ? "—" : (bevelOk ? "up" : "off vertical"));
   }
+  patchWingLive(host, bf);
 }

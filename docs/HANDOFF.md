@@ -1,12 +1,12 @@
-# Handoff — one branch left
+# Handoff — assessment phase complete
 
-**Status at handoff (2026-07-30, second pass).** The assessment phase is four
-branches in and one branch out. `feature/rubric-policy`,
-`feature/three-modes`, `feature/practical-report` and
-`feature/introduction-and-id` are written, unit- and browser-tested, and
-stacked in that order. **`feature/butterfly-hand-draw` has not been started** —
-its design is section 5 of this document, which is the only part of the old
-handoff that still describes work rather than code.
+**Status at handoff (2026-07-30, third pass).** All five assessment-phase
+branches are written, unit- and browser-tested, and stacked in order:
+`feature/rubric-policy`, `feature/three-modes`, `feature/practical-report`,
+`feature/introduction-and-id`, and `feature/butterfly-hand-draw`. Section 5 of
+this document used to be a design for the last of those; it is now a record of
+how that design changed once it met the actual codebase, kept for whoever
+touches the butterfly module next.
 
 Read `ROADMAP.md` for what each branch does and why, and
 `docs/ARCHITECTURE.md` for the module layering. This file assumes both.
@@ -80,6 +80,29 @@ control call the same ones.
 The step id `hygiene` is gone; it is `introduce`, and the chip it sets is
 `introOk` rather than `hygieneOk`.
 
+### The second procedure — `src/venipuncture/procedure.js` + `src/venipuncture/butterfly/`
+
+`procedureFor(id)` is the single lookup every consumer reads through — device,
+site, gauge, angle window, anchor window, and (for the butterfly) a tubing
+spec. `indicatedProcedure(patient)` picks the butterfly draw off the patient's
+own trigger data (a `dry` arm, or `ageCat === "Child"`), never off a mode
+flag. See section 5 below for how the design changed on the way to code — in
+particular, **there is no new hand-mesh geometry**: the dorsal-hand vessels
+sit on the existing forearm cylinder's wrist-taper region, which is why the
+hand draw forces the accessible controls-only path wherever a step's
+interaction is centrally about vessel geometry (tourniquet, palpation,
+insert, collection) rather than adding a 3D drag surface for hand anatomy
+that does not exist.
+
+`src/venipuncture/butterfly/` is four files, not five — like introduction,
+there is no independent scene; its mechanics are embedded in insert's and
+collection's existing coaches and handlers. `butterflyState.js` is pure state
+(wings, tubing slack, tip offset, infiltration); `butterflyRules.js` is the
+clinical judgement (`evaluateButterfly`, `tipShiftFromTubing`,
+`infiltrationFrom`); `butterflyScoring.js` measures it; `butterflyCoach.js` is
+fragment helpers embedded into `insertCoach.js`/`collectionCoach.js`, not a
+standalone step coach.
+
 ---
 
 ## 2. Conventions you must not break
@@ -109,8 +132,23 @@ pass:
 
 Unchanged from the first handoff, plus:
 
-- `npm test` now runs 14 spec files; `npm run test:e2e` runs 14. Both lists
-  are explicit in `package.json` — **add new specs to both or they never run.**
+- `npm test` now runs 16 spec files; `npm run test:e2e` runs 15 (14 step specs
+  plus `smoke.spec.js`, which `npm test`'s list has no equivalent of). Both
+  lists are explicit in `package.json` — **add new specs to both or they never
+  run.**
+- **A spec that calls `gotoProcedureStep()` without forcing a procedure gets
+  whatever `indicatedProcedure()` picks for that run's random patient.** Once
+  `feature/butterfly-hand-draw` landed, every existing spec touching
+  tourniquet, palpation, insert, collection, withdrawal or postDraw started
+  failing intermittently — not because those steps broke, but because roughly
+  1 in a few random patients now legitimately routes to the hand draw, which
+  forces the controls-only path and drops the `#tqView`/3D-drag affordances
+  those specs assumed were always present. The fix was mechanical: every
+  `open*()` helper in those specs now passes `"straight-antecubital"` as
+  `gotoProcedureStep()`'s 4th argument, the same seam `butterfly.e2e.spec.js`
+  uses to force the other side. Any new spec that exercises one of those six
+  steps needs the same, unless it is deliberately testing procedure
+  selection.
 - **This machine's headless renderer crashes under load.** Several verify runs
   in this session reported failures whose error was `Target crashed`,
   `page.crashed`, or a CDP `SyntaxError: Unexpected end of JSON input`; every
@@ -140,138 +178,111 @@ Unchanged from the first handoff, plus:
 - [x] The Final Practical produces a 0–4 score for every category
 - [x] A player can earn an honest 4 through excellent technique
 - [x] Progress and best scores persist locally per mode
-- [ ] **Both arm and hand procedures can be performed from beginning to end**
-- [ ] **Straight-needle and butterfly mechanics are meaningfully different**
-- [ ] The live build is smoke-tested *against this work* (the last live
-      smoke test predates all four branches)
+- [x] **Both arm and hand procedures can be performed from beginning to end**
+- [x] **Straight-needle and butterfly mechanics are meaningfully different**
+- [ ] The live build is smoke-tested *against this work* (pending this
+      branch's merge and deploy)
 
-The last two unticked boxes are one branch. The third is a deploy.
+The last unticked box is a deploy.
 
 ---
 
-## 5. The remaining branch — `feature/butterfly-hand-draw`
+## 5. `feature/butterfly-hand-draw` — how the design became code
 
-This was designed but not built. What follows is the design, at the level of
-detail that lets you write it rather than re-derive it.
+This section was a forward-looking design when it was written. It is now a
+record of what actually got built, and — more usefully for whoever touches
+this next — **where the design was wrong** and had to change once it met the
+rest of the codebase.
 
-### 5.1 What already exists to build on
+### 5.1 What the design got right
 
-- `DEVICE.BUTTERFLY` in `withdrawalRules.js`, with its device-specific safety
-  action (retract via the slider, not a forward shield) — implemented and
-  unit-tested.
-- `SITE_KIND.HAND` in `postDrawRules.js`, with its own lower force band and
-  its own "there is only bone under that vein" coaching — implemented and
-  unit-tested.
-- The arm mesh **already has a hand**: `armMesh.js` builds a palm sphere,
-  four finger capsules and a thumb, from `HAND_X` in `armAnatomy.js`.
-- `describeProcedure()` in `rubricReport.js` already reports the device and
-  site from what the steps recorded, so the report follows the procedure the
-  moment the steps set those fields.
+- `DEVICE.BUTTERFLY` (`withdrawalRules.js`) and `SITE_KIND.HAND`
+  (`postDrawRules.js`) were already implemented and unit-tested, and needed no
+  changes — withdrawal and post-draw picked up the new procedure by having
+  `c.procedure.device`/`c.procedure.siteKind` threaded to them instead of the
+  old hardcoded `DEVICE.STRAIGHT`/`SITE_KIND.ANTECUBITAL`.
+- `procedureFor(id)` as the single model file, read through by every
+  consumer rather than branched on a string, is exactly what got built —
+  `src/venipuncture/procedure.js`, with `PROCEDURE`, `PROCEDURES`,
+  `procedureFor`, `isButterfly`, `indicatedProcedure`. The numbers table in
+  the original design (angle bands, anchor windows, gauge, tubing spec)
+  matches what shipped.
+- `indicatedProcedure(patient)` reads `p.site.arms` trigger data (`dry`, or
+  `ageCat === "Child"`) exactly as designed, not from prose.
+- The wings/tubing/infiltration model (`butterflyRules.js`,
+  `butterflyState.js`) — pinched vs. flat grip, slack absorbing a pull while
+  taut transmits it, securing cutting transfer by roughly 9×, quiet
+  infiltration accruing on a clock — was built as designed and holds up in
+  both the unit and browser suites.
 
-### 5.2 What does not exist
+### 5.2 Where the design was wrong
 
-- A dorsal-hand **site geometry**: veins over the metacarpals, with the
-  surface function to sit them on.
-- The butterfly **wings and tubing** as physical objects.
-- A **procedure model**: today the numbers live as module constants in the
-  step that uses them.
+**"The arm mesh already has a hand" undersold the actual gap.** `armMesh.js`
+does build hand geometry (palm, fingers, thumb), but section 5.5's plan —
+add `buildHandVessels()` and a `handSurfaceY()` so vein tubes render against
+that hand mesh — would have meant new raycasting and a new camera frame for
+that geometry too, which the design didn't budget for and which this
+codebase's own history (`docs/ARCHITECTURE.md`'s arm-projection notes) flags
+as the most expensive class of bug here. **That plan was dropped.** What
+shipped instead: `buildHandVessels()` places its four vessels
+(`dorsal-metacarpal-3`, `dorsal-metacarpal-4`, `dorsal-venous-arch`,
+`extensor-tendon`) in world-space x on the **wrist-taper region of the
+existing forearm cylinder** (`HAND_X+0.010` to `WRIST_X-0.006`), not on the
+hand mesh at all. `surfaceY()`, `radiusAt()` and every existing projection
+solve work on them completely unchanged, because as far as that math is
+concerned they're just more vessels on the same limb. Zero new 3D code.
 
-### 5.3 `src/venipuncture/procedure.js` — the model
+**The corollary the design didn't foresee: some steps have to stop offering
+the 3D scene for a hand draw.** Since there's no hand-mesh geometry to drag
+against, tourniquet, palpation, insert and collection all force
+`canRender3d = false` (hence controls-only) when
+`procedure.siteKind === SITE_KIND.HAND`. Cleaning, assembly, withdrawal and
+post-draw don't need this — their interactions aren't centrally about which
+vessel set is active — and were left untouched.
 
-One file of plain data, read through `procedureFor(id)`; no runtime branches
-on a string comparison. Two entries:
+**Section 5.3's "four small changes" was an undercount.** Threading the
+procedure through touched `insertRules.js`, `insertScoring.js`,
+`insertCoach.js`, `collectionCoach.js`, `tourniquetRules.js`,
+`tourniquetScoring.js`, `tourniquetRuntime.js`, `tourniquetCoach.js`, and
+`palpationCoach.js` — because three of those files turned out to have
+antecubital-only constants hardcoded past what the design anticipated (see
+5.3 below), not just the gauge/angle/anchor plumbing the design described.
 
-| | Straight, antecubital | Butterfly, dorsal hand |
-|---|---|---|
-| device | `DEVICE.STRAIGHT` | `DEVICE.BUTTERFLY` |
-| site | `SITE_KIND.ANTECUBITAL` | `SITE_KIND.HAND` |
-| gauge | 21 | 23 |
-| entry angle, ideal | 15–30° | **5–15°** |
-| entry angle, acceptable | 8–42° | 3–22° |
-| anchor distal offset | 20–60 mm | **8–30 mm** |
-| anchor pull for full credit | 14 mm | 8 mm |
-| tubing | none | 180 mm, 30 mm of good slack |
-| minimum draw | per-tube ratio only | **≥ 1 mL in one tube** |
-| band above the site | 76–102 mm (upper arm) | 50–90 mm (forearm) |
+### 5.3 Bugs the design didn't predict, found by driving the browser
 
-The angle band is the whole argument for this being a different procedure: a
-dorsal metacarpal vein sits 1.5–2.5 mm down with bone directly under it, so
-the antecubital window drives the tip through it.
+Four real bugs surfaced only by exercising the actual game, not by reading
+the diff:
 
-`indicatedProcedure(patient)` should return the butterfly draw for a patient
-whose usable arm is flagged `dry` (flat veins) or whose `ageCat` is `Child` —
-**from the existing trigger data on `p.site.arms`, not from prose.** The
-learner still chooses; this is what the arms support, so the report can say
-whether the choice was right.
+1. **Insert depth presets were hardcoded to 6mm.** Harmless on a 2.6–4.8mm
+   antecubital vein; a guaranteed through-and-through on a 2mm hand vein.
+   Fixed by deriving the preset from the chosen vessel's own `depth`.
+2. **Tourniquet's and palpation's 3D-scene launch silently rebuilt the
+   forearm vessel set**, overwriting the hand vessel set `ensureArmSession`
+   had correctly built, because their `launch3d()` functions unconditionally
+   read the vessels back off the (forearm-only) scene. This is what made
+   forcing controls-only for hand draws necessary at those two steps, not
+   just insert and collection.
+3. **Palpation's accessible controls referenced antecubital vessel ids**
+   (`median-cubital`, etc.) that don't exist in the hand vessel set — fixed
+   with a `FOREARM_SPOTS`/`HAND_SPOTS` split chosen by which ids are actually
+   present, not by a mode flag.
+4. **Tourniquet's height dropdown computed presets as absolute world
+   positions**, assuming the site sits at `x = 0`. For the hand site
+   (`x ≈ -0.287`) every preset landed roughly 15 inches off. Fixed by making
+   `heightPresets(siteX)` add the site's own offset — which then needed a
+   second fix, `toFixed(4)` → `toFixed(3)`, once existing e2e specs (written
+   against the original hardcoded 3-decimal values) started failing on an
+   option-value mismatch (`"0.089"` vs. the newly-computed `"0.0890"`).
 
-Threading it through is four small changes:
-`insertRules` gains `angleBandFor(siteKind)` (keep `ANGLE_IDEAL` as the
-antecubital band so the existing tests stand); `ensureInsertSession` and
-`ensureCollectionSession` take the gauge and the anchor band from the
-procedure; `ensureWithdrawalSession` passes `DEVICE.BUTTERFLY`;
-`ensurePostDrawSession` passes `SITE_KIND.HAND` — there is already a comment
-marking that line.
+None of these were in the original design because the design was written
+before anyone tried a hand draw against the live scene.
 
-### 5.4 `src/venipuncture/butterfly/` — the device
-
-Three pure files plus a coach, on the five-file pattern.
-
-**The wings are the grip and the angle.** `WINGS.PINCHED` is the carrying and
-inserting grip; `WINGS.FLAT` is what everything after entry needs. Wings still
-pinched while tubes are changed hold the tip at its entry angle, and a 10° tip
-in a 2 mm vein that stays at 10° leaves the lumen the moment anything tugs.
-
-**The tubing is a lever.** `tipShiftFromTubing(tubing, spec, {pullM, swingDeg})`
-returns the metres the *tip* moves for a given disturbance of the far end.
-Taping the wings down is what breaks that path and is worth about a factor of
-nine (`pullTransferUnsecured: 0.055` against `pullTransferSecured: 0.006` per
-metre). Slack absorbs the first part of a pull; a taut line absorbs nothing.
-Every tube change in the collection step should call `disturb()` and fold the
-result into the shift the collection scorer already measures.
-
-**A hand vein infiltrates quietly.** `infiltrationFrom(tipOffsetM, calibreM)`
-returns `{infiltrating, flowFraction, severity}` — flow *drops* rather than
-stopping, which is exactly why it gets missed. Millilitres accrue on the clock
-(`INFILTRATE_ML_PER_S ≈ 0.09`), the swelling becomes visible at 0.25 mL, and
-"noticed within 6 s and stopped" is the recovery worth marks.
-
-The measurement should carry: `entryAngleDeg`, `carriedByWings`,
-`wingsLaidFlat`, `wingsSecured`, `tubingSlackMm`, `tubingTaut`,
-`disturbancesTransmitted`, `disturbancesWhileLoose`, `peakTipOffsetMm`,
-`infiltratedMl`, `infiltrationNoticed`, `secondsToNotice`,
-`stoppedOnInfiltration` — plus `score`, `mistakes[]`, `criticalEvents[]` and
-`narrative`, like every other step.
-
-Add `butterfly` to `MEASUREMENT_SOURCES` and to the `technique` row's `feeds`
-in `policy.js`, and its critical codes (`butterfly.carriedByTubing`,
-`butterfly.tubingTaut`, `butterfly.infiltrationMissed`,
-`butterfly.infiltrationNotActedOn`) to `CRITICAL_EVENTS`. Add a section to
-`sections.js` and a source to `replay.js`'s `EVENT_SOURCES` — a unit test
-already fails if a session keeps an event log and has no replay source.
-
-### 5.5 The geometry
-
-`armAnatomy.js` needs `HAND_SITE` (about `x = -0.285`) and
-`buildHandVessels()`: three dorsal metacarpal veins and the dorsal venous
-arch, calibre 1.5–2.2 mm, depth 1.5–2.5 mm, compliance 0.55–0.7 (they roll —
-that is why the distal anchor has to be firm), plus an extensor tendon as the
-trap that feels hard and does not give.
-
-`armMesh.js` builds vein tubes from those polylines against `surfaceY()`,
-which currently describes the forearm cylinder. The hand is a separate sphere
-group, so the dorsal veins need a `handSurfaceY()` or the tubes will float.
-That is the one genuinely new piece of 3D work in this branch, and the one to
-budget for.
-
-Verify it numerically rather than by eye, the way the rest of the suite does:
-project the vein anchors through the same `toScreen()` the runtime reads from
-and assert they land inside the hand's silhouette.
-
-### 5.6 What the brief additionally requires of this draw
+### 5.4 What the brief required, and how it landed
 
 A firm distal anchor, controlled wings, recognition of infiltration, at least
-one tube with ≥ 1 mL, and hand-appropriate pressure and bandaging. The last is
-already implemented — it just needs `SITE_KIND.HAND` to reach it.
+one tube with ≥ 1 mL, and hand-appropriate pressure and bandaging — all
+implemented; the last needed nothing beyond `SITE_KIND.HAND` reaching
+`ensurePostDrawSession`, exactly as the original design predicted.
 
 ---
 

@@ -35,11 +35,20 @@ export const ANCHOR_PULL_GOOD = 0.014;
 /** Distal offset of the anchor from the marked site, signed +distal. */
 export function anchorOffsetFromMark(anchorX, markX){ return markX - anchorX; }
 
+/** The antecubital defaults, as one object — the shape `procedure.js`'s
+    `anchor` field already uses, so a procedure's own band can be passed
+    straight through without translation. */
+export const DEFAULT_ANCHOR_BAND = {
+  distalMin: ANCHOR_DISTAL_MIN, distalMax: ANCHOR_DISTAL_MAX,
+  pullMin: ANCHOR_PULL_MIN, pullGood: ANCHOR_PULL_GOOD,
+};
+
 /** @returns {"wrongSide"|"tooClose"|"tooFar"|"ideal"} */
-export function classifyAnchorPosition(offset){
+export function classifyAnchorPosition(offset, anchorBand){
+  const b = anchorBand || DEFAULT_ANCHOR_BAND;
   if(offset <= 0) return "wrongSide";
-  if(offset < ANCHOR_DISTAL_MIN) return "tooClose";
-  if(offset > ANCHOR_DISTAL_MAX) return "tooFar";
+  if(offset < b.distalMin) return "tooClose";
+  if(offset > b.distalMax) return "tooFar";
   return "ideal";
 }
 
@@ -52,9 +61,10 @@ export function classifyAnchorPosition(offset){
  * applies. Full anchor pull cancels it out entirely; no traction at all
  * leaves the vein free to roll exactly as it did under a fingertip.
  */
-export function unheldRollOffset(vessel, anchorPull){
+export function unheldRollOffset(vessel, anchorPull, anchorBand){
   if(!vessel) return 0;
-  const held = Math.max(0, Math.min(1, (anchorPull || 0)/ANCHOR_PULL_GOOD));
+  const b = anchorBand || DEFAULT_ANCHOR_BAND;
+  const held = Math.max(0, Math.min(1, (anchorPull || 0)/b.pullGood));
   return rollOffset(vessel, 0.65) * (1 - held);
 }
 
@@ -62,6 +72,39 @@ export function unheldRollOffset(vessel, anchorPull){
 
 export const ANGLE_IDEAL = { min: 15, max: 30 };
 export const ANGLE_ACCEPTABLE = { min: 8, max: 42 };
+
+/** The antecubital defaults, as one object — matches `procedure.js`'s
+    `angle` field, so it can be passed straight through unmodified. */
+export const DEFAULT_ANGLE_BAND = { ideal: ANGLE_IDEAL, acceptable: ANGLE_ACCEPTABLE };
+
+/**
+ * Concrete degrees for the accessible controls' three presets — "go in at
+ * the ideal angle / nearly flat / steep" — derived from whichever band this
+ * draw is actually judged against, so a hand draw's controls offer 10°/2°/25°
+ * rather than the antecubital's 20°/5°/45° regardless of the vein underneath.
+ */
+export function anglePresetsFor(angleBand){
+  const b = angleBand || DEFAULT_ANGLE_BAND;
+  return {
+    ideal: Math.round((b.ideal.min + b.ideal.max)/2),
+    shallow: Math.max(0, Math.round(b.acceptable.min - 3)),
+    steep: Math.round(b.acceptable.max + 3),
+  };
+}
+
+/**
+ * Concrete metres for the accessible anchor presets, derived the same way.
+ */
+export function anchorPresetsFor(anchorBand){
+  const b = anchorBand || DEFAULT_ANCHOR_BAND;
+  return {
+    idealM: (b.distalMin + b.distalMax)/2,
+    closeM: Math.max(0.002, b.distalMin*0.4),
+    farM: b.distalMax*1.4,
+    pullGoodM: b.pullGood,
+    pullWeakM: b.pullMin*0.4,
+  };
+}
 
 /* ---------- entry and depth ------------------------------------------------------ */
 
@@ -111,33 +154,37 @@ function issue(code, severity, message, data){ return { code, severity, message,
  * @param {object} state    insertState
  * @param {Array}  vessels  the arm's vessels
  * @param {number} [bevelDeg]  the needle unit's bevel angle, from the assembly branch
+ * @param {object} [angleBand]   {ideal:{min,max}, acceptable:{min,max}} — defaults to the antecubital window
+ * @param {object} [anchorBand]  {distalMin,distalMax,pullMin,pullGood} — defaults to the antecubital window
  */
-export function evaluateInsert(state, vessels, bevelDeg){
+export function evaluateInsert(state, vessels, bevelDeg, angleBand, anchorBand){
   const issues = [];
   const chosen = (vessels || []).find(v => v.id === state.chosenId) || null;
+  const angle = angleBand || DEFAULT_ANGLE_BAND;
+  const anchor = anchorBand || DEFAULT_ANCHOR_BAND;
 
   /* --- anchor --- */
   let anchorOffset = null;
   if(!state.anchorSet){
     issues.push(issue("notAnchored", "block",
-      "Anchor the vein first — pull the skin taut with your thumb an inch or two below where you're going in."));
+      "Anchor the vein first — pull the skin taut with your thumb before you go in."));
   }else{
     anchorOffset = anchorOffsetFromMark(state.anchorX, state.markX);
-    const cls = classifyAnchorPosition(anchorOffset);
+    const cls = classifyAnchorPosition(anchorOffset, anchor);
     if(cls === "wrongSide") issues.push(issue("anchorWrongSide", "warn",
       "The traction pulled toward the site instead of away from it — that doesn't hold the vein still, and now your thumb is in the needle's path."));
     else if(cls === "tooClose") issues.push(issue("anchorTooClose", "warn",
-      "The thumb landed right on top of where you're aiming. Move it back an inch or two so it isn't in the way."));
+      "The thumb landed right on top of where you're aiming. Move it back a little so it isn't in the way."));
     else if(cls === "tooFar") issues.push(issue("anchorTooFar", "warn",
-      "That far below the site, the traction barely reaches the vein. An inch or two below holds it firmer."));
-    if(state.anchorPull < ANCHOR_PULL_MIN) issues.push(issue("weakTraction", "warn",
+      "That far below the site, the traction barely reaches the vein. A little closer holds it firmer."));
+    if(state.anchorPull < anchor.pullMin) issues.push(issue("weakTraction", "warn",
       "That pull was too light to actually tension the skin — drag further before you let go."));
   }
 
   /* --- entry, angle, depth --- */
   let inVein = false, through = false;
   if(state.entryX != null && chosen){
-    const rolled = unheldRollOffset(chosen, state.anchorSet ? state.anchorPull : 0);
+    const rolled = unheldRollOffset(chosen, state.anchorSet ? state.anchorPull : 0, anchor);
     const hit = nearestOnVessel(chosen, state.entryX, state.entryZ);
     const tolerance = chosen.calibre + ENTRY_TOLERANCE;
     const lateralOk = (hit.d + rolled) <= tolerance;
@@ -150,15 +197,15 @@ export function evaluateInsert(state, vessels, bevelDeg){
         { distance: hit.d, rolled }));
     }
 
-    if(state.angleDeg < ANGLE_ACCEPTABLE.min){
+    if(state.angleDeg < angle.acceptable.min){
       issues.push(issue("tooShallow", "block",
-        `${Math.round(state.angleDeg)}° is nearly flat against the skin — it will skate over the vein instead of into it. ${ANGLE_IDEAL.min}–${ANGLE_IDEAL.max}° is the window.`));
-    }else if(state.angleDeg > ANGLE_ACCEPTABLE.max){
+        `${Math.round(state.angleDeg)}° is nearly flat against the skin — it will skate over the vein instead of into it. ${angle.ideal.min}–${angle.ideal.max}° is the window.`));
+    }else if(state.angleDeg > angle.acceptable.max){
       issues.push(issue("tooSteep", "block",
-        `${Math.round(state.angleDeg)}° is too steep — you'll drive through the vein into what's underneath it. ${ANGLE_IDEAL.min}–${ANGLE_IDEAL.max}° is the window.`));
-    }else if(state.angleDeg < ANGLE_IDEAL.min || state.angleDeg > ANGLE_IDEAL.max){
+        `${Math.round(state.angleDeg)}° is too steep — you'll drive through the vein into what's underneath it. ${angle.ideal.min}–${angle.ideal.max}° is the window.`));
+    }else if(state.angleDeg < angle.ideal.min || state.angleDeg > angle.ideal.max){
       issues.push(issue("angleOffIdeal", "warn",
-        `${Math.round(state.angleDeg)}° will work, but ${ANGLE_IDEAL.min}–${ANGLE_IDEAL.max}° is the cleaner stick.`));
+        `${Math.round(state.angleDeg)}° will work, but ${angle.ideal.min}–${angle.ideal.max}° is the cleaner stick.`));
     }
 
     // A flash needs BOTH: lateral position and depth cannot be judged

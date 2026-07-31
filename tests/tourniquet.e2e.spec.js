@@ -36,7 +36,9 @@ async function openTourniquet(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
-  await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("tourniquet", ["lightblue","lavender"], m), mode||"teach");
+  await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("tourniquet", ["lightblue","lavender"], m, "straight-antecubital"), mode||"teach");
+  // NOTE: forced straight-antecubital so this arm-mesh/3D-drag suite is not
+  // occasionally routed to the hand draw's controls-only, no-mesh path.
   await expect(page.locator(".tq-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>{
     const p = await window.__phlebTest.screenPointOnLimb(0.089, 1.6, 0.08);

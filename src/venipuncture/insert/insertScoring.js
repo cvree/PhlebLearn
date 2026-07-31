@@ -2,20 +2,24 @@
    ANCHOR + INSERT SCORING — real degrees, real millimetres, not a hit/miss
    boolean. Pure maths.
    ========================================================================= */
-import { ANGLE_IDEAL, ANCHOR_PULL_GOOD, BEVEL_TOLERANCE_DEG } from "./insertRules.js";
+import { DEFAULT_ANGLE_BAND, BEVEL_TOLERANCE_DEG } from "./insertRules.js";
 import { secondsSoFar } from "./insertState.js";
 
 function round(v, dp){ const m = Math.pow(10, dp || 0); return Math.round(v*m)/m; }
 
 /**
  * @param {object} state       insertState
- * @param {object} result      evaluateInsert(state, vessels, bevelDeg)'s return
+ * @param {object} result      evaluateInsert(state, vessels, bevelDeg, angleBand, anchorBand)'s return
  * @param {number} [bevelDeg]  the needle unit's bevel angle
  * @param {number} [now]       injectable clock
+ * @param {object} [angleBand] {ideal,acceptable} — defaults to the antecubital window; the
+ *   SAME band must be passed here as was passed to `evaluateInsert`, or the
+ *   score will judge one procedure's entry against another's window.
  */
-export function measureInsert(state, result, bevelDeg, now){
+export function measureInsert(state, result, bevelDeg, now, angleBand){
   const r = result;
   const chosen = r.chosen;
+  const angle = angleBand || DEFAULT_ANGLE_BAND;
   const secs = state.flashAt != null ? (state.flashAt - state.startedAt)/1000 : null;
 
   const mistakes = [];
@@ -25,8 +29,8 @@ export function measureInsert(state, result, bevelDeg, now){
     code: r.through ? "throughAndThrough" : "missed",
     message: r.through ? "The needle passed through the far wall of the vein." : "The needle did not land in the chosen vein.",
   });
-  if(state.angleDeg != null && (state.angleDeg < ANGLE_IDEAL.min || state.angleDeg > ANGLE_IDEAL.max)){
-    mistakes.push({ code:"angle", message:`Entered at ${Math.round(state.angleDeg)}°, outside the ${ANGLE_IDEAL.min}-${ANGLE_IDEAL.max}° window.` });
+  if(state.angleDeg != null && (state.angleDeg < angle.ideal.min || state.angleDeg > angle.ideal.max)){
+    mistakes.push({ code:"angle", message:`Entered at ${Math.round(state.angleDeg)}°, outside the ${angle.ideal.min}-${angle.ideal.max}° window.` });
   }
   if(bevelDeg != null && Math.abs(bevelDeg) > BEVEL_TOLERANCE_DEG) mistakes.push({ code:"bevelDown", message:"The bevel was not facing up on entry." });
   if(state.withdrawnBeforeFlash) mistakes.push({ code:"withdrawn", message:"Pulled back out before ever getting a flash." });
@@ -39,8 +43,8 @@ export function measureInsert(state, result, bevelDeg, now){
   }else{
     if(!r.inVein) score -= r.through ? 45 : 55;
     if(state.angleDeg != null){
-      if(state.angleDeg < ANGLE_IDEAL.min - 3 || state.angleDeg > ANGLE_IDEAL.max + 3) score -= 18;
-      else if(state.angleDeg < ANGLE_IDEAL.min || state.angleDeg > ANGLE_IDEAL.max) score -= 8;
+      if(state.angleDeg < angle.ideal.min - 3 || state.angleDeg > angle.ideal.max + 3) score -= 18;
+      else if(state.angleDeg < angle.ideal.min || state.angleDeg > angle.ideal.max) score -= 8;
     }
   }
   if(bevelDeg != null && Math.abs(bevelDeg) > BEVEL_TOLERANCE_DEG) score -= 20;

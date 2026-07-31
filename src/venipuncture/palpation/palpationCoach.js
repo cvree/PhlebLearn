@@ -25,14 +25,20 @@ const SENSATION = {
   [FEEL.FLATTENED]: "You had something, then it went. You are pressing hard enough to squash it flat.",
 };
 
-/* Only shown once it has been felt, and only in teaching mode. */
+/* Only shown once it has been felt, and only in teaching mode. Covers both
+   vessel sets — the antecubital fossa's and the dorsal hand's — since which
+   one is on the arm depends on the procedure, not on this file. */
 const NAMES = {
-  "median-cubital":  "the median cubital vein — first choice",
-  "cephalic":        "the cephalic vein",
-  "basilic":         "the basilic vein",
-  "brachial-artery": "the brachial artery",
-  "biceps-tendon":   "the biceps tendon",
-  "median-nerve":    "the median nerve",
+  "median-cubital":       "the median cubital vein — first choice",
+  "cephalic":             "the cephalic vein",
+  "basilic":              "the basilic vein",
+  "brachial-artery":      "the brachial artery",
+  "biceps-tendon":        "the biceps tendon",
+  "median-nerve":         "the median nerve",
+  "dorsal-metacarpal-3":  "the 3rd dorsal metacarpal vein — first choice",
+  "dorsal-metacarpal-4":  "the 4th dorsal metacarpal vein",
+  "dorsal-venous-arch":   "the dorsal venous arch",
+  "extensor-tendon":      "an extensor tendon",
 };
 
 function touchHTML(touch, state, guided){
@@ -56,20 +62,33 @@ function touchHTML(touch, state, guided){
 
 /* ---------- accessible path -------------------------------------------------- */
 
+/* Position descriptions, never the clinical name, for each vessel set the
+   game has. Which list applies is decided from which ids are actually on
+   this arm (`vessels`), not from a mode flag — the same principle as
+   everything else procedure-aware in this app. */
+const FOREARM_SPOTS = [
+  { id:"median-cubital",  label:"across the bend of the elbow, centre" },
+  { id:"cephalic",        label:"the thumb side of the forearm" },
+  { id:"basilic",         label:"the little-finger side, inner edge" },
+  { id:"brachial-artery", label:"deep on the inner edge, above the bend" },
+  { id:"biceps-tendon",   label:"the firm ridge just inside the bend" },
+];
+const HAND_SPOTS = [
+  { id:"dorsal-metacarpal-3", label:"the back of the hand, over the middle knuckle" },
+  { id:"dorsal-metacarpal-4", label:"the back of the hand, over the ring-finger knuckle" },
+  { id:"dorsal-venous-arch",  label:"across the back of the wrist" },
+  { id:"extensor-tendon",     label:"the firm ridge along the back of the hand" },
+];
+
 /**
  * The same palpation, reachable without a pointer. Deliberately NOT a list of
  * named veins to pick from — that would be the old multiple-choice question
  * wearing a different hat. It presses unnamed places on the arm and reports
  * the same sensations; naming them is still the learner's call.
  */
-function controlsHTML(state, guided){
-  const spots = [
-    { id:"median-cubital",  label:"across the bend of the elbow, centre" },
-    { id:"cephalic",        label:"the thumb side of the forearm" },
-    { id:"basilic",         label:"the little-finger side, inner edge" },
-    { id:"brachial-artery", label:"deep on the inner edge, above the bend" },
-    { id:"biceps-tendon",   label:"the firm ridge just inside the bend" },
-  ];
+function controlsHTML(state, guided, vessels){
+  const isHand = (vessels || []).some(v => v.id === "dorsal-metacarpal-3");
+  const spots = isHand ? HAND_SPOTS : FOREARM_SPOTS;
   return `<div class="plp-controls">
     <fieldset>
       <legend>Press a spot on the arm</legend>
@@ -140,7 +159,7 @@ export function renderPalpationCoach(host, o){
             ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Feel for the vein yourself. What you chose, and whether you actually palpated it, is assessed after the patient.`}
           </div>`}
 
-      ${listView ? controlsHTML(state, guided) : `<p class="stg-help">
+      ${listView ? controlsHTML(state, guided, o.vessels) : `<p class="stg-help">
         <b>Press a fingertip into the arm and hold.</b> Pressure builds while you keep still and eases off as you slide,
         so feel one spot at a time. A vein gives and comes back. Something that pushes back rhythmically is an artery —
         never draw from it. Something hard that will not move is a tendon.

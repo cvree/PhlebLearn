@@ -31,6 +31,10 @@ export const EVENT_SOURCES = [
   { section:"cleaning",   session:"cleaning" },
   { section:"equipment",  session:"needleUnit" },
   { section:"insert",     session:"insert" },
+  // The winged set's own log — a second source tagged onto the SAME
+  // section is fine, and covered by a unit test: `buildReplay()` merges
+  // every source that names a section, it does not require one each.
+  { section:"insert",     session:"butterfly" },
   { section:"collection", session:"collection" },
   { section:"withdrawal", session:"withdrawal" },
   { section:"postDraw",   session:"postDraw" },
@@ -193,6 +197,18 @@ export const EVENT_LABELS = {
   entry: "broke the skin",
   flash: "flash of blood",
   withdrawnFully: "pulled the needle back out",
+  /* the winged set */
+  wingsPinched: "pinched the wings to carry it",
+  carriedByTubing: "picked the set up by its tubing",
+  wingsFlat: "laid the wings flat",
+  wingsReleased: "let go of the wings",
+  wingsTaped: "taped the wings down",
+  tapeRemoved: "took the tape back off",
+  tubingLaid: "laid the tubing out",
+  tipDisturbed: "the tip was disturbed",
+  entered: "the set went in",
+  infiltrationNoticed: "noticed the swelling",
+  stoppedForInfiltration: "stopped the draw",
   /* collection */
   takeTube: "took a tube",
   pierce: "pierced the stopper",

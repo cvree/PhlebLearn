@@ -129,6 +129,27 @@ test("a section with two measurements averages them for its headline score", () 
   assert.deepEqual(group.readings.map(r => r.key), ["assembly", "uncap"]);
 });
 
+test("the winged set's log merges into the insert group from a second source, not a second group", () => {
+  const c = {
+    insert: { events: [{ t: T0, type: "entry", data: null }] },
+    butterfly: { events: [{ t: T0 + 500, type: "wingsFlat", data: null }] },
+    insertMeasurements: { score: 90, mistakes: [], narrative: "i" },
+    butterflyMeasurements: { score: 80, mistakes: [], narrative: "b" },
+  };
+  const replay = buildReplay(c);
+  const groups = replay.groups.filter(g => g.id === "insert");
+  assert.equal(groups.length, 1, "the two sources produced two groups instead of merging");
+  assert.equal(groups[0].events.length, 2);
+  assert.deepEqual(groups[0].readings.map(r => r.key).sort(), ["butterfly", "insert"]);
+  assert.equal(groups[0].score, 85);
+});
+
+test("a straight-needle attempt's replay has no butterfly reading at all", () => {
+  const c = { insert: { events: [{ t: T0, type: "entry", data: null }] }, insertMeasurements: { score: 90, mistakes: [], narrative: "i" } };
+  const group = buildReplay(c).groups.find(g => g.id === "insert");
+  assert.deepEqual(group.readings.map(r => r.key), ["insert"]);
+});
+
 test("a section that was measured but logged nothing still appears", () => {
   const c = { cleaningMeasurements: { score: 40, mistakes: [], narrative: "never cleaned" } };
   const group = buildReplay(c).groups.find(g => g.id === "cleaning");

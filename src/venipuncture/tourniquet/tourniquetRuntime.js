@@ -68,7 +68,11 @@ const TUCK_OFFSET = 0.016;
 /** how far the band sinks into the limb at full tension */
 const MAX_BITE = 0.008;
 /** how far along the arm the band may be placed at all */
-const BAND_RANGE = { min: -0.06, max: 0.185 };
+// Wide enough to cover both procedures' ideal windows: the antecubital draw
+// never went past -0.06, and a hand draw's band sits as far down as -0.237.
+// Widening a MINIMUM only adds reachable positions — it cannot change where
+// an existing antecubital placement lands.
+const BAND_RANGE = { min: -0.26, max: 0.185 };
 
 let ctx = null;
 
@@ -94,8 +98,12 @@ export function startTourniquet(opts){
   const strap = buildStrap({ color: o.strapColor });
   view.root.add(strap.group);
 
-  // Teaching mode shows where 3-4 inches actually is, as a band on the skin.
-  const zone = buildTargetZone(o.arm && o.arm.build);
+  // Teaching mode shows where the ideal window actually is, as a band on the
+  // skin — centred on THIS procedure's site, not always the fossa's.
+  const siteMid = (o.arm && o.arm.site)
+    ? o.arm.site.x + (o.arm.site.ideal.min + o.arm.site.ideal.max)/2
+    : 0.089;
+  const zone = buildTargetZone(o.arm && o.arm.build, siteMid);
   zone.visible = !!o.guided;
   view.root.add(zone);
 
@@ -142,6 +150,7 @@ function notify(){
   const result = evaluateTourniquet(ctx.state, {
     vessels: ctx.view.arm.vessels,
     vigour: (ctx.arm && ctx.arm.vigour) || 1,
+    site: ctx.arm && ctx.arm.site,
   });
   applyPhysiology(result);
   if(ctx.onChange) ctx.onChange(result);
@@ -158,16 +167,17 @@ function applyPhysiology(result){
 
 /* ---------- teaching-mode target zone ---------------------------------------- */
 
-function buildTargetZone(build){
+function buildTargetZone(build, siteMid){
+  const x = siteMid == null ? 0.089 : siteMid;
   const g = new THREE.Group();
   g.name = "bandZone";
-  const r = radiusAt(0.089, build) + 0.0016;
+  const r = radiusAt(x, build) + 0.0016;
   const band = new THREE.Mesh(
     new THREE.CylinderGeometry(r, r, 0.026, 24, 1, true, Math.PI*0.15, Math.PI*0.7),
     new THREE.MeshBasicMaterial({ color: 0x3f8f6d, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false })
   );
   band.rotation.z = Math.PI/2;
-  band.position.set(0.089, ARM_Y, 0);
+  band.position.set(x, ARM_Y, 0);
   g.add(band);
   return g;
 }

@@ -20,6 +20,43 @@ import { DEFAULT_POLICY, bandFor, criticalEventFor } from "./policy.js";
 function round(v, dp){ const m = Math.pow(10, dp || 0); return Math.round(v * m) / m; }
 
 /**
+ * Whether a feed, sequence check, or range check applies to THIS attempt.
+ * Two independent, deliberately asymmetric knobs:
+ *
+ *   proceduresOnly    opt IN. A brand-new entry (the winged set's feed, its
+ *                     own sequence checks) that no caller before this one
+ *                     ever expected to fire. With no `context.procedureId`
+ *                     it is EXCLUDED — an old caller that never mentions a
+ *                     procedure sees exactly the rows it always has.
+ *
+ *   excludeProcedures opt OUT. A PRE-EXISTING, previously-unconditional
+ *                     check (the antecubital angle window) that now has to
+ *                     stand down for one specific other procedure. With no
+ *                     `context.procedureId` it stays INCLUDED — the default
+ *                     is "this still means what it always meant."
+ *
+ * Never both on the same entry; each is applied only when present.
+ */
+function appliesToProcedure(opts, context){
+  if(!opts) return true;
+  const pid = context && context.procedureId;
+  if(opts.proceduresOnly){
+    if(!pid) return false;
+    return opts.proceduresOnly.indexOf(pid) >= 0;
+  }
+  if(opts.excludeProcedures){
+    if(!pid) return true;
+    return opts.excludeProcedures.indexOf(pid) < 0;
+  }
+  return true;
+}
+
+/** A category's feeds, filtered to the ones this attempt's procedure has. */
+export function activeFeeds(category, context){
+  return category.feeds.filter(([, , opts]) => appliesToProcedure(opts, context));
+}
+
+/**
  * Pulls the measurement objects off a procedure state into the stable
  * key → object index the rest of this layer works from. Missing keys are
  * present as `null` so "never ran" and "ran badly" stay distinguishable.
@@ -36,9 +73,9 @@ export function collectMeasurements(procedureState, policy){
 }
 
 /** Every mistake in the row, tagged with the measurement key it came from. */
-export function mistakesFor(category, measurements){
+export function mistakesFor(category, measurements, context){
   const out = [];
-  for(const [key] of category.feeds){
+  for(const [key] of activeFeeds(category, context)){
     const m = measurements[key];
     if(!m || !m.mistakes) continue;
     for(const mistake of m.mistakes){
@@ -58,10 +95,10 @@ export function mistakesFor(category, measurements){
  * so a code the policy has not yet been taught about is visible rather than
  * silently downgraded.
  */
-export function criticalEventsFor(category, measurements, policy){
+export function criticalEventsFor(category, measurements, policy, context){
   const p = policy || DEFAULT_POLICY;
   const out = [];
-  for(const mistake of mistakesFor(category, measurements)){
+  for(const mistake of mistakesFor(category, measurements, context)){
     const entry = criticalEventFor(mistake.key, mistake.code, p);
     if(!entry && !mistake.critical) continue;
     out.push({
@@ -84,9 +121,9 @@ export function criticalEventsFor(category, measurements, policy){
  * measurement scores 0 for the row: the step produced no evidence, and a
  * category cannot be carried by the steps that did run.
  */
-export function categoryMean(category, measurements){
+export function categoryMean(category, measurements, context){
   let total = 0, weight = 0;
-  for(const [key, w] of category.feeds){
+  for(const [key, w] of activeFeeds(category, context)){
     const m = measurements[key];
     total += (m && typeof m.score === "number" ? m.score : 0) * w;
     weight += w;
@@ -100,9 +137,9 @@ export function categoryMean(category, measurements){
    WHICH gate stopped a 4, in the learner's own numbers.
    ------------------------------------------------------------------------- */
 
-function gateCompleteness(category, measurements){
+function gateCompleteness(category, measurements, context){
   if(!category.excellence || !category.excellence.requireAll) return [];
-  const missing = category.feeds
+  const missing = activeFeeds(category, context)
     .map(([key]) => key)
     .filter(key => !measurements[key]);
   if(!missing.length) return [];
@@ -124,10 +161,11 @@ function gateWarnings(category, measurements, mistakes){
   }];
 }
 
-function gateSequence(category, measurements){
+function gateSequence(category, measurements, context){
   const checks = (category.excellence && category.excellence.sequence) || [];
   const out = [];
   for(const check of checks){
+    if(!appliesToProcedure(check, context)) continue;
     const m = measurements[check.key];
     if(!m) continue;                       // completeness gate already covers this
     const value = m[check.field];
@@ -141,10 +179,11 @@ function gateSequence(category, measurements){
   return out;
 }
 
-function gateRanges(category, measurements){
+function gateRanges(category, measurements, context){
   const ranges = (category.excellence && category.excellence.ranges) || [];
   const out = [];
   for(const range of ranges){
+    if(!appliesToProcedure(range, context)) continue;
     const m = measurements[range.key];
     if(!m) continue;
     const value = m[range.field];
@@ -186,9 +225,9 @@ function cap(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
    modules already wrote the sentence; this assembles them in row order and
    attaches the measured deviations that mattered.
    ------------------------------------------------------------------------- */
-function evidenceFor(category, measurements, policy){
+function evidenceFor(category, measurements, policy, context){
   const labels = (policy || DEFAULT_POLICY).measurementLabels || {};
-  return category.feeds.map(([key, weight]) => {
+  return activeFeeds(category, context).map(([key, weight]) => {
     const m = measurements[key];
     return {
       key,
@@ -202,9 +241,9 @@ function evidenceFor(category, measurements, policy){
 }
 
 /** The above-and-beyond observations in this row. These carry NO score. */
-export function commendationsFor(category, measurements, policy){
+export function commendationsFor(category, measurements, policy, context){
   const p = policy || DEFAULT_POLICY;
-  const keys = category.feeds.map(([key]) => key);
+  const keys = activeFeeds(category, context).map(([key]) => key);
   return (p.commendations || [])
     .filter(c => keys.indexOf(c.key) >= 0)
     .filter(c => {
@@ -230,16 +269,21 @@ export function commendationsFor(category, measurements, policy){
  */
 export function scoreCategory(category, measurements, policy, context){
   const p = policy || DEFAULT_POLICY;
-  const mistakes = mistakesFor(category, measurements);
-  const criticalEvents = criticalEventsFor(category, measurements, p);
-  const mean = categoryMean(category, measurements);
+  // Every feed-iterating helper below filters by `context.procedureId`
+  // itself (via `activeFeeds()`), so a feed restricted to a different
+  // procedure than this attempt's is excluded consistently everywhere —
+  // the mean, the evidence list, the mistakes, the missing/present arrays —
+  // whether reached through here or called directly, as the unit tests do.
+  const mistakes = mistakesFor(category, measurements, context);
+  const criticalEvents = criticalEventsFor(category, measurements, p, context);
+  const mean = categoryMean(category, measurements, context);
   const ceiling = bandFor(mean, p);
 
   const gates = [].concat(
-    gateCompleteness(category, measurements),
+    gateCompleteness(category, measurements, context),
     gateWarnings(category, measurements, mistakes),
-    gateSequence(category, measurements),
-    gateRanges(category, measurements),
+    gateSequence(category, measurements, context),
+    gateRanges(category, measurements, context),
     gateIndependence(category, context),
   );
 
@@ -269,13 +313,13 @@ export function scoreCategory(category, measurements, policy, context){
     band: { label: band.label, meaning: band.meaning },
     mean: Math.round(mean),
     ceiling: ceiling.score,
-    evidence: evidenceFor(category, measurements, p),
+    evidence: evidenceFor(category, measurements, p, context),
     mistakes,
     criticalEvents,
     preventedExcellence: score === p.maxCategoryScore ? [] : preventedExcellence,
-    commendations: commendationsFor(category, measurements, p),
-    present: category.feeds.map(([k]) => k).filter(k => !!measurements[k]),
-    missing: category.feeds.map(([k]) => k).filter(k => !measurements[k]),
+    commendations: commendationsFor(category, measurements, p, context),
+    present: activeFeeds(category, context).map(([k]) => k).filter(k => !!measurements[k]),
+    missing: activeFeeds(category, context).map(([k]) => k).filter(k => !measurements[k]),
   };
 }
 

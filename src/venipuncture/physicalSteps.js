@@ -49,7 +49,18 @@ import {
 } from "./tourniquet/tourniquetRuntime.js";
 import { createPalpationState, recordFeel, chooseVessel } from "./palpation/palpationState.js";
 import { evaluatePalpation, feelAt } from "./palpation/palpationRules.js";
-import { buildVessels, mirrorForArm, applyPatientVariation } from "./arm/armAnatomy.js";
+import { buildVessels, buildHandVessels, mirrorForArm, applyPatientVariation } from "./arm/armAnatomy.js";
+import { procedureFor, indicatedProcedure, PROCEDURE } from "./procedure.js";
+import {
+  createButterflyState, pickUpByWings, pickUpByTubing, layWingsFlat, releaseWings,
+  secureWings, unsecureWings, layTubing, disturb, enter as enterButterfly,
+  drawFor as drawButterflyFor, noticeInfiltration, stopForInfiltration, WINGS,
+} from "./butterfly/butterflyState.js";
+import { evaluateButterfly, nextAction as nextButterflyAction } from "./butterfly/butterflyRules.js";
+import { measureButterfly, applyButterflyOutcome } from "./butterfly/butterflyScoring.js";
+import {
+  wingStatusHTML, infiltrationBannerHTML, wingControlsHTML, postEntryControlsHTML, patchWingLive,
+} from "./butterfly/butterflyCoach.js";
 import { measurePalpation, applyPalpationOutcome } from "./palpation/palpationScoring.js";
 import { renderPalpationCoach } from "./palpation/palpationCoach.js";
 import {
@@ -80,7 +91,7 @@ import {
   createInsertState, resetAnchor, anchorAt, advance as advanceNeedle,
   markFlashIfInVein, insertInto, pullOutCompletely,
 } from "./insert/insertState.js";
-import { evaluateInsert } from "./insert/insertRules.js";
+import { evaluateInsert, anglePresetsFor, anchorPresetsFor } from "./insert/insertRules.js";
 import { measureInsert, applyInsertOutcome } from "./insert/insertScoring.js";
 import { renderInsertCoach } from "./insert/insertCoach.js";
 import {
@@ -230,6 +241,15 @@ export function ensureArmSession(c){
   const p = c.patient || {};
   const a = p.appearance || {};
   const chosen = drawArmFor(p);
+  // Which draw this is, decided once and carried for the rest of the
+  // encounter — everything from here on reads it rather than re-deciding.
+  // `c.forcedProcedure` is the test-seam override; real play always derives
+  // it from the arms this patient actually has.
+  const procedureId = c.forcedProcedure || indicatedProcedure(p);
+  const procedure = procedureFor(procedureId);
+  c.procedureId = procedureId;
+  c.procedure = procedure;
+
   c.arm = {
     skin: a.skin,
     shirt: p.shirt,
@@ -238,13 +258,22 @@ export function ensureArmSession(c){
     scenarioKeys: chosen.keys,
     // a dehydrated patient's veins fill less well however good the technique
     vigour: chosen.keys.indexOf("dry") >= 0 ? 0.72 : 1,
+    // the tourniquet's own target window, in this procedure's terms
+    site: {
+      x: procedure.siteX, ideal: procedure.bandIdealM, acceptable: procedure.bandAcceptableM,
+      label: procedure.siteKind === SITE_KIND.HAND ? "the back of the hand" : "the antecubital fossa",
+      windowLabel: procedure.siteKind === SITE_KIND.HAND ? "2–3″" : "3–4″",
+    },
   };
   // The vessel geometry is built here rather than only inside the 3D scene, so
   // the rules can be asked about this arm even when no scene is running — the
   // accessible path stops the renderer, and it still has to palpate the same
-  // arm and be judged by the same measurements.
+  // arm and be judged by the same measurements. Which vessel SET depends on
+  // the procedure: a butterfly draw palpates, cleans and sticks the dorsal
+  // hand network, not the antecubital fossa.
+  const rawVessels = procedure.siteKind === SITE_KIND.HAND ? buildHandVessels() : buildVessels();
   c.armVessels = applyPatientVariation(
-    mirrorForArm(buildVessels(), c.arm.armSide),
+    mirrorForArm(rawVessels, c.arm.armSide),
     { build: c.arm.build, scenarioKeys: c.arm.scenarioKeys, vigour: c.arm.vigour }
   );
   return c.arm;
@@ -293,12 +322,13 @@ function stagedDef(c, category){
  */
 export function ensureAssemblySession(c){
   if(c.needleUnit) return c.needleUnit;
+  const procedure = ensureArmSession(c) && c.procedure;
   const needle = stagedDef(c, CATEGORY.NEEDLE);
   const holder = stagedDef(c, CATEGORY.HOLDER);
   c.needleUnit = createAssemblyState({
     needleItemId: needle ? needle.id : null,
     holderItemId: holder ? holder.id : null,
-    gauge: needle && needle.gauge ? needle.gauge : 21,
+    gauge: needle && needle.gauge ? needle.gauge : procedure.gauge,
     pouchCompromised: !!(needle && needle.flaws && needle.flaws.indexOf(FLAW.DAMAGED) >= 0),
     // how long the alcohol had already been evaporating when they started —
     // the whole reason this step happens here rather than earlier
@@ -315,6 +345,7 @@ export function ensureAssemblySession(c){
  */
 export function ensureInsertSession(c){
   if(c.insert) return c.insert;
+  ensureArmSession(c);
   const unit = ensureAssemblySession(c);
   // Reached directly (a resumed draw, or the test seam jumping straight in)
   // without ever finishing assembly/uncap: the same defensive fallback the
@@ -328,7 +359,11 @@ export function ensureInsertSession(c){
     warnPatient(unit);
   }
   const site = c.site || {};
-  const chosenId = site.vesselId || "median-cubital";
+  // A palpation-less jump straight to insert (a resumed draw, or the test
+  // seam) has to default to SOME vein — the procedure's own preferred one,
+  // never a name hard-coded to the antecubital set.
+  const preferredVessel = (c.armVessels || []).find(v => v.preferred) || (c.armVessels || [])[0];
+  const chosenId = site.vesselId || (preferredVessel ? preferredVessel.id : "median-cubital");
   let mark = site.mark;
   if(!mark){
     const v = (c.armVessels || []).find(x => x.id === chosenId);
@@ -338,6 +373,26 @@ export function ensureInsertSession(c){
   c.insert = createInsertState({ chosenId, markX: mark.x, markZ: mark.z });
   if(c.encounter) c.encounter.access = c.insert;
   return c.insert;
+}
+
+/**
+ * The winged set as a physical object — created once, alongside the insert
+ * session, and carried into the collection step: the wings are how it is
+ * held going in, the tubing is what tube changes tug on afterward. Only
+ * created for the butterfly/dorsal-hand procedure; every other draw simply
+ * never has a `c.butterfly`.
+ */
+export function ensureButterflySession(c){
+  if(c.butterfly) return c.butterfly;
+  const procedure = ensureArmSession(c) && c.procedure;
+  if(procedure.device !== DEVICE.BUTTERFLY) return null;
+  const ins = ensureInsertSession(c);
+  const vessel = (c.armVessels || []).find(v => v.id === ins.chosenId) || null;
+  c.butterfly = createButterflyState({
+    gauge: c.needleUnit ? c.needleUnit.gauge : procedure.gauge,
+    calibreM: vessel ? vessel.calibre : 0.0020,
+  });
+  return c.butterfly;
 }
 
 /**
@@ -363,8 +418,9 @@ export function ensureCollectionSession(c){
   // put on a holder that was never in a vein. A stick that DID happen and
   // missed is left exactly as it was — that is a real outcome, not a gap.
   if(ins.entryX == null && !ins.flashAt && vessel){
-    anchorAt(ins, ins.markX - 0.035, 0.016);
-    insertInto(ins, ins.markX, ins.markZ, 20, vessel.depth);
+    const ap = anchorPresetsFor(c.procedure.anchor), gp = anglePresetsFor(c.procedure.angle);
+    anchorAt(ins, ins.markX - ap.idealM, ap.pullGoodM);
+    insertInto(ins, ins.markX, ins.markZ, gp.ideal, vessel.depth);
     markFlashIfInVein(ins, vessel, Date.now());
   }
   const m = c.insertMeasurements;
@@ -405,7 +461,9 @@ export function ensureWithdrawalSession(c){
   // but a band the learner genuinely took off early stays off, because that
   // is a real state of the arm, not a gap.
   if(tq.attempts === 0 && !tq.releasedAt){
-    markRouted(tq, { bandX: 0.089, wrap: WRAP.UNDER, skew: 0 });
+    const site = ensureArmSession(c).site;
+    const bandX = site.x + (site.ideal.min + site.ideal.max)/2;
+    markRouted(tq, { bandX, wrap: WRAP.UNDER, skew: 0 });
     setTension(tq, 0.55);
     markCrossed(tq);
     markSecured(tq, { tuck: TUCK.PROXIMAL, tuckedUnder: true });
@@ -427,8 +485,8 @@ export function ensureWithdrawalSession(c){
   const gauzeDef = stagedDef(c, CATEGORY.GAUZE);
   const binId = c.encounter ? stagedSharpsId(c.encounter) : null;
   c.withdrawal = createWithdrawalState({
-    device: DEVICE.STRAIGHT,
-    angleDeg: ins.angleDeg == null ? 20 : ins.angleDeg,
+    device: c.procedure.device,
+    angleDeg: ins.angleDeg == null ? anglePresetsFor(c.procedure.angle).ideal : ins.angleDeg,
     depthDir: ins.depthDir,
     entryX: ins.entryX == null ? ins.markX : ins.entryX,
     entryZ: ins.entryZ == null ? ins.markZ : ins.entryZ,
@@ -473,11 +531,11 @@ export function ensurePostDrawSession(c){
   const bandageDef = stagedDef(c, CATEGORY.BANDAGE);
   const patientEvent = c.patient && c.patient.event;
   c.postDraw = createPostDrawState({
-    // The butterfly/dorsal-hand procedure will pass SITE_KIND.HAND here; the
-    // straight-needle antecubital draw this build simulates is the fossa.
-    siteKind: SITE_KIND.ANTECUBITAL,
+    // The butterfly/dorsal-hand procedure passes SITE_KIND.HAND here, with
+    // its own lower force band; the straight-needle draw passes the fossa.
+    siteKind: c.procedure.siteKind,
     vessel: col.vessel,
-    gauge: wd.device ? (c.needleUnit ? c.needleUnit.gauge : 21) : 21,
+    gauge: c.needleUnit ? c.needleUnit.gauge : c.procedure.gauge,
     // explicit trigger data, never inferred from the words in the dialogue
     anticoagulated: !!(patientEvent && patientEvent.anticoagulated),
     withdrawnAt: wd.withdrawnAt,
@@ -727,11 +785,18 @@ export const PHYSICAL_STEPS = {
   tourniquet(c, stage, advance){
     const arm = ensureArmSession(c);
     const tqState = ensureTourniquetSession(c);
-    const canRender3d = !!getRenderer();
+    // The 3D scene always builds the forearm vessel set (armMesh.js has no
+    // dorsal-hand geometry) and, on the straight-needle draw, feeds it back
+    // onto `c.armVessels` as a harmless no-op — the two are numerically
+    // identical there. For a hand draw that overwrite would silently clobber
+    // the hand vessel set ensureArmSession() already put there, corrupting
+    // what palpation sees next. Controls-only sidesteps it entirely.
+    const isHandDraw = c.procedure.siteKind === SITE_KIND.HAND;
+    const canRender3d = !isHandDraw && !!getRenderer();
     let listView = !canRender3d || !!SS.tourniquetListView;
     let disposed = false;
 
-    const evaluate = ()=>evaluateTourniquet(tqState, { vessels:(c.armVessels||[]), vigour:arm.vigour });
+    const evaluate = ()=>evaluateTourniquet(tqState, { vessels:(c.armVessels||[]), vigour:arm.vigour, site:arm.site });
 
     function draw(result){
       if(disposed) return;
@@ -739,6 +804,7 @@ export const PHYSICAL_STEPS = {
         state: tqState,
         result: result || liveResult(),
         gesture: isTourniquetActive() ? currentGesture() : null,
+        site: arm.site,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
@@ -758,7 +824,7 @@ export const PHYSICAL_STEPS = {
       return isTourniquetActive() ? evaluateTourniquet(tqState, currentArm()) : evaluate();
     }
     function currentArm(){
-      return { vessels: c.armVessels || [], vigour: arm.vigour };
+      return { vessels: c.armVessels || [], vigour: arm.vigour, site: arm.site };
     }
 
     function doApply(spec){
@@ -822,7 +888,7 @@ export const PHYSICAL_STEPS = {
       // shift lets the learner commit — and the arm, the sample and the recap
       // all carry the consequence.
       if(reveal().gateContinue && !result.ready) return;
-      const measurements = measureTourniquet(tqState, result);
+      const measurements = measureTourniquet(tqState, result, undefined, arm.site);
       applyTourniquetOutcome(c, measurements);
       // The clock the release step reads is this band's, not a fresh timer.
       c.tqStart = tqState.securedAt || performance.now();
@@ -856,7 +922,13 @@ export const PHYSICAL_STEPS = {
   palpate(c, stage, advance){
     const arm = ensureArmSession(c);
     const palp = ensurePalpationSession(c);
-    const canRender3d = !!getRenderer();
+    // Choosing a vein means feeling the vessels that are actually on this
+    // draw's arm. The 3D scene only ever renders the forearm set, so for the
+    // hand procedure it would show the wrong anatomy entirely rather than a
+    // merely imperfect one — controls-only avoids that, the same call as
+    // the tourniquet step just above.
+    const isHandDraw = c.procedure.siteKind === SITE_KIND.HAND;
+    const canRender3d = !isHandDraw && !!getRenderer();
     let listView = !canRender3d || !!SS.palpationListView;
     let disposed = false;
     let touch = null;
@@ -870,6 +942,7 @@ export const PHYSICAL_STEPS = {
         state: palp,
         result: result || evaluate(),
         touch: touch || (isPalpationActive() ? currentTouch() : null),
+        vessels: c.armVessels,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
@@ -1300,14 +1373,23 @@ export const PHYSICAL_STEPS = {
   insert(c, stage, advance){
     const arm = ensureArmSession(c);
     const ins = ensureInsertSession(c);
-    const canRender3d = !!getRenderer();
+    const procedure = c.procedure;
+    const isButterfly = procedure.device === DEVICE.BUTTERFLY;
+    const bf = isButterfly ? ensureButterflySession(c) : null;
+    // The winged set's wing/tubing physics are only wired through the
+    // accessible controls, not the live 3D drag — deriving correct pull and
+    // swing magnitudes from arbitrary pointer gestures is a separate,
+    // high-risk piece of work this branch does not attempt. Forcing controls
+    // here is honest: it means the mechanic is always exactly what it claims
+    // to be, rather than a live path that would silently ignore it.
+    const canRender3d = !isButterfly && !!getRenderer();
     let listView = !canRender3d || !!SS.insertListView;
     let disposed = false;
 
     const bevelDeg = ()=> c.needleUnit
       ? (c.needleUnit.bevelDeg == null ? bevelFromTurns(c.needleUnit.turns) : c.needleUnit.bevelDeg)
       : null;
-    const evaluate = ()=>evaluateInsert(ins, c.armVessels || [], bevelDeg());
+    const evaluate = ()=>evaluateInsert(ins, c.armVessels || [], bevelDeg(), procedure.angle, procedure.anchor);
 
     function draw(result){
       if(disposed) return;
@@ -1315,12 +1397,15 @@ export const PHYSICAL_STEPS = {
         state: ins,
         result: result || evaluate(),
         bevelDeg: bevelDeg(),
+        angleBand: procedure.angle, anchorBand: procedure.anchor,
+        device: procedure.device, butterfly: bf,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
           onReady: finish,
           onToggleView: toggleView,
           onAction: (kind)=>draw(doAction(kind)),
+          onWing: (kind)=>draw(doWing(kind)),
         },
       });
     }
@@ -1328,23 +1413,51 @@ export const PHYSICAL_STEPS = {
     function checkFlash(){
       const v = (c.armVessels || []).find(x => x.id === ins.chosenId);
       if(v) markFlashIfInVein(ins, v, Date.now());
+      // The wings' grip becomes fixed the instant the skin is broken — that
+      // is the angle everything after entry has to hold.
+      if(bf && !bf.entered && ins.entryX != null) enterButterfly(bf, ins.angleDeg, {});
     }
+
+    function doWing(kind){
+      if(!bf) return evaluate();
+      switch(kind){
+        case "pinch": pickUpByWings(bf); break;
+        case "tubing": pickUpByTubing(bf); break;
+        case "flat": layWingsFlat(bf); break;
+        case "secure": secureWings(bf, {}); layTubing(bf, procedure.tubing.slackGoodM); break;
+        case "notice": noticeInfiltration(bf, {}); break;
+        case "stop": stopForInfiltration(bf); break;
+        default: break;
+      }
+      return evaluate();
+    }
+
+    // The vessel's own centre depth, not a flat 6mm — a hand vein sits at
+    // 2mm, and 6mm would drive every "insert" preset through the far wall
+    // before the learner ever touched the angle it's meant to be testing.
+    const presetDepthM = ()=>{
+      const chosen = (c.armVessels || []).find(v => v.id === ins.chosenId);
+      return chosen ? chosen.depth : 0.006;
+    };
+    const presets = ()=>({ angle: anglePresetsFor(procedure.angle), anchor: anchorPresetsFor(procedure.anchor) });
 
     // The controls tear the 3D scene down, so these cannot go through the
     // runtime — but they run the SAME pure technique helpers it does, so the
     // anchor offsets, angles and depths that come out are identical.
     function doAction(kind){
+      const p = presets();
+      const d = presetDepthM();
       if(isInsertActive()){
         switch(kind){
-          case "anchor-ideal": return anchorProgrammatically(0.035, 0.016) || evaluate();
-          case "anchor-close": return anchorProgrammatically(0.010, 0.016) || evaluate();
-          case "anchor-far": return anchorProgrammatically(0.090, 0.016) || evaluate();
-          case "anchor-wrongside": return anchorProgrammatically(-0.020, 0.016) || evaluate();
-          case "anchor-weak": return anchorProgrammatically(0.035, 0.003) || evaluate();
+          case "anchor-ideal": return anchorProgrammatically(p.anchor.idealM, p.anchor.pullGoodM) || evaluate();
+          case "anchor-close": return anchorProgrammatically(p.anchor.closeM, p.anchor.pullGoodM) || evaluate();
+          case "anchor-far": return anchorProgrammatically(p.anchor.farM, p.anchor.pullGoodM) || evaluate();
+          case "anchor-wrongside": return anchorProgrammatically(-p.anchor.closeM, p.anchor.pullGoodM) || evaluate();
+          case "anchor-weak": return anchorProgrammatically(p.anchor.idealM, p.anchor.pullWeakM) || evaluate();
           case "redo-anchor": return redoAnchor() || evaluate();
-          case "insert-ideal": return insertProgrammatically(20, 0.006) || evaluate();
-          case "insert-shallow": return insertProgrammatically(5, 0.006) || evaluate();
-          case "insert-steep": return insertProgrammatically(45, 0.006) || evaluate();
+          case "insert-ideal": { const r = insertProgrammatically(p.angle.ideal, d); checkFlash(); return r || evaluate(); }
+          case "insert-shallow": { const r = insertProgrammatically(p.angle.shallow, d); checkFlash(); return r || evaluate(); }
+          case "insert-steep": { const r = insertProgrammatically(p.angle.steep, d); checkFlash(); return r || evaluate(); }
           case "advance": return advanceProgrammatically(0.0012) || evaluate();
           case "retreat": return advanceProgrammatically(-0.0008) || evaluate();
           case "pullout": return pullOutProgrammatically() || evaluate();
@@ -1352,15 +1465,15 @@ export const PHYSICAL_STEPS = {
         }
       }
       switch(kind){
-        case "anchor-ideal": anchorAt(ins, ins.markX - 0.035, 0.016); break;
-        case "anchor-close": anchorAt(ins, ins.markX - 0.010, 0.016); break;
-        case "anchor-far": anchorAt(ins, ins.markX - 0.090, 0.016); break;
-        case "anchor-wrongside": anchorAt(ins, ins.markX + 0.020, 0.016); break;
-        case "anchor-weak": anchorAt(ins, ins.markX - 0.035, 0.003); break;
+        case "anchor-ideal": anchorAt(ins, ins.markX - p.anchor.idealM, p.anchor.pullGoodM); break;
+        case "anchor-close": anchorAt(ins, ins.markX - p.anchor.closeM, p.anchor.pullGoodM); break;
+        case "anchor-far": anchorAt(ins, ins.markX - p.anchor.farM, p.anchor.pullGoodM); break;
+        case "anchor-wrongside": anchorAt(ins, ins.markX + p.anchor.closeM, p.anchor.pullGoodM); break;
+        case "anchor-weak": anchorAt(ins, ins.markX - p.anchor.idealM, p.anchor.pullWeakM); break;
         case "redo-anchor": resetAnchor(ins); break;
-        case "insert-ideal": insertInto(ins, ins.markX, ins.markZ, 20, 0.006); checkFlash(); break;
-        case "insert-shallow": insertInto(ins, ins.markX, ins.markZ, 5, 0.006); checkFlash(); break;
-        case "insert-steep": insertInto(ins, ins.markX, ins.markZ, 45, 0.006); checkFlash(); break;
+        case "insert-ideal": insertInto(ins, ins.markX, ins.markZ, p.angle.ideal, d); checkFlash(); break;
+        case "insert-shallow": insertInto(ins, ins.markX, ins.markZ, p.angle.shallow, d); checkFlash(); break;
+        case "insert-steep": insertInto(ins, ins.markX, ins.markZ, p.angle.steep, d); checkFlash(); break;
         case "advance": advanceNeedle(ins, 0.0012); checkFlash(); break;
         case "retreat": advanceNeedle(ins, -0.0008); checkFlash(); break;
         case "pullout": pullOutCompletely(ins); break;
@@ -1397,11 +1510,18 @@ export const PHYSICAL_STEPS = {
       // the learner commit — the tube fill and the recap both carry whatever
       // this step actually produced.
       if(reveal().gateContinue && !result.ready) return;
-      const measurements = measureInsert(ins, result, bevelDeg());
+      const measurements = measureInsert(ins, result, bevelDeg(), undefined, procedure.angle);
       applyInsertOutcome(c, measurements);
       if(c.encounter){
         c.encounter.access = ins;
         c.encounter.measurements.insert = measurements;
+      }
+      // The wing measurement firms up again once collection finishes — this
+      // is the first, partial read, so a draw abandoned right here still has
+      // something in the report rather than nothing.
+      if(bf){
+        const bm = measureButterfly(bf, evaluateButterfly(bf, {}));
+        applyButterflyOutcome(c, bm);
       }
       cleanupOnly();
       advance();
@@ -1784,11 +1904,35 @@ function runWithdrawal(c, stage, advance, mode){
    The rules, the measurements and the gestures are identical, because in the
    patient's arm it is one continuous piece of work.
    ======================================================================== */
+/**
+ * Metres of pull and degrees of swing a given tube action puts through the
+ * winged set's tubing — a hand reaching across to the rack disturbs the line
+ * far more than easing a braced tube onto the holder does. Only meaningful
+ * for the butterfly procedure; the straight needle has no tubing to move.
+ */
+function butterflyImpactFor(kind){
+  if(kind.indexOf("take:") === 0) return { pullM: 0.030, swingDeg: 18, cause: "takeTube" };
+  switch(kind){
+    case "push-braced": return { pullM: 0.006, swingDeg: 4, cause: "pushOn" };
+    case "push-unbraced": return { pullM: 0.018, swingDeg: 10, cause: "pushOn" };
+    case "backoff": return { pullM: 0.004, swingDeg: 3, cause: "backOff" };
+    case "remove-braced": return { pullM: 0.006, swingDeg: 4, cause: "removeTube" };
+    case "remove-unbraced": return { pullM: 0.018, swingDeg: 10, cause: "removeTube" };
+    case "return": return { pullM: 0.010, swingDeg: 6, cause: "returnTube" };
+    case "discard": return { pullM: 0.014, swingDeg: 8, cause: "discardTube" };
+    default: return null;
+  }
+}
+
 function runCollection(c, stage, advance, mode){
   const arm = ensureArmSession(c);
   const ins = ensureInsertSession(c);
   const col = ensureCollectionSession(c);
-  const canRender3d = !!getRenderer();
+  const isButterfly = c.procedure.device === DEVICE.BUTTERFLY;
+  const bf = isButterfly ? ensureButterflySession(c) : null;
+  // Same reasoning as the insert step: the winged set's tubing physics are
+  // only wired through the accessible controls.
+  const canRender3d = !isButterfly && !!getRenderer();
   let listView = !canRender3d || !!SS.collectionListView;
   let disposed = false;
 
@@ -1828,13 +1972,37 @@ function runCollection(c, stage, advance, mode){
         : "Every tube is filled to its draw volume, in order. The band comes off next.",
       readyLabel: mode === "fill" ? "Next tube ▶" : "All tubes collected ▶",
       guided: guided(), reveal: reveal(), hint: stepHint(c),
-      listView, canRender3d,
+      listView, canRender3d, butterfly: bf,
       handlers: {
         onReady: finish,
         onToggleView: toggleView,
         onAction: (kind)=>draw(doAction(kind)),
+        onWing: (kind)=>draw(doWing(kind)),
       },
     });
+  }
+
+  function doWing(kind){
+    if(!bf) return evaluate();
+    switch(kind){
+      case "notice": noticeInfiltration(bf, {}); break;
+      case "stop": stopForInfiltration(bf); break;
+      case "flat": layWingsFlat(bf); break;
+      case "secure": secureWings(bf, {}); layTubing(bf, c.procedure.tubing.slackGoodM); break;
+      default: break;
+    }
+    return evaluate();
+  }
+
+  // Whatever the tube action was, if a winged set is in play it also travels
+  // down the tubing to the tip — taped-down wings absorb almost all of it,
+  // a loose line almost none. `wait` is when infiltration actually accrues:
+  // it is real seconds passing with the tip wherever it currently is.
+  function applyButterflySideEffect(kind){
+    if(!bf) return;
+    if(kind === "wait"){ drawButterflyFor(bf, 5, {}); return; }
+    const impact = butterflyImpactFor(kind);
+    if(impact) disturb(bf, impact);
   }
 
   // The controls tear the 3D scene down, so these cannot go through the
@@ -1842,6 +2010,7 @@ function runCollection(c, stage, advance, mode){
   // seat depths, fill volumes and needle shifts that come out are identical.
   function doAction(kind){
     const live = isCollectionActive();
+    applyButterflySideEffect(kind);
     if(kind.indexOf("take:") === 0){
       const key = kind.slice(5);
       if(live) return takeTubeProgrammatically(key) || evaluate();
@@ -1912,6 +2081,14 @@ function runCollection(c, stage, advance, mode){
     if(c.encounter){
       c.encounter.collection = col;
       c.encounter.measurements.collection = measurements;
+    }
+    // The authoritative wing/tubing measurement: it now includes whatever
+    // the tube changes actually did to the tip, not just how the set went in.
+    if(bf){
+      const totalMl = (measurements.tubes || []).reduce((s, t) => s + (t.drawnMl || 0), 0);
+      const bo = { collectionDoneMl: totalMl, requiredMl: c.procedure.minDrawMl };
+      const bm = measureButterfly(bf, evaluateButterfly(bf, bo), bo);
+      applyButterflyOutcome(c, bm);
     }
     cleanupOnly();
     advance();

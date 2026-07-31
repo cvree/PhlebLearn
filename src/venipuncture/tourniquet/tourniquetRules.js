@@ -40,17 +40,31 @@ function issue(code, severity, message, data){
 
 function inches(m){ return Math.round(metresToInches(m)*10)/10; }
 
+/**
+ * The antecubital defaults, generalised so a second procedure can pass its
+ * own site, its own window, and its own name for what is at x=0 — a hand
+ * draw's band sits closer, on the forearm above the wrist, not the fossa.
+ */
+export const DEFAULT_SITE = {
+  x: SITE.x, ideal: BAND_IDEAL, acceptable: BAND_ACCEPTABLE,
+  label: "the antecubital fossa", windowLabel: "3–4″",
+};
+
 /* ---------- the individual judgements --------------------------------------- */
 
 /**
- * Position: 3–4 inches proximal to the site. Everything about this check is
- * a real distance — there is no "correct zone" rectangle to drop a sprite in.
+ * Position: proximal to the site, inside the procedure's window. Everything
+ * about this check is a real distance — there is no "correct zone" rectangle
+ * to drop a sprite in.
  */
-export function checkPosition(state){
+export function checkPosition(state, site){
   if(state.bandX == null) return null;
-  const d = distanceAboveSite(state.bandX);
-  const kind = classifyBandPosition(state.bandX);
+  const s = site || DEFAULT_SITE;
+  const d = distanceAboveSite(state.bandX, s.x);
+  const kind = classifyBandPosition(state.bandX, s.x, s.ideal, s.acceptable);
   const above = `${inches(Math.abs(d))}″`;
+  const win = s.windowLabel || DEFAULT_SITE.windowLabel;
+  const label = s.label || DEFAULT_SITE.label;
 
   if(kind === "distal"){
     return issue("bandDistal", "block",
@@ -59,22 +73,22 @@ export function checkPosition(state){
   }
   if(kind === "onSite"){
     return issue("bandOnSite", "block",
-      `The band is sitting on the antecubital fossa itself. That is the skin you are about to clean and puncture — move it up the arm.`,
+      `The band is sitting on ${label} itself. That is the skin you are about to clean and puncture — move it up the arm.`,
       { d, kind });
   }
   if(kind === "tooLow"){
     return issue("bandTooLow", "block",
-      `Only ${above} above the site. That is inside the field you are about to clean, and the hub will foul on it. Aim for 3–4″.`,
+      `Only ${above} above the site. That is inside the field you are about to clean, and the hub will foul on it. Aim for ${win}.`,
       { d, kind });
   }
   if(kind === "tooHigh"){
     return issue("bandTooHigh", "warn",
-      `${above} above the site — too far up to fill the antecubital veins well, and on the upper arm it is easier to cut off the pulse. 3–4″ is the window.`,
+      `${above} above the site — too far up to fill the veins well, and easier to cut off the pulse. ${win} is the window.`,
       { d, kind });
   }
   if(kind === "acceptableLow" || kind === "acceptableHigh"){
     return issue("bandAcceptable", "note",
-      `${above} above the site — usable. 3–4″ is the sweet spot.`, { d, kind });
+      `${above} above the site — usable. ${win} is the sweet spot.`, { d, kind });
   }
   return null;   // ideal
 }
@@ -215,9 +229,10 @@ const ORDER = ["block", "warn", "note"];
  */
 export function evaluateTourniquet(state, arm, now){
   const vessels = (arm && arm.vessels) || [];
+  const site = (arm && arm.site) || DEFAULT_SITE;
   const issues = [
     checkWrap(state),
-    checkPosition(state),
+    checkPosition(state, site),
     checkSkew(state),
     checkTension(state),
     checkTuck(state),
@@ -244,7 +259,7 @@ export function evaluateTourniquet(state, arm, now){
     pulse: hasRadialPulse(heldT),
     seconds,
     tension: heldT,
-    heightAboveSite: state.bandX == null ? null : distanceAboveSite(state.bandX),
+    heightAboveSite: state.bandX == null ? null : distanceAboveSite(state.bandX, site.x),
   };
 }
 

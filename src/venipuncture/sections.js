@@ -70,9 +70,16 @@ export const SECTIONS = [
   {
     id: "insert", label: "Anchor and insertion",
     steps: ["insert"],
-    measurements: ["insert"],
-    sessions: ["insert"],
-    chips: ["insertOk"],
+    // `butterfly` only ever has something in it for the dorsal-hand
+    // procedure — for the straight needle it stays null and
+    // sectionMeasurements() filters it out, same as every other
+    // procedure-specific measurement. It belongs to THIS section (not
+    // collection, where its authoritative reading is finalised) because the
+    // wing/tubing object itself is created and reset here; replaying only
+    // collection intentionally does not reset it — see butterflyState.js.
+    measurements: ["insert", "butterfly"],
+    sessions: ["insert", "butterfly"],
+    chips: ["insertOk", "butterflyOk"],
   },
   {
     id: "collection", label: "Tube collection",

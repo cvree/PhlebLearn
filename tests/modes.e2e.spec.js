@@ -31,7 +31,7 @@ async function openStep(page, stepId, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
-  await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1]), [stepId, mode]);
+  await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1], "straight-antecubital"), [stepId, mode]);
   await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
 }
 
