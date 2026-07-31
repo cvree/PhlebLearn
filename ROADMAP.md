@@ -22,16 +22,21 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`), `pressure`/`bandage` are a real force held on the real puncture and a dressing that waits for haemostasis (`postdraw/`), and `invert` is each filled tube turned end over end to its own additive's count (`inversion/`). **All 16 are physical**; the 2D `VP_STEPS` survive as the accessibility fallback. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that let one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**The gap that remains:** none of the 16 venipuncture steps is a 2D DOM widget
-any more. What remains is not step conversion but assessment: the photographed
-0–4 rubric, the three separated game modes, a distinct butterfly/dorsal-hand
-procedure, the introduction-and-identification dialogue, session replay and the
-final-practical report.
+**The gap that remains: one branch.** Step conversion finished in Phase 2, and
+the assessment phase is four branches in — the 0–4 rubric and its configurable
+policy, the three separated game modes, the practical report with session
+replay, and the introduction-and-identification step that was the last rubric
+row with no instrumentation. What is left is
+**`feature/butterfly-hand-draw`**: a dorsal-hand site geometry, the winged set
+as a physical object whose tubing has consequences, and the procedure model
+that makes the two draws genuinely different rather than one animation with a
+different model.
 
-👉 **`docs/HANDOFF.md` is the entry point for that work** — recommended branch
-order, which measurement keys already feed which rubric row, what exists for the
-butterfly draw and what does not, the conventions that must not be broken, and
-the testing and deployment traps. Read it before starting Phase 3.
+👉 **`docs/HANDOFF.md` is the entry point for that branch** — what already
+exists to build on, what does not, the procedure model's numbers, the
+conventions that must not be broken, and the testing traps (including that this
+machine's headless renderer crashes under load and those failures are not
+real). Read it before starting.
 
 Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
