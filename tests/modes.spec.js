@@ -15,6 +15,7 @@ import { MODES, MODE_REVEAL, MODE_NAMES, normaliseMode } from "../src/game/gameS
 import {
   SECTIONS, sectionForStep, endsSection, firstStepIndex,
   resetFromSection, measurementField, sectionMeasurements,
+  DRAW_MEASUREMENTS, isDrawMeasurement,
 } from "../src/venipuncture/sections.js";
 import {
   emptyModeRecord, recordFor, recordAttempt, weakestCategories, summaryLine,
@@ -106,12 +107,20 @@ test("every section's measurement keys are keys the rubric policy knows", () => 
   }
 });
 
-test("every rubric-fed measurement is produced by some section", () => {
+test("every rubric-fed measurement is produced by some section, or by the draw", () => {
   const produced = new Set(SECTIONS.flatMap(s => s.measurements));
   for(const cat of CATEGORIES){
     for(const [key] of cat.feeds){
-      assert.ok(produced.has(key), `${key} is graded but no section produces it`);
+      assert.ok(produced.has(key) || isDrawMeasurement(key),
+        `${key} is graded but nothing produces it`);
     }
+  }
+});
+
+test("the draw-scoped measurements are exactly the ones no section can own", () => {
+  const produced = new Set(SECTIONS.flatMap(s => s.measurements));
+  for(const key of DRAW_MEASUREMENTS){
+    assert.ok(!produced.has(key), `${key} is claimed by a section as well as by the draw`);
   }
 });
 

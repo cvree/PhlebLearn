@@ -18,6 +18,13 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     screenshot: "only-on-failure",
+    // Some sandboxes ship a Chromium that Playwright did not download itself
+    // (a different build number in a fixed location). Pointing at it is a
+    // property of the MACHINE, not of this project, so it arrives as an
+    // environment variable rather than a committed path — see docs/TESTING.md.
+    launchOptions: process.env.PW_CHROMIUM_PATH
+      ? { executablePath: process.env.PW_CHROMIUM_PATH }
+      : {},
   },
   webServer: {
     command: `npm run preview -- --port ${PORT} --strictPort`,

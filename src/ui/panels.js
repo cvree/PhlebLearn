@@ -34,6 +34,9 @@ import { createProcedureState, renderCurrentStep } from "../venipuncture/accessi
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
 import { VP_TIPS, VP_ICON } from "../venipuncture/questions.js";
+import { startComplicationWatch, finishComplications } from "../venipuncture/complications/complicationRuntime.js";
+import { complicationSummaryHTML } from "../venipuncture/complications/complicationCoach.js";
+import { assessSpecimens, applySpecimenOutcome } from "../venipuncture/specimen/specimenQuality.js";
 import { fbCard } from "./coachLayer.js";
 
 /* ---------- top bar + panel entrance -------------------------------------- */
@@ -319,7 +322,12 @@ function renderSite(){
 function renderCollect(){
   if(!ENC.collect){ ENC.collect = createProcedureState(ENC.selected, { patient: ENC.p, handedness: SS.handedness }); }
   const c=ENC.collect;
+  // A complication the learner answered by stopping really did stop the
+  // draw: there is no next step to render, and the report is built from what
+  // was actually collected before it.
+  if(c.complicationHalt){ return vpFinish(); }
   if(c.step>=c.steps.length){ return vpFinish(); }
+  watchComplications(c);
   const id=c.steps[c.step];
   const info=VP_TIPS[id];
   const done=c.step, total=c.steps.length;
@@ -406,6 +414,39 @@ function renderSectionFeedback({ section, readings, done }){
   };
 }
 
+/* ---------- complications ---------------------------------------------------
+   The watch is opened here rather than inside any one step, because a
+   complication outlives every step: it is the draw that has one, not the
+   screen. `main.js` ticks it; this is only the wiring that tells it which
+   mode the learner is in and what to do when their answer ends the draw.
+   -------------------------------------------------------------------------- */
+function watchComplications(c){
+  startComplicationWatch(c, {
+    reveal: () => reveal(),
+    sfx,
+    onChange: () => { if(state==="collect") renderCollect(); },
+    onHalt: () => {
+      // Everything the current step was holding open goes, exactly as it does
+      // when a draw is abandoned — the difference is that this one was the
+      // right call, and the report says so.
+      if(ENC._collectCleanup) ENC._collectCleanup();
+      captureStagingIfUnmeasured();
+      go("collect");
+    },
+  });
+}
+
+/** The preparation the learner did before walking away from a draw. */
+function captureStagingIfUnmeasured(){
+  const c = ENC.collect;
+  if(!c || !c.supplies || c.supplies.measurements) return;
+  const s = c.supplies;
+  s.state.completedAt = Date.now();
+  const r = evaluateStaging(s.state, s.catalog);
+  s.measurements = measureStaging(s.state, s.catalog, r);
+  c.stagingMeasurements = s.measurements;
+}
+
 /* Ends the venipuncture early. Two-step so a mis-tap can't abandon a patient:
    the button asks for confirmation before it does anything. The encounter is
    then scored on what was actually completed — nothing is faked as done. */
@@ -423,20 +464,53 @@ function wireLeaveDraw(){
     sfx("bad");
     if(ENC._collectCleanup) ENC._collectCleanup();
     ENC.drawAbandoned=true;
-    if(ENC.collect && ENC.collect.supplies && !ENC.collect.supplies.measurements){
-      // capture whatever preparation was done before they walked away
-      const s=ENC.collect.supplies;
-      s.state.completedAt=Date.now();
-      const r=evaluateStaging(s.state, s.catalog);
-      s.measurements=measureStaging(s.state, s.catalog, r);
-      ENC.collect.stagingMeasurements=s.measurements;
-    }
+    // capture whatever preparation was done before they walked away
+    captureStagingIfUnmeasured();
+    finishComplications(ENC.collect);
     runScoreEncounter();
   };
 }
 
+/* ---------- the recap chips ------------------------------------------------
+   Phase 3b's brief: the chips report REAL MEASUREMENTS, not booleans. Every
+   value below is read off the step's own measurement object — the same number
+   the rubric is graded from — so "Tourniquet timing ✓" becomes "Tourniquet
+   38s", which is a thing a learner can actually act on next time.
+
+   A chip with no measurement behind it (the step never ran) says so rather
+   than showing a zero it did not earn.
+   -------------------------------------------------------------------------- */
+function recapChips(c){
+  const n = (v, unit, dp) => v == null ? null : `${dp ? Number(v).toFixed(dp) : Math.round(v)}${unit || ""}`;
+  const ins = c.insertMeasurements, tq = c.tourniquetMeasurements, col = c.collectionMeasurements;
+  const cl = c.cleaningMeasurements, pd = c.postDrawMeasurements, wd = c.withdrawalMeasurements;
+  const inv = c.inversionMeasurements, sm = c.stagingMeasurements, cx = c.complicationMeasurements;
+
+  return [
+    { label: "Supplies staged", ok: c.gatherOk, value: sm ? `${sm.correctItems} right / ${sm.incorrectItems} wrong` : null },
+    { label: "Tourniquet", ok: c.tqGood, value: tq ? `${n(tq.secondsOn, "s")} · ${n(tq.heightAboveSiteInches, "″", 1)} above` : null },
+    { label: "Vein selected", ok: c.veinOk, value: c.site && c.site.vesselLabel ? c.site.vesselLabel : null },
+    { label: "Site antisepsis", ok: c.cleanOk, value: cl ? `${n(cl.coveragePct, "%")} covered · dried ${n(cl.dryingSeconds, "s")}` : null },
+    { label: "Insertion angle", ok: c.insertOk, value: ins ? `${n(ins.angleDeg, "°")} · ${n(ins.depthMm, "mm", 1)} deep` : null },
+    { label: "Re-approaches", ok: ins ? ins.reapproaches === 0 : false, value: ins ? String(ins.reapproaches) : null },
+    { label: "Order of draw", ok: c.tubeOrderOk, value: col ? `${n(col.orderAccuracy*100, "%")}` : null },
+    { label: "Blood collected", ok: c.fillGood, value: col ? `${n(col.totalDrawnMl, " mL", 1)}` : null },
+    { label: "Needle movement", ok: col ? col.peakNeedleShiftMm <= 1 : false, value: col ? `${n(col.peakNeedleShiftMm, "mm", 1)}` : null },
+    { label: "Sharp exposed", ok: c.safetyOk, value: wd ? `${n(wd.exposedSeconds, "s", 1)}` : null },
+    { label: "Pressure held", ok: c.pressureOk, value: pd ? `${n(pd.effectiveSeconds, "s")} of ${n(pd.requiredSeconds, "s")}` : null },
+    { label: "Tubes mixed", ok: c.mixOk, value: inv ? `${inv.tubesUsable}/${inv.tubesRequired} usable` : null },
+    { label: "Complications", ok: c.complicationsOk !== false, value: cx ? (cx.total ? `${cx.managedCount}/${cx.total} handled` : "none") : null },
+  ];
+}
+
 function vpFinish(){
   const c=ENC.collect;
+  // The draw is over: close the complication watch and let the laboratory
+  // look at what came out of it. Both are idempotent — vpFinish() is
+  // reachable more than once.
+  finishComplications(c);
+  if(!c.specimenQuality) applySpecimenOutcome(c, assessSpecimens(c, { orders: ENC.p.orders }));
+  const chips = recapChips(c);
   const items=[["gatherOk","Supplies gathered"],["veinOk","Vein selected"],["cleanOk","Site cleaned"],["assembleOk","Needle assembled"],["uncapOk","Uncapped"],
     ["insertOk","Clean insertion"],["fillGood","Filled to line"],["tqGood","Tourniquet timing"],["tubeOrderOk","Order of draw"],
     ["pressureOk","Pressure held"],["disposeOk","Sharps disposed"],["mixOk","Tubes inverted"]];
@@ -470,11 +544,18 @@ function vpFinish(){
   // the report is the Final Practical's output, not a replacement for
   // in-line coaching.
   const { report, replay, progressLine } = gradeAttempt(c);
+  const haltNote = c.complicationHalt ? `
+    <div class="fb no"><b>You stopped the draw.</b> That was the right call for a
+    ${(c.complicationMeasurements && (c.complicationMeasurements.events.find(e=>e.id===c.complicationHalt.id)||{}).label) || "complication"},
+    and the report below is built from what was actually collected before it — not from what was ordered.</div>` : "";
   const body = finalPractical()
-    ? renderPracticalReport(report, replay, { progress: progressLine })
-    : `<div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
+    ? `${haltNote}${renderPracticalReport(report, replay, { progress: progressLine })}${labReceivingHTML(c.specimenQuality)}`
+    : `${haltNote}
+       <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
        ${stagingBlock}
-       <div class="vp-scorewrap">${items.map(([k,l])=>`<span class="vp-chip ${c[k]?'ok':'mid'}">${c[k]?'✓':'•'} ${l}</span>`).join("")}</div>
+       <div class="vp-scorewrap">${chips.map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
+       ${complicationSummaryHTML(c.complicationMeasurements)}
+       ${labReceivingHTML(c.specimenQuality)}
        ${renderRubricSummary(report)}
        ${progressLine?`<div class="rep-policy">${progressLine}</div>`:""}
        ${guided()?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}`;
@@ -483,6 +564,29 @@ function vpFinish(){
     ${body}
     <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
   $("vpToLabel").onclick=()=>{ sfx("tap"); go(hasPostDraw?"drawresp":"label"); };
+}
+
+/* ---------- the laboratory's own verdict -------------------------------------
+   Shown in every mode, unlike the coaching, because it is not feedback about
+   the learner — it is what happened to the specimens. A rejected tube means a
+   real person gets stuck again tomorrow, and that is the part of the job the
+   patient actually experiences.
+   ---------------------------------------------------------------------------- */
+function labReceivingHTML(q){
+  if(!q || !q.total) return "";
+  const rows = q.tubes.map(t=>`
+    <li class="lab-row lab-${t.verdict}">
+      <span class="lab-tube">${t.name}</span>
+      <span class="lab-verdict">${t.verdict === "accepted" ? "✓ accepted" : t.verdict === "flagged" ? "⚠ accepted with comment" : "✗ rejected"}</span>
+      <span class="lab-fill">${Math.round(t.fillFraction*100)}% full</span>
+      <span class="lab-why">${t.headline}</span>
+    </li>`).join("");
+  return `<div class="lab-receiving">
+    <div class="lab-head"><span class="lab-title">🧫 Specimen receiving</span><span class="lab-score">${q.score}/100</span></div>
+    <p class="vt-narrative">${q.narrative}</p>
+    <ul class="lab-list">${rows}</ul>
+    ${q.redrawRequired?`<div class="fb no"><b>Redraw required.</b> ${q.lostTests.join(", ")} cannot be reported from this collection.</div>`:""}
+  </div>`;
 }
 
 /**

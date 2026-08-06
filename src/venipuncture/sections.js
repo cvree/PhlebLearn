@@ -111,6 +111,33 @@ export const SECTIONS = [
   },
 ];
 
+/* =========================================================================
+   THE MEASUREMENTS THAT BELONG TO NO SECTION
+
+   Two of the rubric's rows are not produced by any one piece of technique,
+   and pretending otherwise would put them in the wrong place twice over:
+
+     complications  the patient's body reacts across every section at once. A
+                    hematoma that starts during the stick is still growing
+                    during the bandage; a faint builds across four screens.
+                    Its measurement is finished when the DRAW is, not when
+                    any step is.
+
+     specimen       the laboratory's verdict cannot exist until the last tube
+                    is mixed, and it is assembled from what the collection,
+                    inversion, tourniquet and cleaning sections each did.
+
+   They are listed here so "is every graded measurement produced by
+   something?" has an honest answer, and so Practice mode's section feedback
+   knows not to look for them at the end of a section.
+   ========================================================================= */
+export const DRAW_MEASUREMENTS = ["complications", "specimen"];
+
+/** True when this measurement belongs to the whole draw rather than a section. */
+export function isDrawMeasurement(key){
+  return DRAW_MEASUREMENTS.indexOf(key) >= 0;
+}
+
 /** The section a step id belongs to, or null for an unsectioned step. */
 export function sectionForStep(stepId){
   return SECTIONS.find(s => s.steps.indexOf(stepId) >= 0) || null;

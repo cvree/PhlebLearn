@@ -88,6 +88,11 @@ import {
 import { evaluateButterfly } from "../src/venipuncture/butterfly/butterflyRules.js";
 import { measureButterfly } from "../src/venipuncture/butterfly/butterflyScoring.js";
 
+import { createComplicationState } from "../src/venipuncture/complications/complicationState.js";
+import { measureComplications } from "../src/venipuncture/complications/complicationScoring.js";
+
+import { assessSpecimens } from "../src/venipuncture/specimen/specimenQuality.js";
+
 const VESSELS = buildVessels();
 const VEIN = { id: "median-cubital", calibre: 0.0034, depth: 0.0035 };
 const ORDER = ["lightblue", "lavender"];
@@ -109,6 +114,7 @@ function realMeasurements(){
   const intro = createIntroductionState({
     patient: { name: "A Patient", dob: "01/01/1970", id: "AP1", history: {} }, now: 1000,
   });
+  const cx = createComplicationState({ patient: {}, rng: () => 0.5, now: 1000 });
   const bf = createButterflyState({ calibreM: 0.0020, now: 1000 });
   pickUpByWings(bf); enterButterfly(bf, 10, { now: 1000 }); layWingsFlat(bf); secureWings(bf, { now: 1000 });
 
@@ -126,6 +132,14 @@ function realMeasurements(){
     withdrawal: measureWithdrawal(wd, evaluateWithdrawal(wd, {}), { now: 1000 }),
     postDraw: measurePostDraw(pd, evaluatePostDraw(pd, { now: 1000 }), { now: 1000 }),
     inversion: measureInversion(inv, evaluateInversion(inv), { now: 1000 }),
+    complications: measureComplications(cx, { now: 1000 }),
+    // The receiving verdict is built from the collection and inversion states
+    // themselves, which is the whole point of it — no separate measurement to
+    // keep in step with them.
+    specimen: assessSpecimens({
+      tubes: ORDER, collection: col, inversion: inv,
+      needleUnit: { gauge: 21 }, patient: { orders: ["PT/INR", "CBC"] },
+    }),
   };
 }
 
@@ -245,6 +259,17 @@ const PERFECT = {
     tubingSlackMm: 30, tubingTaut: false, disturbancesTransmitted: 0, disturbancesWhileLoose: 0,
     peakTipOffsetMm: 0, infiltratedMl: 0, infiltrationNoticed: false, secondsToNotice: null,
     stoppedOnInfiltration: false,
+  },
+  complications: {
+    score: 100, mistakes: [], narrative: "nothing went wrong",
+    total: 0, managedCount: 0, worsenedCount: 0, missedCount: 0, slowCount: 0,
+    recognitionRate: 1, hematomaMl: 0, hematomaGrade: "none", fainted: false,
+    events: [],
+  },
+  specimen: {
+    score: 100, mistakes: [], narrative: "all accepted",
+    total: 1, acceptedCount: 1, flaggedCount: 0, rejectedCount: 0,
+    redrawRequired: false, lostTests: [], tubes: [],
   },
 };
 
@@ -393,8 +418,9 @@ test("one abandoned row fails the practical even when the average would pass", (
   for(const [key, field] of Object.entries(MEASUREMENT_SOURCES)) c[field] = m[key];
   const report = buildRubricReport(c);
   assert.equal(report.categories.find(x => x.id === "introduction").score, 0);
-  // 16/20 is 80% — exactly the pass mark — so only the per-row floor fails it
-  assert.equal(report.percent, 0.8);
+  // The average still clears the pass mark comfortably — it is only the
+  // per-row floor that fails this attempt, which is the point of the rule.
+  assert.ok(report.percent > 0.8);
   assert.ok(report.failedBy.some(f => f.reason === "categoryFloor"));
   assert.ok(!report.failedBy.some(f => f.reason === "belowPassMark"));
   assert.equal(report.passed, false);

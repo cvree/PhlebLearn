@@ -48,6 +48,11 @@ export const MEASUREMENT_SOURCES = {
   postDraw: "postDrawMeasurements",
   inversion: "inversionMeasurements",
   butterfly: "butterflyMeasurements",
+  complications: "complicationMeasurements",
+  // The laboratory's own verdict is a measurement like any other: it has a
+  // 0–100 score, named mistakes and a narrative, and it is the only one that
+  // describes the thing the patient actually receives.
+  specimen: "specimenQuality",
 };
 
 export const MEASUREMENT_LABELS = {
@@ -64,6 +69,8 @@ export const MEASUREMENT_LABELS = {
   postDraw: "Pressure and bandaging",
   inversion: "Specimen mixing",
   butterfly: "Winged set handling",
+  complications: "Complication recognition and response",
+  specimen: "Specimen integrity at receiving",
 };
 
 /* =========================================================================
@@ -240,6 +247,52 @@ export const CATEGORIES = [
       ],
     },
   },
+  {
+    /* Complications are graded on RECOGNITION and RESPONSE, never on whether
+       one happened. A patient's body reacting is not a mark against the
+       learner; failing to notice it is. A draw where nothing went wrong
+       scores 100 on this row and says "there was nothing to recognise" —
+       see complicationScoring.js. */
+    id: "complications",
+    label: "Complication recognition and response",
+    feeds: [["complications", 1]],
+    excellence: {
+      requireAll: true,
+      maxMistakes: 0,
+      sequence: [
+        { key: "complications", field: "fainted", equals: false,
+          label: "no patient lost consciousness" },
+      ],
+      ranges: [
+        { key: "complications", field: "recognitionRate", min: 1, max: 1, unit: "",
+          label: "complications recognised and answered correctly" },
+        { key: "complications", field: "hematomaMl", min: 0, max: 0.35, unit: " mL",
+          label: "blood into the tissue" },
+      ],
+    },
+  },
+  {
+    /* The one row the patient experiences directly: a rejected tube is a
+       second needle tomorrow. It is fed by the receiving verdicts and by the
+       mixing that produced half of them. */
+    id: "specimen",
+    label: "Specimen integrity",
+    feeds: [["specimen", 1.25], ["inversion", 0.75]],
+    excellence: {
+      requireAll: true,
+      maxMistakes: 0,
+      sequence: [
+        { key: "specimen", field: "redrawRequired", equals: false,
+          label: "no specimen had to be redrawn" },
+      ],
+      ranges: [
+        { key: "specimen", field: "rejectedCount", min: 0, max: 0, unit: "",
+          label: "tubes rejected at receiving" },
+        { key: "specimen", field: "flaggedCount", min: 0, max: 0, unit: "",
+          label: "tubes accepted with a comment" },
+      ],
+    },
+  },
 ];
 
 /* =========================================================================
@@ -316,6 +369,28 @@ export const CRITICAL_EVENTS = {
     why: "Seeing the swelling and continuing the draw anyway." },
   "assembly.contaminated": { label: "Contaminated needle used anyway", automaticFailure: false,
     why: "The sterile barrier was already lost." },
+
+  /* --- complications: judged on what was done about them, not on the fact
+     that one happened. Both automatic failures below are failures of
+     RESPONSE — a complication left to run, or answered by carrying on. */
+  "complications.missed": { label: "Complication never acted on", automaticFailure: true,
+    why: "The signs were there for as long as the window lasted and nothing was done." },
+  "complications.continuedAnyway": { label: "Carried on through a complication", automaticFailure: true,
+    why: "Recognising it and continuing is worse than not seeing it." },
+  "complications.probed": { label: "Probed blindly under the skin", automaticFailure: true,
+    why: "It is the mechanism of nerve injury, and there is no version of it that is technique." },
+  "complications.wrongResponse": { label: "Wrong response to a complication", automaticFailure: false,
+    why: "The action taken made the patient worse rather than better." },
+  "complications.patientFainted": { label: "Patient lost consciousness", automaticFailure: false,
+    why: "Preventable in the seconds of prodrome that preceded it." },
+  "complications.largeHematoma": { label: "Large hematoma", automaticFailure: false,
+    why: "The bruise the patient rings the laboratory about." },
+
+  /* --- the laboratory's own verdicts */
+  "specimen.rejected": { label: "Specimen rejected at receiving", automaticFailure: false,
+    why: "The patient is stuck again for a result that was already in the tube." },
+  "specimen.redraw": { label: "Redraw required", automaticFailure: false,
+    why: "Every rejected tube is a second venipuncture on the same person." },
 };
 
 /* =========================================================================

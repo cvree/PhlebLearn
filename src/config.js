@@ -17,7 +17,9 @@ export const CARD_LINKS = {
   labeling:    {cardId:"id-01", topic:"Patient ID & Labeling",         section:"Patient ID"},
   handling:    {cardId:"qa-04", topic:"Pre-Analytical & Specimen Handling", section:"Specimen Handling"},
   professional:{cardId:null,    topic:"Professional communication",    section:"Safety"},
-  safety:      {cardId:"saf-02", topic:"Safety & Infection Control",    section:"Safety"}
+  safety:      {cardId:"saf-02", topic:"Safety & Infection Control",    section:"Safety"},
+  specimenQuality:{cardId:"qa-04", topic:"Pre-Analytical Errors & Specimen Rejection", section:"Specimen Handling"},
+  complications:{cardId:"saf-05", topic:"Complications: Hematoma, Nerve Injury, Syncope", section:"Safety"}
 };
 
 /* Tubes, colors/additives/order from verified Phleb Learn deck (CLSI order). */

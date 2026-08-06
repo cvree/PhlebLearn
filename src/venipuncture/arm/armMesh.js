@@ -213,9 +213,24 @@ export function buildArm(o){
   crease.position.set(ELBOW_X, surfaceY(ELBOW_X, 0, build) + 0.0006, 0);
   group.add(crease);
 
+  /* --- what has happened to this arm -------------------------------------
+     `condition` is a LIVE object owned by the complications branch, read
+     every frame rather than copied in. That is deliberate: a bruise that
+     started forming during the stick has to still be on the arm during the
+     bandage step, and those are two different scenes built at two different
+     times from the same encounter. Passing the object rather than its values
+     is what makes the consequence outlive the step that caused it. */
+  const condition = opt.condition || null;
+  const bruise = buildBruise(build, opt.conditionSite);
+  group.add(bruise.group);
+
   /* --- animation state ---------------------------------------------------- */
   let distension = 0;
   let pallor = 0;
+  /** the band's own distal pallor and the patient's whole-body one are
+      different causes with the same appearance; the skin shows the worse. */
+  let conditionPallor = 0;
+  let flinchPhase = 0;
   const baseSkin = new THREE.Color(skinHex);
   const paleSkin = baseSkin.clone().lerp(new THREE.Color(0xf3e9e2), 0.62);
 
@@ -255,9 +270,39 @@ export function buildArm(o){
   /** The hand going pale is the sign the band is too tight. */
   function setPallor(t){
     pallor = Math.max(0, Math.min(1, t || 0));
-    handMat.color.copy(baseSkin).lerp(paleSkin, pallor);
-    // the forearm distal to the band pales too, just less
-    skinMat.color.copy(baseSkin).lerp(paleSkin, pallor*0.45);
+    applySkinColour();
+  }
+
+  function applySkinColour(){
+    const worst = Math.max(pallor, conditionPallor);
+    handMat.color.copy(baseSkin).lerp(paleSkin, worst);
+    // the forearm distal to the band pales too, just less — but a patient
+    // going vasovagal pales all over, so that one is not discounted
+    const limbPale = Math.max(pallor*0.45, conditionPallor);
+    skinMat.color.copy(baseSkin).lerp(paleSkin, limbPale);
+  }
+
+  /**
+   * Applies whatever the complications branch says has happened to this arm:
+   * blood in the tissue, a swelling under the puncture, the pallor of a
+   * patient about to faint, and the one-off jerk of a flinch.
+   */
+  function applyCondition(dt){
+    if(!condition) return;
+    bruise.set(condition);
+    if(conditionPallor !== condition.pallor){
+      conditionPallor = Math.max(0, Math.min(1, condition.pallor || 0));
+      applySkinColour();
+    }
+    // A flinch is a real movement of the limb, so it moves the limb: the
+    // needle steps are watching this group's position, not a CSS class.
+    const k = Math.max(0, Math.min(1, condition.flinch || 0));
+    if(k > 0.001 || flinchPhase !== 0){
+      flinchPhase += (dt || 0)*34;
+      group.position.z = Math.sin(flinchPhase)*0.0042*k;
+      group.rotation.x = Math.sin(flinchPhase*0.7)*0.035*k;
+      if(k <= 0.001){ flinchPhase = 0; group.position.z = 0; group.rotation.x = 0; }
+    }
   }
 
   let clock = 0;
@@ -269,6 +314,7 @@ export function buildArm(o){
       const beat = Math.max(0, Math.sin(clock*7.6));
       applySwell(artery, 0.25 + beat*0.75);
     }
+    applyCondition(dt);
   }
 
   function dispose(){
@@ -281,15 +327,98 @@ export function buildArm(o){
 
   setDistension(0);
 
+  // The browser tests need to assert that a consequence reached the LIMB and
+  // not only the report — that the bruise is actually on the arm on screen.
+  // Guarded on the test seam, which only exists under ?e2e=1, so nothing in
+  // normal play publishes anything.
+  if(typeof window !== "undefined" && window.__phlebTest){
+    window.__phlebArm = { bruise, condition, setDistension, setPallor };
+  }
+
   return {
     group, limb, hand, vesselGroup, vesselMeshes, vessels,
     build, skinHex,
     surfaceY: (x,z)=>surfaceY(x, z, build),
     radiusAt: x=>radiusAt(x, build),
     setDistension, setPallor, tick, dispose,
+    /** the complications branch's live view of this arm */
+    condition, bruise,
     get distension(){ return distension; },
     get pallor(){ return pallor; },
   };
+}
+
+/* ---------- the bruise ---------------------------------------------------------
+   A hematoma is two visible things at once and needs both: blood spreading
+   UNDER the skin (a soft stain that grows and shades from red toward purple as
+   there is more of it) and the tissue LIFTING over it (a dome that raises the
+   surface). One without the other reads as a sticker on an unchanged arm.
+   ----------------------------------------------------------------------------- */
+
+let bruiseTex = null;
+function bruiseTexture(){
+  if(bruiseTex) return bruiseTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.45, "rgba(255,255,255,0.55)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  bruiseTex = new THREE.CanvasTexture(c);
+  return bruiseTex;
+}
+
+function buildBruise(build, site){
+  const at = site || { x: SITE.x, z: SITE.z };
+  const group = new THREE.Group();
+  group.name = "hematoma";
+  group.visible = false;
+
+  const stainMat = new THREE.MeshBasicMaterial({
+    map: bruiseTexture(), color: 0x9b2f4a, transparent: true, opacity: 0,
+    depthWrite: false,
+  });
+  stainMat.userData.perInstance = true;
+  const stain = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.05), stainMat);
+  stain.rotation.x = -Math.PI/2;
+  stain.position.set(at.x, surfaceY(at.x, at.z, build) + 0.0007, at.z);
+  group.add(stain);
+
+  const domeMat = new THREE.MeshStandardMaterial({
+    color: 0xc9707f, roughness: 0.7, transparent: true, opacity: 0,
+  });
+  domeMat.userData.perInstance = true;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.012, 18, 12), domeMat);
+  dome.scale.set(1, 0.42, 1);
+  dome.position.set(at.x, surfaceY(at.x, at.z, build) - 0.003, at.z);
+  group.add(dome);
+
+  const fresh = new THREE.Color(0xb8384f);   // new blood
+  const old = new THREE.Color(0x6a3a7a);     // and what it becomes
+
+  /** @param {object} cond the live complication condition object */
+  function set(cond){
+    const bruiseK = Math.max(0, Math.min(1, cond.bruise || 0));
+    const swellK = Math.max(0, Math.min(1, cond.swelling || 0));
+    const flushK = Math.max(0, Math.min(1, cond.flush || 0));
+    group.visible = bruiseK > 0.01 || swellK > 0.01 || flushK > 0.01;
+    if(!group.visible) return;
+
+    stainMat.opacity = Math.min(0.72, bruiseK*0.8 + flushK*0.35);
+    stainMat.color.copy(flushK > bruiseK ? fresh : fresh.clone().lerp(old, bruiseK));
+    const spread = 0.05*(0.6 + bruiseK*1.5);
+    stain.scale.set(spread/0.05, spread/0.05, 1);
+
+    domeMat.opacity = Math.min(0.85, swellK*0.9);
+    const lift = swellK*0.006;
+    dome.scale.set(1 + swellK*0.9, 0.42 + swellK*0.5, 1 + swellK*0.9);
+    dome.position.y = surfaceY(at.x, at.z, build) - 0.003 + lift;
+  }
+
+  return { group, stain, dome, set };
 }
 
 /* ---------- the armrest ------------------------------------------------------ */

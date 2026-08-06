@@ -17,6 +17,8 @@ export const FEEDBACK = {
   labeling:{label:"Labeling",why:"Unlabeled/mislabeled specimens can harm patients.",tip:"Name, ID/DOB, date & time, your initials, at the bedside."},
   handling:{label:"Handling",why:"Some analytes need cold or light protection.",tip:"Most are routine; ammonia→chilled, bilirubin→protect from light."},
   professional:{label:"Professionalism",why:"Calm, clear communication builds trust.",tip:"Explain simply; reassure nervous patients."},
+  specimenQuality:{label:"Specimen integrity",why:"A rejected specimen means the patient is stuck again for a result that was already in the tube.",tip:"Fill to the line, draw in order, mix gently and promptly, and keep the band under a minute."},
+  complications:{label:"Complication response",why:"Complications are not failures — missing them is. Watch the patient as well as the tube.",tip:"Stop, remove, press. Never probe, never carry on through a hematoma, never leave a fainting patient."},
   safety:{label:"Safety",why:"Patient safety outranks speed every time.",tip:"Stop for faintness; never skip ID under pressure."}
 };
 
@@ -66,8 +68,18 @@ export function scoreEncounter(){
   // the supply cart, not from whether a checklist got ticked.
   const sm = ENC.collect && ENC.collect.stagingMeasurements;
   if(sm) s.supplyStaging = sm.unsafeItems===0 && sm.score>=75;
+  // What the laboratory did with the tubes, and what the patient's body did
+  // during the draw. Both are only scored when the draw actually happened —
+  // an encounter abandoned before the first tube has neither.
+  const sq = ENC.collect && ENC.collect.specimenQuality;
+  if(sq && sq.total) s.specimenQuality = sq.rejectedCount===0;
+  const cx = ENC.collect && ENC.collect.complicationMeasurements;
+  if(cx && cx.total) s.complications = cx.missedCount===0 && cx.worsenedCount===0;
   let safetyOk = s.patientId;
   if(sm && sm.unsafeItems>0) safetyOk = false;
+  // Probing blindly, carrying on through a complication, or leaving a patient
+  // who is going out is a safety failure whatever else went right.
+  if(cx && (cx.missedCount>0 || cx.worsenedCount>0 || cx.fainted)) safetyOk = false;
   if(p.event.type==="respond" && p.event.safety) safetyOk = safetyOk && !!ENC.respondChoice;
   if(p.drawEvent) safetyOk = safetyOk && !!ENC.drawChoice;
   s.safety = safetyOk;
@@ -89,6 +101,20 @@ export function scoreEncounter(){
       ctx: `Staged in ${fmtDuration(sm.timeMs)} · ${sm.correctItems} correct, ${sm.incorrectItems} wrong (${sm.unsafeItems} unsafe) · order of draw ${Math.round(sm.tubeOrderAccuracy*100)}% · ${sm.inspectionsBeforeStaging}/${sm.stagedCount} packages checked before staging`,
       your: sm.narrative,
       correct: "Every required item checked and staged, tubes racked in order of draw, sharps container within immediate reach on your dominant side.",
+    };
+  }
+  if(sq && sq.total){
+    A.specimenQuality = {
+      ctx: `${sq.acceptedCount} accepted · ${sq.flaggedCount} accepted with a comment · ${sq.rejectedCount} rejected`,
+      your: sq.narrative,
+      correct: "Every tube filled to its line, drawn in order, mixed to its own count within a minute, and delivered without haemolysis.",
+    };
+  }
+  if(cx && cx.total){
+    A.complications = {
+      ctx: cx.events.map(e=>`${e.emoji} ${e.label}`).join(" · "),
+      your: cx.narrative,
+      correct: "Recognise it from the first sign, stop what is causing it, and do the one thing that treats it.",
     };
   }
   const lfds=[["name","Patient name"],["iddob","ID / DOB"],["datetime","Date and time"],["initials","Your initials"]];

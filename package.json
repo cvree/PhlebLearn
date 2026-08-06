@@ -7,8 +7,8 @@
     "dev": "vite --base /",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "test": "node --test tests/procedure.spec.js tests/staging.spec.js tests/tourniquet.spec.js tests/palpation.spec.js tests/cleaning.spec.js tests/assembly.spec.js tests/insert.spec.js tests/collection.spec.js tests/withdrawal.spec.js tests/postdraw.spec.js tests/inversion.spec.js tests/rubric.spec.js tests/modes.spec.js tests/report.spec.js tests/introduction.spec.js tests/butterfly.spec.js",
-    "test:e2e": "playwright test tests/smoke.spec.js tests/staging.e2e.spec.js tests/tourniquet.e2e.spec.js tests/palpation.e2e.spec.js tests/cleaning.e2e.spec.js tests/assembly.e2e.spec.js tests/insert.e2e.spec.js tests/collection.e2e.spec.js tests/withdrawal.e2e.spec.js tests/postdraw.e2e.spec.js tests/inversion.e2e.spec.js tests/modes.e2e.spec.js tests/report.e2e.spec.js tests/introduction.e2e.spec.js tests/butterfly.e2e.spec.js",
+    "test": "node --test tests/procedure.spec.js tests/staging.spec.js tests/tourniquet.spec.js tests/palpation.spec.js tests/cleaning.spec.js tests/assembly.spec.js tests/insert.spec.js tests/collection.spec.js tests/withdrawal.spec.js tests/postdraw.spec.js tests/inversion.spec.js tests/rubric.spec.js tests/modes.spec.js tests/report.spec.js tests/introduction.spec.js tests/butterfly.spec.js tests/complications.spec.js tests/specimen.spec.js tests/progression.spec.js",
+    "test:e2e": "playwright test tests/smoke.spec.js tests/staging.e2e.spec.js tests/tourniquet.e2e.spec.js tests/palpation.e2e.spec.js tests/cleaning.e2e.spec.js tests/assembly.e2e.spec.js tests/insert.e2e.spec.js tests/collection.e2e.spec.js tests/withdrawal.e2e.spec.js tests/postdraw.e2e.spec.js tests/inversion.e2e.spec.js tests/modes.e2e.spec.js tests/report.e2e.spec.js tests/introduction.e2e.spec.js tests/butterfly.e2e.spec.js tests/complications.e2e.spec.js",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {

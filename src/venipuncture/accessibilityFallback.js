@@ -21,6 +21,8 @@ import { buildStepSequence, canonicalTubeOrder } from "./procedureState.js";
 import { VP_STEPS } from "./steps.js";
 import { PHYSICAL_STEPS } from "./physicalSteps.js";
 import { createEncounterState } from "./encounterState.js";
+import { createComplicationState } from "./complications/complicationState.js";
+import { difficultyLevel } from "../game/saveSystem.js";
 import { VP_TIPS, VP_ICON } from "./questions.js";
 
 // Fresh procedure state for one encounter's draw. `opts.patient` seeds the
@@ -40,6 +42,13 @@ export function createProcedureState(tubeKeys, opts){
     // which arm, and whether the veins are deep or flat.
     patient,
     encounter: createEncounterState({ tubes, patient, handedness:o.handedness }),
+    // What the patient's body does back, for the whole draw rather than for
+    // any one step. Created here, with the draw, because the watcher that
+    // ticks it starts before the first step builds anything — see
+    // complications/complicationRuntime.js.
+    complications: createComplicationState({
+      patient, difficulty: difficultyLevel(),
+    }),
     // Real play never sets this — ensureArmSession() rolls indicatedProcedure()
     // from the patient's own arms. The test seam is the only caller that
     // forces a specific procedure, so a scenario can be exercised on demand

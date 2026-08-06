@@ -1,0 +1,78 @@
+/* =========================================================================
+   COMPLICATIONS — the alert that arrives over whatever the learner is doing,
+   and the laboratory's verdict on what came out of the draw.
+
+   The alert is deliberately NOT a modal dialog in the middle of the screen: a
+   complication is something you notice while your hands are busy, so it
+   arrives at the top of the working area, over the canvas, without stealing
+   the scene the learner is working in. It is still keyboard- and
+   screen-reader-reachable (role="alertdialog", aria-live) because "notice it"
+   must not mean "see it".
+
+   Nothing here depends on colour alone: every severity is also stated in
+   words, and every verdict carries a ✓ or ✗.
+   ========================================================================= */
+
+.cx-layer{
+  position:absolute; left:50%; top:8px; transform:translateX(-50%);
+  z-index:40; width:min(92%, 460px); pointer-events:none;
+}
+.cx-card{
+  pointer-events:auto;
+  border:3px solid var(--bad); border-radius:16px; background:#fff;
+  box-shadow:0 10px 30px rgba(43,39,64,.28);
+  padding:10px 12px; animation:slideUp .22s ease both;
+}
+.cx-card.cx-manage{border-color:var(--gold)}
+.cx-card.cx-right{border-color:var(--mint)}
+.cx-card.cx-wrong{border-color:var(--bad)}
+.cx-card.cx-noted{border-color:var(--line)}
+
+.cx-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.cx-title{font-weight:900;font-size:14px;color:var(--ink)}
+.cx-sev{font-size:10.5px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:var(--bad)}
+.cx-card.cx-manage .cx-sev{color:#8a6415}
+
+.cx-cue{margin:6px 0 4px;font-size:13px;font-weight:700;color:var(--ink)}
+.cx-why{margin:4px 0 6px;font-size:12px;color:var(--ink-soft)}
+.cx-consequence{margin:4px 0 6px;font-size:12.5px;font-weight:800;color:#9c3552}
+
+.cx-options{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.cx-opt{
+  font-family:inherit;font-size:12.5px;font-weight:800;color:var(--ink);text-align:left;
+  border:2px solid var(--line);background:#fff;border-radius:12px;padding:8px 10px;cursor:pointer;
+}
+.cx-opt:hover{border-color:var(--plum);background:#faf7ff}
+.cx-opt:disabled{opacity:.5;cursor:default}
+.cx-dismiss{margin-top:6px;text-align:center;border-color:var(--plum)}
+
+/* the recap block, on the draw-complete screen */
+.cx-summary{border:2px solid var(--line);border-radius:14px;padding:10px 12px;margin:10px 0;background:#fff}
+.cx-summary ul{margin:6px 0 8px;padding-left:16px;font-size:12.5px}
+.cx-summary li{margin:3px 0}
+.cx-row.ok{color:#186a48}
+.cx-row.bad{color:#9c3552}
+.cx-t{color:var(--ink-soft);font-size:11px;margin-left:6px}
+.cx-metrics{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;color:var(--ink-soft)}
+
+/* =========================================================================
+   SPECIMEN RECEIVING — what the laboratory did with the tubes
+   ========================================================================= */
+.lab-receiving{border:2px solid var(--line);border-radius:16px;padding:12px 14px;margin:10px 0;background:#fff;box-shadow:var(--shadow)}
+.lab-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.lab-title{font-weight:900;font-size:14px;color:var(--ink)}
+.lab-score{font-weight:900;font-size:13px;color:var(--plum)}
+.lab-list{list-style:none;margin:8px 0 0;padding:0}
+.lab-row{display:grid;grid-template-columns:auto auto auto;gap:2px 10px;align-items:baseline;
+  border-top:1px solid var(--line);padding:7px 0;font-size:12.5px}
+.lab-row:first-child{border-top:none}
+.lab-tube{font-weight:900;color:var(--ink)}
+.lab-verdict{font-weight:900;font-size:11.5px}
+.lab-fill{font-size:11.5px;color:var(--ink-soft);text-align:right}
+.lab-why{grid-column:1 / -1;font-size:11.5px;color:var(--ink-soft)}
+.lab-accepted .lab-verdict{color:#186a48}
+.lab-flagged .lab-verdict{color:#8a6415}
+.lab-rejected .lab-verdict{color:#9c3552}
+
+/* reduced motion: the alert still arrives, it just does not slide */
+body[data-reduced="on"] .cx-card{animation:none}

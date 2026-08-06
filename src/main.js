@@ -68,6 +68,9 @@ import {
   isInversionActive, renderInversion,
   inversionPointerDown, inversionPointerMove, inversionPointerUp, inversionPointerCancel,
 } from "./venipuncture/inversion/inversionRuntime.js";
+// The one branch that is not a step: it runs across all of them, ticked here
+// because the composition root owns the frame. See complicationRuntime.js.
+import { tickComplications } from "./venipuncture/complications/complicationRuntime.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -255,6 +258,10 @@ function animate(){
   const t=clock.getElapsedTime();
   const dt=Math.min(0.05, t-(animate._last||t)); animate._last=t;
 
+  // The patient's body carries on regardless of which screen is up, so the
+  // complication watch is ticked before any of the early returns below.
+  tickComplications(dt);
+
   // While the learner is working a close-up — the supply cart, or the
   // patient's arm — the canvas shows that instead of the room. Same renderer,
   // different scene, so there is only ever one WebGL context.
@@ -427,6 +434,62 @@ function installTestSeam(){
       if(s) s.patient = ENC.p;
       return true;
     },
+    /* ---------------------------------------------------------------------
+       COMPLICATIONS. The watcher is the one branch with no screen of its own,
+       so the seam exposes what it is watching, lets a test start one without
+       having to physically produce it first, and reports what the arm looks
+       like as a result — which is the only way to assert that a consequence
+       reached the 3D limb rather than only the report.
+       --------------------------------------------------------------------- */
+    async complicationSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const c = ENC && ENC.collect;
+      const s = c && c.complications;
+      if(!s) return null;
+      const { evaluateComplications } = await import("./venipuncture/complications/complicationRules.js");
+      const { measureComplications } = await import("./venipuncture/complications/complicationScoring.js");
+      const r = evaluateComplications(s);
+      const m = measureComplications(s);
+      return {
+        active: s.order.slice(),
+        resolved: s.resolved.slice(),
+        condition: Object.assign({}, s.condition),
+        fainted: s.fainted,
+        harm: Math.round(s.harm*100)/100,
+        halted: c.complicationHalt ? c.complicationHalt.id : null,
+        pending: r.pending.map(p=>p.id),
+        measurements: { total: m.total, managedCount: m.managedCount,
+          worsenedCount: m.worsenedCount, missedCount: m.missedCount,
+          hematomaMl: m.hematomaMl, score: m.score },
+        // whether the arm on screen is actually showing it
+        armShowsBruise: !!(window.__phlebArm && window.__phlebArm.bruise
+          && window.__phlebArm.bruise.group.visible),
+      };
+    },
+    /** Starts one deliberately, so a test can assert the response, not the cause. */
+    async triggerComplication(id){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.complications;
+      if(!s) return false;
+      const { onset } = await import("./venipuncture/complications/complicationState.js");
+      onset(s, id, null, Date.now());
+      return true;
+    },
+    /** The tubes as the laboratory receives them. */
+    async specimenSnapshot(){
+      const { ENC } = await import("./game/gameState.js");
+      const c = ENC && ENC.collect;
+      if(!c) return null;
+      const { assessSpecimens } = await import("./venipuncture/specimen/specimenQuality.js");
+      const q = c.specimenQuality || assessSpecimens(c, { orders: ENC.p ? ENC.p.orders : [] });
+      return {
+        score: q.score, total: q.total, accepted: q.acceptedCount,
+        flagged: q.flaggedCount, rejected: q.rejectedCount,
+        redrawRequired: q.redrawRequired, lostTests: q.lostTests,
+        tubes: q.tubes.map(t=>({ key:t.key, verdict:t.verdict, fill:t.fillFraction, why:t.headline })),
+      };
+    },
+
     /** Which procedure the current draw actually is, and the arm it built. */
     async procedureSnapshot(){
       const { ENC } = await import("./game/gameState.js");

@@ -13,6 +13,8 @@
 import { LAST } from "../config.js";
 import { pick } from "../utils.js";
 import { SS, saveSS, guided, reveal } from "../game/gameState.js";
+import { difficultyLevel } from "../game/saveSystem.js";
+import { createComplicationState } from "./complications/complicationState.js";
 import { VP_TIPS } from "./questions.js";
 import { evaluateIntroduction } from "./introduction/introductionRules.js";
 import {
@@ -236,6 +238,29 @@ export function ensureSupplySession(c){
  * on the SAME limb — the vein the band raised is the vein that gets palpated,
  * cleaned and punctured.
  */
+/**
+ * What has gone wrong with this patient, created once per encounter.
+ *
+ * It has to exist before the arm does, because the arm is built holding a
+ * live reference to its `condition` — that is what lets a hematoma raised
+ * during the stick still be on the limb three scenes later.
+ */
+export function ensureComplicationSession(c){
+  if(c.complications){
+    if(c.encounter && !c.encounter.complications) c.encounter.complications = c.complications;
+    return c.complications;
+  }
+  c.complications = createComplicationState({
+    patient: c.patient || {},
+    procedureId: c.procedureId || null,
+    // The same 0–4 ladder the rest of the game runs on: a busier shift is a
+    // shift where more bodies react, not one with a bigger multiplier.
+    difficulty: difficultyLevel(),
+  });
+  if(c.encounter) c.encounter.complications = c.complications;
+  return c.complications;
+}
+
 export function ensureArmSession(c){
   if(c.arm) return c.arm;
   const p = c.patient || {};
@@ -250,12 +275,19 @@ export function ensureArmSession(c){
   c.procedureId = procedureId;
   c.procedure = procedure;
 
+  const complications = ensureComplicationSession(c);
+
   c.arm = {
     skin: a.skin,
     shirt: p.shirt,
     build: a.width || 1,
     armSide: chosen.side,
     scenarioKeys: chosen.keys,
+    // A LIVE reference, not a copy: every scene built from here on shows
+    // whatever state this arm is currently in, including the damage done to
+    // it in an earlier step. See armMesh.js's `condition` note.
+    condition: complications.condition,
+    conditionSite: { x: procedure.siteX, z: 0 },
     // a dehydrated patient's veins fill less well however good the technique
     vigour: chosen.keys.indexOf("dry") >= 0 ? 0.72 : 1,
     // the tourniquet's own target window, in this procedure's terms
