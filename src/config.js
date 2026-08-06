@@ -332,7 +332,10 @@ export const DRAW_EVENTS=[
 ];
 
 /* ---------- economy / progression data ------------------------------------ */
-export const BADGE_NAMES = {"first-shift":"🩺 First Shift","perfect":"🌟 Perfect Encounter","order-master":"🔢 Order Master","safety-star":"🛡️ Safety Star","shift-done":"✅ Shift Complete","trainee":"🎓 Trainee"};
+export const BADGE_NAMES = {"first-shift":"🩺 First Shift","perfect":"🌟 Perfect Encounter","order-master":"🔢 Order Master","safety-star":"🛡️ Safety Star","shift-done":"✅ Shift Complete","trainee":"🎓 Trainee",
+  // Phase 4: earned for the skills the new equipment and the complication
+  // branch make possible, not for buying anything.
+  "quick-eyes":"👁️ Quick Eyes","clean-lab":"🧫 Clean Delivery","winged":"🦋 Winged Set","gentle-hands":"🪶 Gentle Hands"};
 export const DIFF_NAMES = ["Calm","Steady","Busy","Hectic","Expert"];
 
 export const UPGRADES=[
@@ -351,12 +354,25 @@ export const UPGRADES=[
   {id:"officeLease",icon:"🧱",name:"Bigger Office Lease",cost:150,desc:"Expands the tiny box office into a tidier clinic room with more wall space.",bonus:"cosmetic",kind:"office"},
   {id:"gallery",icon:"🎨",name:"Cozy Wall Gallery",cost:180,desc:"Adds a small set of friendly art pieces across the expanded wall.",bonus:"comfort",kind:"wall"},
   {id:"labSuite",icon:"🏥",name:"Cozy Lab Suite",cost:275,desc:"Moves you into a larger, warmer professional lab layout.",bonus:"cosmetic",kind:"office"},
-  {id:"dreamRenovation",icon:"✨",name:"Dream Clinic Renovation",cost:450,desc:"Final roomy clinic shell with polished trim and lots of future decor space.",bonus:"cosmetic",kind:"office"}
+  {id:"dreamRenovation",icon:"✨",name:"Dream Clinic Renovation",cost:450,desc:"Final roomy clinic shell with polished trim and lots of future decor space.",bonus:"cosmetic",kind:"office"},
+
+  /* ---------- equipment: upgrades that change what you can DO --------------
+     Everything above this line is the room. These four are the kit, and each
+     one unlocks a real tool with a real effect on the draw rather than a
+     coin bonus: a device you may choose, veins you can genuinely see, a vein
+     that fills better because it was warmed, and tubes a small vein can
+     actually fill. They are deliberately mid-priced — reachable in a few
+     shifts, because a learner who cannot practise a winged draw cannot learn
+     one. */
+  {id:"butterflyKit",icon:"🦋",name:"Winged Set Kit",cost:110,desc:"Stocks 23G butterfly sets, so you choose the device for each patient instead of taking whatever the arm dictates.",bonus:"equipment",kind:"equipment"},
+  {id:"veinFinder",icon:"🔦",name:"Vein Transilluminator",cost:140,desc:"A cold light that shows deep veins through the skin. It finds them; your fingers still have to confirm them.",bonus:"equipment",kind:"equipment"},
+  {id:"warmingPack",icon:"♨️",name:"Site Warming Pack",cost:85,desc:"Warms the site before the band goes on. Flat, uncooperative veins fill noticeably better.",bonus:"equipment",kind:"equipment"},
+  {id:"pediatricKit",icon:"🧸",name:"Paediatric Tube Kit",cost:165,desc:"Low-volume tubes whose vacuum a small or fragile vein can actually supply, so it stops collapsing against the bevel.",bonus:"equipment",kind:"equipment"}
 ];
 export const ROOM_LEVELS=[
   {min:0,name:"Bare Box Office"},{min:3,name:"Tidy Clinic"},{min:7,name:"Cozy Draw Room"},{min:11,name:"Tiny Pro Lab"},{min:14,name:"Dream Clinic"}
 ];
-export const UPGRADE_TAG={plant:"Decor",poster:"Decor",basket:"Organization",lamp:"Cozy",sunprint:"Decor",chair:"Comfort",plush:"Comfort",veinchart:"Safety",certificate:"Safety",shelf:"Organization",rug:"Cozy",aquarium:"Cozy",officeLease:"Upgrade",gallery:"Decor",labSuite:"Upgrade",dreamRenovation:"Upgrade"};
+export const UPGRADE_TAG={butterflyKit:"Equipment",veinFinder:"Equipment",warmingPack:"Equipment",pediatricKit:"Equipment",plant:"Decor",poster:"Decor",basket:"Organization",lamp:"Cozy",sunprint:"Decor",chair:"Comfort",plush:"Comfort",veinchart:"Safety",certificate:"Safety",shelf:"Organization",rug:"Cozy",aquarium:"Cozy",officeLease:"Upgrade",gallery:"Decor",labSuite:"Upgrade",dreamRenovation:"Upgrade"};
 
 /* movable floor decor: grid placement system */
 export const GRID_COLS=5, GRID_ROWS=7;
@@ -420,7 +436,19 @@ export const STICKERS=[
   {id:"coldchain",emoji:"🧊", name:"Cold Chain", blurb:"Chilled specimens kept on ice, just as the analyte needs.", match:(p)=>p.handling==="chilled"},
   {id:"shielded", emoji:"🌙", name:"Light-Shielded", blurb:"Light-sensitive specimens protected from photodegradation.", match:(p)=>p.handling==="light"},
   {id:"steady",   emoji:"🩹", name:"Steady Hands", special:true, blurb:"Draw complications you recognized and handled safely.", match:(p,s,pct,enc)=>!!p.drawEvent && !!(enc&&enc.drawChoice)},
-  {id:"sharpeye", emoji:"🔎", name:"Sharp Eyes", blurb:"Requisition errors you caught before a single tube was drawn.", match:(p,s)=>!!p.reqIssue && !!s.requisition}
+  {id:"sharpeye", emoji:"🔎", name:"Sharp Eyes", blurb:"Requisition errors you caught before a single tube was drawn.", match:(p,s)=>!!p.reqIssue && !!s.requisition},
+  /* Phase 4: the collectibles for the two things Phase 3b made possible —
+     seeing a complication coming, and delivering specimens a laboratory can
+     actually run. Both read the draw's own measurements, so neither can be
+     earned by an encounter that never got that far. */
+  {id:"quickeyes", emoji:"👁️", name:"Quick Eyes", special:true, blurb:"Complications you spotted and answered correctly — every one of them.",
+     match:(p,s,pct,enc)=>{ const m=enc&&enc.collect&&enc.collect.complicationMeasurements; return !!m && m.total>0 && m.missedCount===0 && m.worsenedCount===0; }},
+  {id:"cleanlab",  emoji:"🧫", name:"Clean Deliveries", blurb:"Draws where every tube was accepted at receiving, no comments, no redraws.",
+     match:(p,s,pct,enc)=>{ const q=enc&&enc.collect&&enc.collect.specimenQuality; return !!q && q.total>0 && q.rejectedCount===0 && q.flaggedCount===0; }},
+  {id:"winged",    emoji:"🦋", name:"Winged Draws", blurb:"Dorsal hand draws with a butterfly set — a different procedure, not a smaller needle.",
+     match:(p,s,pct,enc)=>!!(enc&&enc.collect&&enc.collect.procedureId==="butterfly-hand")},
+  {id:"gentle",    emoji:"🪶", name:"Gentle Hands", blurb:"Draws that left no bruise at all: nothing into the tissue, no hematoma.",
+     match:(p,s,pct,enc)=>{ const m=enc&&enc.collect&&enc.collect.complicationMeasurements; return !!m && m.hematomaGrade==="none" && !!(enc.collect.postDrawMeasurements); }}
 ];
 
 /* ---------- misc shared constants ------------------------------------------ */

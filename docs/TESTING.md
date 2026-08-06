@@ -4,9 +4,22 @@ Three layers, fastest-to-slowest:
 
 | Layer | Command | What it covers |
 |---|---|---|
-| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, and every converted step's rule + scoring + technique layer (`staging/`, `tourniquet/`, `palpation/`, `cleaning/`, `assembly/`, `insert/`). No browser, no DOM — runs on Node's built-in test runner. |
+| Unit tests | `npm test` | Pure logic: `venipuncture/clinicalRules.js`, `venipuncture/procedureState.js`, every converted step's rule + scoring + technique layer (`staging/`, `tourniquet/`, `palpation/`, `cleaning/`, `assembly/`, `insert/`, …), the draw-scoped `complications/` and `specimen/` layers, and the progression rules. No browser, no DOM — runs on Node's built-in test runner. |
 | Playwright tests | `npm run test:e2e` | The production build, served via `vite preview`, driven in a real Chromium instance. |
 | Full verification | `npm run verify` | Unit tests → build → Playwright, in order. Run this before merging any phase branch. |
+
+**Running the browser suite where Playwright did not install its own
+Chromium.** Some sandboxes and CI images ship a Chromium at a fixed path with
+a different build number, which Playwright refuses to launch. That is a
+property of the machine rather than of this project, so the path arrives as an
+environment variable instead of a committed config value:
+
+```bash
+PW_CHROMIUM_PATH=/opt/pw-browsers/chromium npm run test:e2e
+```
+
+Unset, the config is exactly what it always was and Playwright uses its own
+download.
 
 Playwright runs with `workers: 1`. Every test in this suite drives a live
 WebGL context, and two headless Chromium instances competing for the same
@@ -303,3 +316,58 @@ npm run dev
 
 Opens at `http://localhost:5173/` (or `.claude/launch.json`'s
 `phleblearn-vite` preview config, which pins port 5174).
+
+## Complications and specimen quality (`tests/complications.spec.js`, `tests/specimen.spec.js`)
+
+51 unit tests across the two Phase 3b layers, plus 7 browser tests.
+
+The complication tests are built around one property: **a complication is
+caused by measurements the other branches already record**, never scheduled.
+So each trigger test constructs a procedure state the way a step would leave
+it — a needle eleven seconds into the skin with no flash, a tip sheared 2.4 mm
+sideways during collection, an entry over the median nerve at nerve depth —
+and asserts that `detectOnsets()` finds exactly that one and nothing else.
+The two genuinely probabilistic bits (whether THIS patient jumps at an
+unannounced needle, and their own vasovagal threshold) are rolled once at
+state creation from an injectable `rng`, so a test hands in a number and knows
+what the patient will do.
+
+The response tests pin the asymmetry that makes the branch worth having:
+one careful adjustment is the CORRECT answer to a dry stick and a harmful one
+to a blown vein; an answer cannot be taken back; carrying on through a
+hematoma physically enlarges it and the millilitres show up on the arm; an
+unaddressed prodrome ends in an actual faint, and stopping prevents it.
+
+The specimen tests assert the thing no single step can: that haemolysis
+arrives from three separate branches at once (gauge shear under a full
+vacuum, a needle moved in the vein, shaking during mixing), that the fill
+fraction judged is the collection branch's own `requiredFraction()` rather
+than a second opinion, and that a rejection names the ordered tests the
+patient now has to be drawn again for.
+
+**The browser tests exist because two of these behaviours are not visible in
+the numbers at all**: that the alert arrives over whatever scene the learner
+is working in without stealing it, and that a wrong answer puts a bruise on
+the 3D limb (`armShowsBruise` reads the actual mesh's visibility, via the
+`window.__phlebArm` handle the test seam publishes).
+
+**One environment artifact, allowlisted deliberately**: the CDN-loaded GSAP,
+Lenis and Vanta scripts fail to load in a sandbox with no outbound network,
+and the app carrying on without them is the designed progressive-enhancement
+behaviour rather than a defect. `Failed to load resource` is therefore in the
+console allowlist for this suite.
+
+## Progression (`tests/progression.spec.js`)
+
+17 tests, and they exist to enforce one rule: **an equipment upgrade must move
+a number a branch already reads, not add a special case to it.** So the
+paediatric kit test asserts through `collapsesVein()` that a full-draw red top
+shuts a 2.6 mm vein and the same tube in paediatric stock does not; the
+warming pack test asserts it touches `vigour` and specifically NOT tube stock;
+the vein-finder test asserts the arm's geometry is byte-for-byte unchanged,
+which is why the rubric still grades whether the vein was actually felt.
+
+The difficulty tests assert that levels 0 and 1 are ordinary arms, that the
+keys difficulty adds are exactly keys `applyPatientVariation()` already
+understands, and that each one demonstrably changes the limb — a rolling vein
+really is more compliant, a small one really is narrower.

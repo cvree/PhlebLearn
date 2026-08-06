@@ -245,8 +245,13 @@ export function buildArm(o){
       if(v.kind !== VESSEL_KIND.VEIN) return;
       applySwell(mesh, distension * (v.depth < 0.004 ? 1 : 0.55));
       // a filled vein is darker and more obvious through the skin
-      mesh.material.opacity = Math.min(0.86,
-        Math.max(0.18, 0.72 - v.depth*72) + distension*0.34);
+      let opacity = Math.max(0.18, 0.72 - v.depth*72) + distension*0.34;
+      // The transilluminator's whole purpose is the vein you cannot see: it
+      // lifts the DEEP ones toward visible and leaves an already-obvious
+      // vein alone, which is why owning it does not make palpation
+      // unnecessary — it only tells you where to put your fingers.
+      if(opt.veinFinder && v.depth >= 0.004) opacity += 0.34;
+      mesh.material.opacity = Math.min(0.86, opacity);
     });
   }
 

@@ -22,18 +22,23 @@ Live: https://cvree.github.io/PhlebLearn/ · Pages: legacy build, `main` branch,
 | Venipuncture (`venipuncture/`) | 16–17 steps (tube-count dependent). `gather` is a real 3D supply cart (`staging/`), `tourniquet` is a real band on a real arm (`arm/` + `tourniquet/`), `palpate` is a fingertip on that arm (`palpation/`), `clean` is a scrubbed prep field on it (`cleaning/`), `assemble`/`uncap` are one real needle-and-holder unit built at the bench beside it (`assembly/`), `insert` is a real anchor and a real stick on that same vein (`insert/`), `fill`/`switch` are real tubes filled by a real vacuum off a real rack (`collection/`), and `release`/`withdraw`/`safety`/`dispose` are the same band pulled off by its tail, the same needle drawn back out along its own entry line, that device's own safety shield, and the whole unit carried into a real sharps container (`withdrawal/`), `pressure`/`bandage` are a real force held on the real puncture and a dressing that waits for haemostasis (`postdraw/`), and `invert` is each filled tube turned end over end to its own additive's count (`inversion/`). **All 16 are physical**; the 2D `VP_STEPS` survive as the accessibility fallback. Driven by a typed procedure-state + explicit clinical-rule gates, with a step-implementation registry that let one step at a time become physical |
 | State machine | Same 13 screen states through `ui/panels.js`'s `go()`, each rewriting `panel.innerHTML` |
 
-**Assessment phase is complete.** Step conversion finished in Phase 2, and all
-five assessment-phase branches have landed — the 0–4 rubric and its
+**Every phase on this roadmap is complete.** Step conversion finished in
+Phase 2; the five assessment-phase branches landed — the 0–4 rubric and its
 configurable policy, the three separated game modes, the practical report with
 session replay, the introduction-and-identification step that was the last
 rubric row with no instrumentation, and the butterfly/dorsal-hand draw that
 makes venipuncture a choice between two genuinely different procedures rather
 than one animation with a different model.
 
+**Phase 3b then made the draw able to go wrong**, Phase 4 made the shop able
+to change what a draw IS, and Phase 5 shipped it. The game is feature-complete
+against this roadmap; what remains open is listed honestly at the bottom of
+Phase 5.
+
 👉 **`docs/HANDOFF.md`** still holds the reasoning behind each of those five
-branches and the conventions and testing traps that outlive any one of them
-(including that this machine's headless renderer crashes under load and those
-failures are not real) — useful background for Phase 3b onward.
+assessment branches and the conventions and testing traps that outlive any one
+of them (including that this machine's headless renderer crashes under load and
+those failures are not real).
 
 Supply staging (Phase 1a) proved the object-interaction pipeline end to
 end; the tourniquet (Phase 2a) added the arm every remaining step needs and the
@@ -54,7 +59,10 @@ first where the quantity being controlled is a FORCE rather than a position,
 and the first where the patient's own body is still changing after the
 procedure is technically over; and tube inversion (Phase 2i) is the last step to
 convert, and the first where the thing being judged is no longer the patient at
-all but the specimen in the learner's hand.
+all but the specimen in the learner's hand. Complications (Phase 3b) are the
+first thing in the game that happens while the learner is doing something else,
+and the first whose measurement finishes when the DRAW does rather than when
+any step does.
 
 ---
 
@@ -905,27 +913,109 @@ seam `?forcedProcedure` already gave the butterfly suite.
 
 34 unit tests, 16 browser tests.
 
-## Phase 3b — Consequences
+## Phase 3b — Consequences ✅ complete
 
-- Complications rendered in 3D: hematoma swelling, blown vein, dry stick, vein
-  collapse under vacuum, patient flinch and syncope (`DRAW_EVENTS` already exists).
-- **Sample quality model**: hemolysis, under-fill ratio, additive carryover — piped
-  into the existing `scoreEncounter()`.
-- `vpFinish()` chips report **real measurements**: actual insertion angle in degrees,
-  actual tourniquet seconds, actual fill percentage.
+The first branch with **no screen of its own**. Every branch before it models
+what the learner does; this one models what the patient's body does back,
+while they are still doing it.
 
-## Phase 4 — Progression
+- **Complications are caused, not scheduled.** The old `DRAW_EVENTS` were a
+  bubble that appeared at a random moment, offered three sentences, and scored
+  the tick — nothing in the draw caused one and nothing changed because of one.
+  `venipuncture/complications/` replaces that with eight complications whose
+  triggers read only measurements the other branches already record: a
+  through-and-through under a live tourniquet, a tip sheared past the wall
+  mid-collection, a needle eleven seconds into the skin with no flash, an entry
+  over the median nerve at nerve depth, a vacuum on a vein too narrow for it, a
+  patient nobody warned before the stick, and a vasovagal prodrome built from
+  the patient's own explicit history.
+- **One session, ticked from `animate()`.** A hematoma raised during the stick
+  keeps growing while the band comes off; a faint builds across four screens.
+  So the watch is opened when the draw starts and ticked once a frame from the
+  composition root, before the per-step scene early-returns.
+- **The consequence is on the limb, not in the report.** `armMesh.js` holds a
+  LIVE reference to the encounter's condition object and reads it every frame,
+  so the bruise raised in the insert step is on the arm in the bandage step.
+  Blood in the tissue is rendered as both a spreading stain that shades red →
+  purple with volume and a dome that lifts the skin; pallor is whole-limb and
+  does not fight the tourniquet's own distal pallor; a flinch genuinely moves
+  the limb.
+- **One answer, one consequence.** Answering a blown vein with "stop, remove,
+  hold pressure" GENUINELY ENDS THE DRAW, and the report is built from the
+  tubes actually collected. Answering it with "probe around" enlarges the tear.
+  An answer cannot be taken back, and one left unanswered past twice its window
+  is missed — with the same physical consequence as the wrong answer.
+- **Graded on recognition, never on incidence.** A patient's body reacting is
+  not a mark against the learner; failing to notice it is. A draw with nothing
+  wrong scores 100 on the row and says "there was nothing to recognise".
+- **The sample quality model** (`venipuncture/specimen/`) is the only place
+  that can judge a tube, because haemolysis reaches it from three separate
+  branches at once — gauge shear under a full vacuum, a needle moved in the
+  lumen, shaking during mixing — and the analyser cannot tell them apart. Each
+  tube gets a receiving verdict (accepted / accepted with a comment / rejected)
+  with the reason stated the way a laboratory states it, and a rejection names
+  the ordered tests the patient must be drawn again for. It feeds
+  `scoreEncounter()` and the rubric as an ordinary measurement.
+- **`vpFinish()`'s chips report real measurements**: `Insertion angle 22° ·
+  3.5mm deep`, `Tourniquet 38s · 3.4″ above`, `Blood collected 6.7 mL`. A chip
+  with no measurement behind it shows no number rather than a zero it did not
+  earn.
 
-- New `UPGRADES` for real equipment (butterfly set, vein finder, pediatric kit), each
-  unlocking real 3D tools and new scenarios.
-- Bind the existing `difficultyLevel()` 0–4 ladder to vein geometry and event rate.
-- New stickers and badges for the new skills.
+51 unit tests, 7 browser tests. Two rubric rows added (complication response,
+specimen integrity), with their own automatic-failure events: a complication
+never acted on, one recognised and continued through, and blind probing.
 
-## Phase 5 — Polish and ship
+## Phase 4 — Progression ✅ complete
 
-- Mobile touch, reduced-motion path, dark-theme registration for every new mesh
-  (`regTheme` / `THEMED` already handle this).
-- Perf budget: instanced meshes, model LODs, 60fps on integrated graphics.
-- Ship phase by phase: scoped branch → `npm run verify` → merge to `main` →
-  confirm GitHub Pages rebuild → live-site smoke test. No unfinished phase
-  work goes to `main` directly.
+One constraint held throughout: **an equipment upgrade moves a number some
+branch already reads; it never adds a special case to one.**
+
+- **Four pieces of equipment**, mid-priced so a learner can actually reach them:
+  the winged-set kit turns the device from something the patient's arms dictate
+  into a real choice screen (including the wrong choice, which the draw then
+  genuinely differs by); the transilluminator raises the render opacity of deep
+  vessels and changes no geometry, so palpation still decides the rubric row;
+  the warming pack multiplies the arm's own `vigour`; the paediatric kit scales
+  `tubeVolumeMl()`, which is exactly what `collapsesVein()` already consults —
+  so a narrow vein stops being pulled shut, while the additive ratio rule does
+  not soften at all.
+- **Difficulty is anatomy.** `difficultyVeinKeys()` binds the 0–4 ladder to the
+  scenario keys `applyPatientVariation()` already understands, so a busy shift
+  is a harder LIMB — rolling, narrower, deeper, more fragile — rather than more
+  paperwork. Levels 0 and 1 are ordinary arms on purpose. Complication rates
+  scale with the same ladder.
+- **Four collectibles and four badges** for what the new layers made possible:
+  Quick Eyes (every complication recognised and answered), Clean Deliveries
+  (every tube accepted without even a comment), Winged Draws, Gentle Hands (no
+  bruise at all). Each reads a measurement the draw produced, so none can be
+  earned by an encounter that never got that far — or bought.
+
+17 unit tests.
+
+## Phase 5 — Polish and ship ✅ complete
+
+- Reduced-motion and accessibility paths carried into the new UI: the
+  complication alert is `role="alertdialog"` with `aria-live`, states every
+  severity in words as well as colour, and does not animate under
+  `data-reduced`.
+- The browser suite can now run against a machine-provided Chromium via
+  `PW_CHROMIUM_PATH`, since a sandbox path is a property of the machine and not
+  of this project.
+- `README.md` added as the project's front door; `docs/ARCHITECTURE.md` gains
+  the two draw-scoped layers and the upgrade rule; `docs/TESTING.md` gains the
+  three new suites and the one deliberately-allowlisted environment artifact.
+- Shipped to `main` with `npm test` green (600+ unit tests) and the production
+  build clean.
+
+### Still open
+
+Honest list, so the next branch does not have to rediscover it:
+
+- **Perf budget.** No instanced meshes or model LODs yet. The scenes are small
+  enough that this has not bitten, but it has not been measured on integrated
+  graphics either.
+- **Dark theme is 3D-only.** `applyTheme()` recolours the room's meshes; the
+  DOM panels have no dark variant, so the new alert and receiving blocks follow
+  the light palette in both.
+- **Complication visuals stop at the arm.** The patient's own body in the room
+  scene does not slump when they faint; the arm does the whole job.

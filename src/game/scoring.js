@@ -149,6 +149,13 @@ export function scoreEncounter(){
   addCoins(pay.total);
   SHIFT.coins=(SHIFT.coins||0)+pay.total;
   if(pct===100){addXP(20);awardBadge("perfect");}
+  // Phase 4 badges: earned for what the draw actually did, not for what was
+  // bought. Each reads a measurement the draw produced, so none is reachable
+  // by an encounter that never got that far.
+  if(cx && cx.total>0 && cx.missedCount===0 && cx.worsenedCount===0){ addXP(15); awardBadge("quick-eyes"); }
+  if(sq && sq.total>=2 && sq.rejectedCount===0 && sq.flaggedCount===0){ addXP(15); awardBadge("clean-lab"); }
+  if(ENC.collect && ENC.collect.procedureId==="butterfly-hand"){ awardBadge("winged"); }
+  if(cx && cx.hematomaGrade==="none" && ENC.collect && ENC.collect.postDrawMeasurements){ awardBadge("gentle-hands"); }
   if(!s.orderOfDraw)SHIFT.orderAllOk=false;
   if(!s.safety)SHIFT.safetyAllOk=false;
   SHIFT.ratings.push(pct);

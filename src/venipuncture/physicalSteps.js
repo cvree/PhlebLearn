@@ -14,6 +14,9 @@ import { LAST } from "../config.js";
 import { pick } from "../utils.js";
 import { SS, saveSS, guided, reveal } from "../game/gameState.js";
 import { difficultyLevel } from "../game/saveSystem.js";
+import {
+  vigourBonus, tubeVolumeScale, hasVeinFinder, canChooseProcedure, equipmentInEffect,
+} from "../game/progression.js";
 import { createComplicationState } from "./complications/complicationState.js";
 import { VP_TIPS } from "./questions.js";
 import { evaluateIntroduction } from "./introduction/introductionRules.js";
@@ -24,7 +27,7 @@ import {
 import { measureIntroduction, applyIntroductionOutcome } from "./introduction/introductionScoring.js";
 import { renderIntroductionCoach } from "./introduction/introductionCoach.js";
 import { getRenderer } from "../rendering/renderer.js";
-import { drawArmFor } from "../game/encounter.js";
+import { drawArmFor, difficultyVeinKeys } from "../game/encounter.js";
 import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
 import { createStagingState, setHandedness, placeItem, inspectItem, HAND, ZONE } from "./staging/stagingState.js";
 import { createLayout, orientationForAspect, applyTrayOffset } from "./staging/stagingLayout.js";
@@ -270,7 +273,11 @@ export function ensureArmSession(c){
   // encounter — everything from here on reads it rather than re-deciding.
   // `c.forcedProcedure` is the test-seam override; real play always derives
   // it from the arms this patient actually has.
-  const procedureId = c.forcedProcedure || indicatedProcedure(p);
+  // Which draw this is. The test seam's override wins; then the learner's own
+  // choice, which only exists once the winged-set kit is stocked; and
+  // otherwise whatever this patient's arms actually indicate.
+  const procedureId = c.forcedProcedure || c.chosenProcedure || indicatedProcedure(p);
+  c.indicatedProcedure = indicatedProcedure(p);
   const procedure = procedureFor(procedureId);
   c.procedureId = procedureId;
   c.procedure = procedure;
@@ -288,8 +295,13 @@ export function ensureArmSession(c){
     // it in an earlier step. See armMesh.js's `condition` note.
     condition: complications.condition,
     conditionSite: { x: procedure.siteX, z: 0 },
-    // a dehydrated patient's veins fill less well however good the technique
-    vigour: chosen.keys.indexOf("dry") >= 0 ? 0.72 : 1,
+    // A dehydrated patient's veins fill less well however good the technique
+    // — and a site that was warmed first fills better, which is the whole
+    // point of owning the pack.
+    vigour: Math.min(1.2, (chosen.keys.indexOf("dry") >= 0 ? 0.72 : 1) * vigourBonus()),
+    // The transilluminator does not palpate for the learner; it makes deep
+    // veins visible, and `feltChosen` still decides the rubric row.
+    veinFinder: hasVeinFinder(),
     // the tourniquet's own target window, in this procedure's terms
     site: {
       x: procedure.siteX, ideal: procedure.bandIdealM, acceptable: procedure.bandAcceptableM,
@@ -304,10 +316,16 @@ export function ensureArmSession(c){
   // the procedure: a butterfly draw palpates, cleans and sticks the dorsal
   // hand network, not the antecubital fossa.
   const rawVessels = procedure.siteKind === SITE_KIND.HAND ? buildHandVessels() : buildVessels();
+  // A busier shift is a harder LIMB, not a bigger multiplier: the difficulty
+  // ladder adds real anatomy keys — rolling, small, deep, fragile — that the
+  // variation function already understands. See encounter.js.
+  const hardKeys = c.difficultyKeys || (c.difficultyKeys = difficultyVeinKeys(difficultyLevel()));
+  c.arm.scenarioKeys = chosen.keys.concat(hardKeys);
   c.armVessels = applyPatientVariation(
     mirrorForArm(rawVessels, c.arm.armSide),
     { build: c.arm.build, scenarioKeys: c.arm.scenarioKeys, vigour: c.arm.vigour }
   );
+  c.equipment = equipmentInEffect();
   return c.arm;
 }
 
@@ -461,6 +479,9 @@ export function ensureCollectionSession(c){
     vessel,
     gauge: unit.gauge,
     vigour: arm.vigour,
+    // Paediatric stock, if the learner owns it: a smaller vacuum a narrow
+    // vein can actually supply, rather than a smaller number on a report.
+    volumeScale: tubeVolumeScale(),
     // a stick that never landed in the vein is a stick nothing will flow
     // through — the tube step inherits that rather than starting afresh
     inVein: m ? !!m.inVein && !m.throughAndThrough : !!ins.flashAt,

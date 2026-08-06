@@ -36,6 +36,8 @@ export function createCollectionState(o){
     gauge: opt.gauge == null ? 21 : opt.gauge,
     vigour: opt.vigour == null ? 1 : opt.vigour,
     inVein: opt.inVein !== false,
+    /** which tube stock is on the cart — 1 standard, <1 paediatric */
+    volumeScale: opt.volumeScale == null ? 1 : opt.volumeScale,
 
     /** every tube that has been on the holder, by key */
     tubes: {},
@@ -76,10 +78,10 @@ export function recordEvent(state, type, data){
   return state;
 }
 
-function newTubeRecord(key, now){
+function newTubeRecord(key, now, scale){
   return {
     key,
-    volumeMl: tubeVolumeMl(key),
+    volumeMl: tubeVolumeMl(key, scale),
     drawnMl: 0,
     pierced: false,
     piercedAt: null,
@@ -124,14 +126,14 @@ export function takeTube(state, key, now){
   if(t && t.removedAt){
     if(!isRedrawable(t)) return state;
     state.tubesWasted += 1;
-    state.tubes[key] = newTubeRecord(key, now == null ? Date.now() : now);
+    state.tubes[key] = newTubeRecord(key, now == null ? Date.now() : now, state.volumeScale);
     state.currentKey = key;
     state.seatDepth = 0;
     state.takenSequence.push(key);
     recordEvent(state, "redrawTube", { key });
     return state;
   }
-  state.tubes[key] = t || newTubeRecord(key, now == null ? Date.now() : now);
+  state.tubes[key] = t || newTubeRecord(key, now == null ? Date.now() : now, state.volumeScale);
   state.currentKey = key;
   state.seatDepth = 0;
   state.takenSequence.push(key);
@@ -159,7 +161,7 @@ export function discardTube(state, now){
   if(!cur) return state;
   const key = cur.key;
   state.tubesWasted += 1;
-  state.tubes[key] = newTubeRecord(key, now == null ? Date.now() : now);
+  state.tubes[key] = newTubeRecord(key, now == null ? Date.now() : now, state.volumeScale);
   state.currentKey = key;
   state.seatDepth = 0;
   recordEvent(state, "discardTube", { key });
@@ -330,7 +332,7 @@ export function flow(state, dtS, tourniquetOn, now){
   });
   cur.drawnMl = Math.min(cur.volumeMl, cur.drawnMl + rate*Math.max(0, dtS || 0));
 
-  if(collapsesVein(state.vessel, cur.key) && cur.drawnMl >= cur.volumeMl*cur.collapseAllowance
+  if(collapsesVein(state.vessel, cur.key, state.volumeScale) && cur.drawnMl >= cur.volumeMl*cur.collapseAllowance
      && cur.drawnMl < cur.volumeMl){
     cur.collapsed = true;
     recordEvent(state, "collapsed", { key: cur.key, at: cur.drawnMl });

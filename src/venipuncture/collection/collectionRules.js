@@ -123,8 +123,18 @@ export const TUBE_VOLUME_ML = {
   gray:         4.0,
 };
 
-export function tubeVolumeMl(key){
-  return TUBE_VOLUME_ML[key] == null ? 4.0 : TUBE_VOLUME_ML[key];
+/**
+ * Nominal draw volume, scaled by whichever tube stock is on the cart.
+ *
+ * A paediatric tube is not "the same tube with less blood in it": its vacuum
+ * is smaller, so a small or fragile vein can actually supply it, and its
+ * additive is measured for that volume so the ratio rule still applies at the
+ * smaller fill. `scale` is 1 for standard stock and 0.45 for the paediatric
+ * kit — see progression.js's `tubeVolumeScale()`.
+ */
+export function tubeVolumeMl(key, scale){
+  const base = TUBE_VOLUME_ML[key] == null ? 4.0 : TUBE_VOLUME_ML[key];
+  return base * (scale == null ? 1 : scale);
 }
 
 /**
@@ -197,9 +207,9 @@ export function drawRateMlPerS(o){
  * wall shut. A full-draw tube on a narrow vein is the classic; the same tube
  * on a good median cubital is fine.
  */
-export function collapsesVein(vessel, tubeKey){
+export function collapsesVein(vessel, tubeKey, scale){
   if(!vessel) return false;
-  const vol = tubeVolumeMl(tubeKey);
+  const vol = tubeVolumeMl(tubeKey, scale);
   if(vol < 4.5) return false;
   return vessel.calibre < 0.0030;
 }

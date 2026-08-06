@@ -48,6 +48,61 @@ export function buyUpgrade(id){
   return {ok:true,upgrade:up};
 }
 
+/* =========================================================================
+   EQUIPMENT — the upgrades that change what the learner can DO.
+
+   Every other upgrade in the shop is the room: it changes how the clinic
+   looks and pays a coin bonus. These four change the draw itself, and each
+   one does it by moving a number some branch is ALREADY reading rather than
+   by adding a special case to it:
+
+     butterflyKit   the device stops being dictated by the patient's arms and
+                    becomes the learner's choice — including the wrong choice,
+                    which the report then has something to say about.
+     veinFinder     deep veins become visible through the skin. It does not
+                    palpate them for you: `feltChosen` is still what the
+                    rubric grades, so the light finds a vein and the fingers
+                    still have to confirm it.
+     warmingPack    raises the arm's own `vigour`, which is the number vein
+                    distension, fill rate and flash all already depend on.
+     pediatricKit   scales tube volume, which is what decides whether a
+                    vacuum pulls a narrow vein shut against the bevel.
+
+   Pure reads over SS. No THREE, no DOM.
+   ========================================================================= */
+
+/** Multiplier on the patient's own venous filling, from the warming pack. */
+export function vigourBonus(){
+  return hasUpgrade("warmingPack") ? 1.18 : 1;
+}
+
+/** Tube stock on the cart: 1 is standard, 0.45 the paediatric kit. */
+export function tubeVolumeScale(){
+  return hasUpgrade("pediatricKit") ? 0.45 : 1;
+}
+
+/** Whether the learner may pick the device rather than being handed one. */
+export function canChooseProcedure(){
+  return hasUpgrade("butterflyKit");
+}
+
+/** Whether deep veins are visible through the skin before they are felt. */
+export function hasVeinFinder(){
+  return hasUpgrade("veinFinder");
+}
+
+/** Everything the kit currently changes, as one object for the report. */
+export function equipmentInEffect(){
+  return {
+    butterflyKit: canChooseProcedure(),
+    veinFinder: hasVeinFinder(),
+    warmingPack: hasUpgrade("warmingPack"),
+    pediatricKit: hasUpgrade("pediatricKit"),
+    vigourBonus: vigourBonus(),
+    tubeVolumeScale: tubeVolumeScale(),
+  };
+}
+
 export function upgradeBonusForEncounter(p,s){
   let coins=0, notes=[];
   const comfortCase = (p.mood==="Nervous") || (p.event&&p.event.type==="respond"&&/scared|needles|pass out|faint|hurt|bruise/i.test((p.event.lines||[]).join(" ")));

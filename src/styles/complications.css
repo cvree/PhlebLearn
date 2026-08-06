@@ -76,3 +76,9 @@
 
 /* reduced motion: the alert still arrives, it just does not slide */
 body[data-reduced="on"] .cx-card{animation:none}
+
+/* =========================================================================
+   CHOOSING THE DEVICE — only shown once the winged-set kit is stocked
+   ========================================================================= */
+.proc-opt{display:block;width:100%;text-align:left;line-height:1.35}
+.proc-opt .proc-note{display:block;font-size:11.5px;font-weight:800;opacity:.75;margin-top:2px}

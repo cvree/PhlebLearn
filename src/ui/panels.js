@@ -25,7 +25,8 @@ import { renderPracticalReport, renderRubricSummary } from "./reportView.js";
 import { awardBadge, difficultyName, addXP, addCoins } from "../game/saveSystem.js";
 import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
-import { getRoomLevel } from "../game/progression.js";
+import { getRoomLevel, canChooseProcedure, hasUpgrade } from "../game/progression.js";
+import { PROCEDURE, PROCEDURES, indicatedProcedure } from "../venipuncture/procedure.js";
 import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint, clearHint } from "../game/dialogue.js";
 import { getScene } from "../rendering/scene.js";
 import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
@@ -90,6 +91,7 @@ function renderIdle(){
       <span class="pill">🎖️ ${SS.badges.length} badges</span>
       <span class="pill">📋 Shifts ${SS.shifts}</span>
       <span class="pill">🏠 ${getRoomLevel().name}</span>
+      ${equipmentPills()}
     </div>
     <button class="btn alt cta-pulse starborder" id="modeLearn">🎓 Learn (guided, ${SHIFT_LEN[MODES.LEARN]} patients)</button>
     <div class="mode-note">${line(MODES.LEARN)}</div>
@@ -104,6 +106,19 @@ function renderIdle(){
   $("modePractice").onclick=()=>{ sfx("win"); startShift(MODES.PRACTICE); };
   $("modeFinal").onclick=()=>{ sfx("win"); startShift(MODES.FINAL); };
 }
+/* The kit the learner owns, shown on the clock-in screen because it changes
+   what the next draw will be — a device choice, veins they can see, tubes a
+   small vein can fill. Decor is not listed here; decor changes the room. */
+function equipmentPills(){
+  const kit = [
+    ["butterflyKit", "🦋 Winged sets"],
+    ["veinFinder", "🔦 Vein finder"],
+    ["warmingPack", "♨️ Warming pack"],
+    ["pediatricKit", "🧸 Paediatric tubes"],
+  ].filter(([id]) => hasUpgrade(id));
+  return kit.map(([, label]) => `<span class="pill">${label}</span>`).join("");
+}
+
 function startShift(mode){
   setMode(mode);
   setShift({len:SHIFT_LEN[MODE]||1,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[]});
@@ -327,6 +342,11 @@ function renderCollect(){
   // was actually collected before it.
   if(c.complicationHalt){ return vpFinish(); }
   if(c.step>=c.steps.length){ return vpFinish(); }
+  // Owning the winged-set kit turns the device from something the patient's
+  // arms dictate into something the learner picks — including picking wrong.
+  if(canChooseProcedure() && !c.chosenProcedure && !c.forcedProcedure && c.step===0 && !c.arm){
+    return renderProcedureChoice(c);
+  }
   watchComplications(c);
   const id=c.steps[c.step];
   const info=VP_TIPS[id];
@@ -412,6 +432,49 @@ function renderSectionFeedback({ section, readings, done }){
     (c.repeatedSections = c.repeatedSections || []).push(section.id);
     renderCollect();
   };
+}
+
+/* ---------- choosing the device ----------------------------------------------
+   Only reachable once the winged-set kit is stocked. Before that the arm
+   decides, exactly as it always has — which is the honest default, because a
+   clinic that has no butterfly sets does not offer you one.
+
+   The choice is a real clinical judgement with a real consequence: a winged
+   set on a good antecubital vein is slower and wastes a more expensive
+   device; a 21G straight needle on a flat hand vein goes through it. Neither
+   is blocked. What the choice costs or earns turns up in the report, because
+   the rest of the draw is genuinely different afterwards.
+   ---------------------------------------------------------------------------- */
+function renderProcedureChoice(c){
+  const p = ENC.p;
+  const indicated = indicatedProcedure(p);
+  const opt = id => {
+    const d = PROCEDURES[id];
+    return `<button class="btn alt proc-opt" data-proc="${id}">
+      <b>${id === PROCEDURE.BUTTERFLY_HAND ? "🦋" : "💉"} ${d.label}</b>
+      <span class="proc-note">${d.gauge}G · entry ${d.angle.ideal.min}–${d.angle.ideal.max}° · ${d.short}</span>
+    </button>`;
+  };
+  panel.innerHTML=`
+    <h2>🧰 Choose your device</h2>
+    <p class="sub">You stock winged sets, so this is your call. Look at the patient before you answer: age, build, and what you were told about their veins.</p>
+    ${says(p.first, pEmoji(p), pick([
+      "Whatever's easiest for you.",
+      "People usually say my veins are tricky.",
+      "Last time they used a little one on my hand.",
+    ]), p.mood)}
+    ${opt(PROCEDURE.STRAIGHT_ANTECUBITAL)}
+    ${opt(PROCEDURE.BUTTERFLY_HAND)}
+    ${guided()?`<div class="lesson"><span class="lh">How to choose</span>A straight multisample needle in the antecubital fossa is first choice whenever there is a vein there that will take it — it is faster, cheaper and haemolyses less. A winged set on the back of the hand is for when there is not: flat or fragile veins, a small child, a fossa you cannot find anything in. It is a different procedure, not a smaller needle: 23G, a 5–15° entry over bone, tubing that transmits every tug to the tip.</div>`:""}`;
+  panel.querySelectorAll(".proc-opt").forEach(b=>{
+    b.onclick=()=>{
+      sfx("tap");
+      c.chosenProcedure = b.dataset.proc;
+      c.procedureChosenByLearner = true;
+      c.procedureMatchedIndication = (b.dataset.proc === indicated);
+      renderCollect();
+    };
+  });
 }
 
 /* ---------- complications ---------------------------------------------------

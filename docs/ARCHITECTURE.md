@@ -23,9 +23,11 @@ world/  (room, furniture, patient, tubeRack, sharpsBin, interactables)
         │
 venipuncture/  (procedureState, questions, clinicalRules, steps,
                accessibilityFallback = the driver, physicalSteps,
-               encounterState, and one directory per converted step:
+               encounterState, sections, one directory per converted step —
                staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
-               assembly/*, insert/*)
+               assembly/*, insert/*, collection/*, withdrawal/*, postdraw/*,
+               inversion/*, butterfly/* — the rubric/* grading layer, and
+               the two DRAW-scoped layers complications/* and specimen/*)
         │
 input/  (raycasting, cameraControls, pointerInput, touchInput)
         │
@@ -150,6 +152,55 @@ and rack rectangles together, clamped to the counter and pushed clear of the
 patient's arm. Items are not children of the tray mesh (their world positions
 stay authoritative), so a tray drag moves the group and every staged item, and
 the drop commits one offset to the layout, the state, and each item's position.
+
+## Two layers that belong to the DRAW, not to any step
+
+Every converted step directory has the same five-file shape and the same
+lifetime: it starts when its screen opens and stops when the learner moves
+on. Two things in this game cannot work that way, and both are documented at
+the top of their own modules:
+
+**`venipuncture/complications/`** is the patient's body answering back. A
+hematoma raised during the stick keeps growing while the band comes off; a
+vasovagal faint builds across four screens. So it is one session, created
+with the procedure state in `createProcedureState()`, and ticked once a frame
+from `main.js`'s `animate()` — before the per-step scene early-returns,
+because the body does not care which screen is up. It owns no scene of its
+own: what it writes is the arm's `condition` object, which `armMesh.js` holds
+a LIVE reference to and reads every frame in whichever scene is running. That
+one indirection is what makes damage done in one step visible on the limb in
+every step after it.
+
+Its alert layer is likewise not rendered into the current step's panel — a
+complication arrives while the learner's hands are busy, so
+`complicationCoach.js` owns one fixed overlay over `#app`, created on demand
+and removed when answered, the same way `ui/notifications.js`'s toast does.
+
+**`venipuncture/specimen/`** is the laboratory's verdict, and it can only
+exist once. Haemolysis reaches a tube from three different branches (gauge
+shear under a full vacuum, a needle moved in the lumen, shaking during
+mixing) and the analyser cannot tell them apart; the fill ratio comes from
+collection, the mixing counts from inversion, the hemoconcentration from the
+tourniquet's own seconds. No step can assemble that, so `assessSpecimens()`
+runs at the end of the draw over the states the steps left behind.
+
+`sections.js` names both in `DRAW_MEASUREMENTS`, so "is every graded
+measurement produced by something?" has an honest answer and Practice mode's
+per-section feedback knows not to look for them.
+
+## How an upgrade changes the draw
+
+`game/progression.js` holds the equipment rules, and they follow one
+constraint: **an equipment upgrade moves a number some branch already reads,
+it never adds a special case to one.** The winged-set kit turns the device
+from something the patient's arms dictate into a choice
+(`ensureArmSession()`'s `chosenProcedure`); the transilluminator raises the
+render opacity of deep vessels and nothing else, so palpation still decides
+the rubric row; the warming pack multiplies the arm's own `vigour`; the
+paediatric kit scales `tubeVolumeMl()`, which is what `collapsesVein()`
+already consults. `difficultyVeinKeys()` does the same for the 0–4 ladder: a
+harder shift is a harder LIMB, described in exactly the scenario keys
+`applyPatientVariation()` already understands.
 
 ## Application startup
 

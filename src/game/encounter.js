@@ -144,6 +144,35 @@ export function drawArmFor(p){
   return { side, keys: arms[side] && arms[side].key!=="clear" ? [arms[side].key] : [] };
 }
 
+/* =========================================================================
+   DIFFICULTY AS ANATOMY
+
+   The 0–4 ladder used to change only how OFTEN a complication or a flawed
+   requisition turned up. That makes a busy shift a shift with more paperwork,
+   which is not what makes phlebotomy hard. What actually makes it hard is the
+   arm: a vein that rolls under the needle, one that is 3 mm further down than
+   it looks, one narrow enough that a full-draw vacuum shuts it.
+
+   These keys are exactly the ones `applyPatientVariation()` already
+   understands, so a harder shift is a genuinely harder LIMB — deeper,
+   narrower, more compliant — and every measurement the learner takes on it
+   stays the same measurement. Nothing is scaled by a hidden multiplier.
+
+   The bands are cumulative and deliberately gentle at the bottom: level 0
+   and 1 are ordinary arms, because a learner meeting their first rolling
+   vein should have met a few straightforward ones first.
+   ========================================================================= */
+export function difficultyVeinKeys(dl, rng){
+  const level = dl == null ? 0 : Math.max(0, Math.min(4, dl));
+  const r = typeof rng === "function" ? rng : Math.random;
+  const keys = [];
+  if(level >= 2 && r() < 0.35 + level*0.06) keys.push("rolling");
+  if(level >= 3 && r() < 0.30 + level*0.05) keys.push("small");
+  if(level >= 3 && r() < 0.25 + level*0.05) keys.push("deep");
+  if(level >= 4 && r() < 0.22) keys.push("fragile");
+  return keys;
+}
+
 export function makePatient(){
   const first=pick(FIRST), last=pick(LAST);
   let decoyLast=pick(LAST); let g=0; while(decoyLast===last && g++<6) decoyLast=pick(LAST);
