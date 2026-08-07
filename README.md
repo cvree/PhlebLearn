@@ -55,6 +55,16 @@ Then the laboratory looks at what you sent. Each tube is accepted, accepted
 with a comment, or rejected, with the reason stated the way a lab states it —
 and a rejection names the tests the patient has to be drawn again for.
 
+## One patient, start to finish
+
+Greet them → read the requisition → assess the arms, if they need it → the
+draw → label the tubes and decide how they travel → answer whatever they
+asked you → the score.
+
+Identification, tube selection and order of draw are not questions you answer
+before the draw; they are things you do inside it, at the patient and at the
+cart. Nothing asks you twice.
+
 ## Three ways to work
 
 | Mode | What it tells you |

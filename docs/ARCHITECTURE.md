@@ -256,7 +256,34 @@ handles everything else, and a plain click-with-no-movement falls through to
 
 `ui/panels.js` is the screen-flow dispatcher: `go(state)` sets the game state
 and calls `render()`, which calls exactly one `renderXxx()` function per
-screen. This is intentionally the largest file in the app — "which screen
+screen. One patient is:
+
+```
+arrive → review (the requisition) → [site, only if this patient's arms
+pose a question] → collect (the draw) → label and route → [respond, only if
+they asked something] → score
+```
+
+**Three screens were removed once the physical steps made them redundant**,
+and this is the rule that decided it: *if the draw already makes the learner
+do the thing, the screen that asks them about it is deleted, and the score
+reads what they did instead.*
+
+| Was | Is |
+|---|---|
+| "Verify identity" multiple choice | the `introduce` step: two identifiers, from the patient's own mouth, before anything is touched — including the patient who answers with a nickname |
+| "Select the tubes" (tap a rack) | the supply cart: real packages, expiry dates on the back, a wrong tube that sits there until you remove it |
+| "Order of draw" (tap them in sequence) | the same cart's numbered rack, plus the order they actually came off the holder |
+
+`game/scoring.js`'s `deriveChoices()` is where that mapping lives — it fills
+in `ENC.idChoice`, `ENC.selected` and `ENC.ordered` from the introduction and
+staging measurements, so the score screen's "your answer / best answer" cards
+still work and now contain what the learner really did. Labeling and handling
+were merged into one screen for the same reason: they are one moment of work.
+
+The mid-draw `DRAW_EVENTS` quiz went the same way — everything that happens
+while the needle is in is a real complication now (`complications/`), so only
+the two post-draw professional-judgement moments remain in that table. This is intentionally the largest file in the app — "which screen
 renders what" is one cohesive concern, and splitting it further would just
 scatter fourteen tiny files that all need to see the same `ENC`/`SHIFT`
 state.

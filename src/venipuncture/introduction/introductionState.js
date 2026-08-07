@@ -79,6 +79,26 @@ function line(def, state){
 }
 
 /**
+ * Some patients answer "what's your name?" with what they are called rather
+ * than what they are registered as — which is not an identifier, and is the
+ * one identification trap this step could not previously express.
+ *
+ * Explicit trigger data, like every other disclosure here: the patient's own
+ * event object says so. The first open ask gets the nickname and confirms
+ * nothing; asking again gets the legal name.
+ */
+function givesNicknameFirst(state){
+  const ev = state.patient && state.patient.event;
+  return !!(ev && ev.type === "verify" && ev.nickname)
+    && !state.done[ACT.ASK_NAME_OPEN];
+}
+
+export function nicknameOf(patient){
+  const first = (patient && patient.first) || "";
+  return first[0] === "A" ? "AJ" : first.slice(0, 3);
+}
+
+/**
  * The patient's reply, decided from trigger DATA on the patient object.
  * A leading question still gets an answer — that is the whole hazard.
  */
@@ -87,7 +107,10 @@ function replyTo(def, state){
   const h = historyOf(p);
   switch(def.id){
     case ACT.GREET: return "Hello.";
-    case ACT.ASK_NAME_OPEN: return `${p.name || "…"}.`;
+    case ACT.ASK_NAME_OPEN:
+      return givesNicknameFirst(state)
+        ? `Oh — everyone just calls me ${nicknameOf(p)}.`
+        : `${p.name || "…"}.`;
     case ACT.ASK_NAME_LEADING: return "…yes, that's right.";
     case ACT.ASK_DOB_OPEN: return `${p.dob || "…"}.`;
     case ACT.ASK_DOB_LEADING: return "Yes, that's me.";
@@ -123,7 +146,10 @@ export function say(state, actId, o){
 
   if(def.id === ACT.GREET) state.greeted = true;
 
-  if(def.identifier){
+  // Read BEFORE the transcript entry is written, because whether this ask
+  // produced an identifier and what the patient said are the same moment.
+  const nicknameOnly = def.id === ACT.ASK_NAME_OPEN && givesNicknameFirst(state);
+  if(def.identifier && !nicknameOnly){
     // A leading question still produces the identifier: the patient agrees.
     // That is exactly why it is unsafe, so it is recorded, not refused.
     state.identifiers[def.identifier] = true;

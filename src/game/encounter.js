@@ -196,7 +196,11 @@ export function makePatient(){
   // complication rates climb with difficulty (requisition flaw, draw event, site scenario)
   const reqIssue = Math.random() < (0.34+dl*0.06) ? pick(REQ_ISSUES) : null;
   const provider = pick(["Dr. Alvarez","Dr. Chen","Dr. Okafor","Dr. Patel","Dr. Romano","Dr. Singh"]);
-  const drawPool = DRAW_EVENTS.filter(e=>!/IV running/i.test((e.lines||[]).join(" ")));
+  // Everything that happens WHILE the needle is in is a real complication
+  // now, caused by the draw and answered on the arm — see
+  // venipuncture/complications/. This event is the professional-judgement
+  // moment after it, so the pool is the post-draw entries only.
+  const drawPool = DRAW_EVENTS.filter(e=>e.when!=="mid");
   const drawEvent = Math.random() < (0.26+dl*0.05) ? pick(drawPool) : null;  // a high-level draw complication to recognize and handle
   // Clinical history as explicit TRIGGER DATA, never as prose to be matched.
   // The introduction step keys off these booleans to decide what the patient

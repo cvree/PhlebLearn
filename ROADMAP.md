@@ -1007,6 +1007,41 @@ branch already reads; it never adds a special case to one.**
 - Shipped to `main` with `npm test` green (600+ unit tests) and the production
   build clean.
 
+## Streamlining pass ✅ complete
+
+Once the physical steps were finished, several 2D screens were still asking
+the learner about things the draw itself now makes them DO. One rule decided
+what went: *if the draw already makes them do it, delete the screen that asks
+about it and score what they did.*
+
+- **Identity** was a multiple-choice screen before the draw and a real
+  interaction inside it. The screen is gone; the `introduce` step is the
+  identification, and the nickname patient — the one trap the physical step
+  could not express — now lives inside it: the first open ask gets "everyone
+  just calls me AJ", which confirms nothing, and the learner has to notice
+  and ask again.
+- **Tube selection and order of draw** were two tap-a-rack screens asked
+  before the learner ever reached the supply cart, where they then chose real
+  tubes and seated them in a numbered rack in order of draw. Both screens are
+  gone; `stagingScoring` reports `stagedTubeKeys` and `rackedTubeKeys`, and
+  the order actually drawn comes from the collection branch's own
+  `drawnSequence`.
+- **The mid-draw event quiz** interrupted the draw to ask a multiple-choice
+  question about a hematoma, a dry stick or a flinch — all of which Phase 3b
+  made real complications that the draw causes and the learner answers on the
+  arm. Six of the eight `DRAW_EVENTS` are gone; the two that remain are the
+  post-draw professional-judgement moments (a needlestick during cleanup, an
+  extra tube that was never ordered), which is what that format is good at.
+- **Labeling and handling** merged into one screen: they are the same moment
+  of work, standing at the chair with the tubes in your hand.
+- **The draw-complete screen** shows the laboratory's verdict as one line when
+  every tube was accepted, and hides recap chips for steps that never ran
+  rather than showing a zero they did not earn.
+
+Net: eleven screens per patient became six, and the three categories those
+screens used to measure are now scored from real technique — see
+`deriveChoices()` in `game/scoring.js`. 14 unit tests.
+
 ### Still open
 
 Honest list, so the next branch does not have to rediscover it:

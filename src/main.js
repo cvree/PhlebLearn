@@ -81,7 +81,7 @@ import {
   toggleHandedness, toggleAssistedSnapping,
   renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen
 } from "./ui/settings.js";
-import { go, onTubePicked, syncTop } from "./ui/panels.js";
+import { go, syncTop } from "./ui/panels.js";
 import { initReactBits, initLenis, initVanta, destroyVantaLoad } from "./ui/dynamicEffects.js";
 
 let scene, camera;
@@ -225,11 +225,10 @@ function handlePick(e, canvasEl){
   const { data, obj } = hit;
   const alwaysOn = data.pickType==="mascot" || data.pickType==="stickerbook" || data.pickType==="shop";
   if(!alwaysOn && !isInteractableNow(data.pickType, state)) return;
-  if(data.pickType==="tube" && state==="select"){ onTubePicked(obj); return; }
   if(data.pickType==="patient"){ sfx("tap"); if(state==="arrive") flashPanel(); return; }
   if(data.pickType==="mascot"){ sfx("coin"); reactMascot("good"); toast(pickOne(DOT_LINES)); return; }
   if(data.pickType==="screen" && state==="review"){ sfx("tap"); flashPanel(); return; }
-  if(data.pickType==="bin" && state==="handle"){ sfx("tap"); flashPanel(); return; }
+  if(data.pickType==="bin" && state==="label"){ sfx("tap"); flashPanel(); return; }
   if(data.pickType==="shop"){ sfx("tap"); renderUpgradeShop(); return; }
   if(data.pickType==="stickerbook"){ sfx("coin"); confetti(14); openStickerBook(); return; }
 }

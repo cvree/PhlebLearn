@@ -51,9 +51,51 @@ export function scoreDetailAnswer(c,ok){
 // Scores the current ENC, writes ENC.scores / ENC.answers / ENC.coinsEarned / ENC.coinBreakdown,
 // updates SS (XP, coins, mastery, badges) and SHIFT tallies, and returns any sticker wins so the
 // UI layer can decide how to celebrate them (confetti/toast) before moving to the score screen.
+/* =========================================================================
+   WHERE THE ANSWERS COME FROM
+
+   Identity, tube selection and order of draw used to be three multiple-choice
+   screens asked BEFORE the learner reached the cart — and then asked again,
+   physically, at it: the introduction step makes them obtain two identifiers
+   from the patient's own mouth, and the supply cart makes them choose real
+   tubes and seat them in a numbered rack in order of draw.
+
+   Asking twice taught nothing the second time and cost the learner three
+   screens per patient, so the quiz screens are gone and these three
+   categories are scored from what was actually DONE. `deriveChoices()` is
+   where that happens, and it also fills in ENC.selected / ENC.ordered so the
+   score screen's "your answer / best answer" cards keep working — with the
+   learner's real tubes and their real draw sequence in them.
+   ========================================================================= */
+export function deriveChoices(){
+  const c = ENC.collect || {};
+  const intro = c.introductionMeasurements;
+  const sm = c.stagingMeasurements;
+  const col = c.collectionMeasurements;
+
+  // Identity: two identifiers, obtained before anything was touched. A
+  // leading question ("you're Mr Adams?") still produced an identifier, which
+  // is exactly why it is recorded and does not count as a clean check.
+  if(intro && ENC.idChoice == null){
+    ENC.idChoice = intro.identifiersUsed >= intro.identifiersRequired
+      && intro.identifiedBeforeTouching
+      && intro.leadingQuestions === 0;
+  }
+  // Tube selection: what actually went on the tray and into the rack.
+  if(sm && !ENC.selected.length) ENC.selected = (sm.stagedTubeKeys || []).slice();
+  // Order of draw: the sequence the tubes genuinely came off the holder in,
+  // falling back to the rack they were seated in when the draw stopped early.
+  if(!ENC.ordered.length){
+    if(col && col.drawnSequence && col.drawnSequence.length) ENC.ordered = col.drawnSequence.slice();
+    else if(sm && sm.rackedTubeKeys) ENC.ordered = sm.rackedTubeKeys.slice();
+  }
+  return ENC;
+}
+
 export function scoreEncounter(){
   const p=ENC.p, s={};
   if(ENC.startedAt && !ENC.elapsedMs) ENC.elapsedMs = Date.now()-ENC.startedAt;
+  deriveChoices();
   s.patientId = !!ENC.idChoice;
   s.requisition = !!ENC.reqChoice;
   const sel=[...ENC.selected].sort(), req=[...p.reqSet].sort();
@@ -87,6 +129,15 @@ export function scoreEncounter(){
   ENC.scores=s;
   ENC.answers = ENC.answers || {};
   const A = ENC.answers;
+  // The identity answer is now the introduction step's own transcript rather
+  // than a multiple-choice pick, so it is assembled here when that step ran.
+  const introM = ENC.collect && ENC.collect.introductionMeasurements;
+  if(introM && !A.patientId){
+    A.patientId = {
+      your: `${introM.identifiersUsed} identifier(s) obtained${introM.leadingQuestions ? `, ${introM.leadingQuestions} of them by leading question` : ""}${introM.identifiedBeforeTouching ? "" : ", after the patient had already been touched"}`,
+      correct: "Two identifiers — full name and date of birth — asked openly, before anything is touched",
+    };
+  }
   if(A.patientId && !A.patientId.ctx) A.patientId.ctx = `Patient: ${p.name} • DOB ${p.dob} • ID ${p.id}`;
   if(A.requisition && !A.requisition.ctx) A.requisition.ctx = p.reqIssue ? p.reqIssue.catch : "Requisition matched the patient and had the needed fields.";
   if(A.siteSelect && !A.siteSelect.ctx && p.site) A.siteSelect.ctx = "Site scenario: " + p.site.desc.replace(/<br\s*\/?\s*>/gi, " ").replace(/<[^>]+>/g, "");

@@ -11,7 +11,7 @@ import { sfx } from "../audio/audioManager.js";
 import { musicForState } from "../audio/audioManager.js";
 import { toast, confetti, floatXP } from "./notifications.js";
 import { shuffle, pick, arraysEqual } from "../utils.js";
-import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, VERIFY_CORRECT, VERIFY_WRONG, NICK_CORRECT, NICK_WRONG, ALL_CATCHES } from "../config.js";
+import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, ALL_CATCHES } from "../config.js";
 import {
   SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
   MODE, MODES, MODE_NAMES, guided, finalPractical, reveal,
@@ -30,7 +30,7 @@ import { PROCEDURE, PROCEDURES, indicatedProcedure } from "../venipuncture/proce
 import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint, clearHint } from "../game/dialogue.js";
 import { getScene } from "../rendering/scene.js";
 import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
-import { tubeMeshes, resetTubeSelection, toggleTubeMesh } from "../world/tubeRack.js";
+import { tubeMeshes, resetTubeSelection } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
@@ -57,18 +57,25 @@ export function render(){
   animatePanelIn();
   musicForState();
 }
+/* THE SHAPE OF ONE PATIENT
+
+   arrive → review the requisition → [site, if this patient's arms need a
+   decision] → the draw → label and route → [respond, if they asked something]
+   → score.
+
+   Three screens that used to sit between "review" and the draw are gone:
+   identity was a multiple-choice question the physical introduction step now
+   asks properly, and tube selection and order of draw were two taps-on-a-rack
+   screens the supply cart now makes the learner do for real. Asking twice
+   taught nothing the second time. See game/scoring.js's deriveChoices(). */
 function renderStep(){
   if(state==="idle")        return renderIdle();
   if(state==="arrive")      return renderArrive();
-  if(state==="verify")      return renderVerify();
   if(state==="review")      return renderReview();
-  if(state==="select")      return renderSelect();
-  if(state==="order")       return renderOrder();
   if(state==="site")        return renderSite();
   if(state==="collect")     return renderCollect();
   if(state==="drawresp")    return renderDrawResp();
   if(state==="label")       return renderLabel();
-  if(state==="handle")      return renderHandle();
   if(state==="respond")     return renderRespond();
   if(state==="score")       return renderScore();
   if(state==="summary")     return renderSummary();
@@ -144,32 +151,7 @@ function renderArrive(){
     ${says(p.first,pEmoji(p),greet,p.mood)}
     <button class="btn" id="greet">🙋 Greet & begin</button>
   `;
-  $("greet").onclick=()=>{ sfx("tap"); go("verify"); };
-}
-
-/* ---------- verify identity -------------------------------------------------- */
-function renderVerify(){
-  const p=ENC.p, ev=p.event;
-  const nickname = ev.type==="verify" && ev.nickname;
-  const nick = p.first[0]==='A'?'AJ':p.first.slice(0,3);
-  const lines = nickname
-    ? ["Hi!", `Oh, my name? Just call me "${nick}".`]
-    : [`Hi, I'm ${p.name}.`, "Here for my labs."];
-  const options = nickname
-    ? [{t:pick(NICK_CORRECT),ok:true,reply:`Oh, of course, ${p.name}, born ${p.dob}.`},
-       ...shuffle(NICK_WRONG).slice(0,2).map(t=>({t,ok:false,reply:"Are you sure a nickname is enough to go on?"}))]
-    : [{t:pick(VERIFY_CORRECT),ok:true,reply:`That's me, ${p.name}, ${p.dob}.`},
-       ...shuffle(VERIFY_WRONG).slice(0,2).map(t=>({t,ok:false,reply:"Wait, shouldn't you double-check that?"}))];
-  runDialogue("verify",{
-    head:`<h2>🪪 Verify identity</h2>${teach("verify")}`,
-    extra:`<div class="req">Requisition: <b>${p.name}</b> &nbsp;•&nbsp; DOB <b>${p.dob}</b> &nbsp;•&nbsp; ID <b>${p.id}</b></div>`,
-    who:p.first, emoji:pEmoji(p), sub:p.mood,
-    lines, prompt:"How do you confirm who they are?", options,
-    learn:"Match two identifiers, full name and date of birth, against the requisition. Never use the room, chair, or a nickname.",
-    teachWhy:"Match name and DOB against the requisition.",
-    rerender: renderVerify,
-    onDone:(o)=>{ ENC.idChoice=o.ok; (ENC.answers=ENC.answers||{}).patientId={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; go("review"); }
-  });
+  $("greet").onclick=()=>{ sfx("tap"); go("review"); };
 }
 
 /* ---------- review requisition ----------------------------------------------- */
@@ -217,91 +199,26 @@ function renderReview(){
       prompt:"Is this requisition ready to use?", options,
       learn, teachWhy:"If something's missing or doesn't match, hold and clarify.",
       rerender: renderReview,
-      onDone:(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; go("select"); }
+      onDone:(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; afterRequisition(); }
     });
   }else{
     panel.innerHTML=`<h2>🖥️ Check the requisition</h2>${reqCardHTML(p)}
       <p class="sub">${pick(["Anything missing or mismatched before you draw?","Scan it, is it ready to use?","Is the order complete and matching?"])}</p>
       <div id="opts"></div>`;
-    optionStep(options,(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; go("select"); }, "If something's missing or doesn't match, hold and clarify before drawing.");
+    optionStep(options,(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; afterRequisition(); }, "If something's missing or doesn't match, hold and clarify before drawing.");
   }
 }
 
-/* ---------- select tubes (3D clickable) -------------------------------------- */
-export function onTubePicked(tubeMeshObj){
-  const key=tubeMeshObj.userData.tubeKey;
-  const selected=toggleTubeMesh(tubeMeshObj);
-  if(selected){ if(!ENC.selected.includes(key))ENC.selected.push(key); }
-  else ENC.selected=ENC.selected.filter(k=>k!==key);
-  sfx("click"); renderSelect();
-}
-function renderSelect(){
-  const p=ENC.p;
-  const hint = guided()
-    ? `<div class="lesson"><span class="lh">Which tube for each test?</span>${p.orders.map(o=>`${o} → <b>${TUBES[TESTS[o].tube].name}</b>`).join("<br>")}</div>`
-    : "";
-  panel.innerHTML=`
-    <h2>🧪 Select the tubes</h2>
-    ${teach("select")}
-    ${guided()?says(DOT.name,DOT.emoji,pick(["Order checks out, grab the tubes it needs off the rack.","Now the fun part. Tap the right tubes on the rack, exactly what's ordered.","Tube time! Pick what this order calls for, nothing extra."]),"your guide"):""}
-    <div class="req">Order: ${p.orders.map(o=>`<span class="pill">${o}</span>`).join("")}</div>
-    ${hint}
-    <div class="tubechips" id="selChips">${
-      ENC.selected.length? ENC.selected.map(k=>`<span class="tubechip"><i style="background:#${TUBES[k].color.toString(16).padStart(6,'0')}"></i>${TUBES[k].name}</span>`).join("")
-      : `<span class="sub">No tubes selected yet, click the rack.</span>`
-    }</div>
-    <button class="btn ${ENC.selected.length?'':'ghost'}" id="confirmTubes">Confirm tubes ▶</button>
-    <div class="hint">Tip: tap a tube again to put it back.</div>
-  `;
-  $("confirmTubes").onclick=()=>{
-    if(!ENC.selected.length){toast("Pick at least one tube from the rack.");return;}
-    if(guided()){
-      const sel=[...ENC.selected].sort(), req=[...p.reqSet].sort();
-      if(!arraysEqual(sel,req)){
-        const missing=req.filter(k=>!sel.includes(k)).map(k=>TUBES[k].name);
-        const extra=sel.filter(k=>!req.includes(k)).map(k=>TUBES[k].name);
-        let msg="Not quite. ";
-        if(missing.length)msg+="Still need: "+missing.join(", ")+". ";
-        if(extra.length)msg+="Remove: "+extra.join(", ")+".";
-        toast(msg.trim()); sfx("bad"); return;
-      }
-    }
-    sfx("tap");
-    if(ENC.selected.length>=2){ ENC.ordered=[]; go("order"); }
-    else { ENC.ordered=ENC.selected.slice(); ENC.p.site?go("site"):enterDraw(); }
-  };
-}
-
-/* ---------- order of draw ----------------------------------------------------- */
-function renderOrder(){
-  const remaining=ENC.selected.filter(k=>!ENC.ordered.includes(k));
-  const correctSeq=[...ENC.selected].sort((a,b)=>TUBES[a].order-TUBES[b].order);
-  const nextCorrect=correctSeq[ENC.ordered.length];
-  panel.innerHTML=`
-    <h2>🔢 Order of draw</h2>
-    ${teach("order")}
-    ${ENC.ordered.length===0&&guided()?says(DOT.name,DOT.emoji,pick(["Nice picks! Now line them up in the order of draw.","Two or more tubes, they go in a set order. Build it.","Order matters here. Tap them in the right sequence."]),"your guide"):""}
-    <div class="req"><b>Your order so far:</b><br>${
-      ENC.ordered.length? ENC.ordered.map((k,i)=>`<span class="pill">${i+1}. ${TUBES[k].name}</span>`).join("") : `<span class="sub">, none yet, </span>`
-    }</div>
-    <div id="opts"></div>
-    ${ENC.ordered.length?`<button class="btn ghost" id="resetOrder">↺ Reset order</button>`:""}
-    ${remaining.length===0?`<button class="btn" id="confirmOrder">Confirm order ▶</button>`:""}
-  `;
-  const optsBox=$("opts");
-  remaining.forEach(k=>{
-    const b=document.createElement("button"); b.className="opt";
-    b.innerHTML=`<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#${TUBES[k].color.toString(16).padStart(6,'0')};margin-right:8px;vertical-align:middle"></span>${TUBES[k].name}`;
-    b.onclick=()=>{
-      if(guided() && k!==nextCorrect){
-        sfx("bad"); showHint(optsBox, `In the order of draw, <b>${TUBES[nextCorrect].name}</b> comes next.`); return;
-      }
-      ENC.ordered.push(k); sfx("click"); renderOrder();
-    };
-    optsBox.appendChild(b);
-  });
-  if($("resetOrder"))$("resetOrder").onclick=()=>{ENC.ordered=[];sfx("tap");renderOrder();};
-  if($("confirmOrder"))$("confirmOrder").onclick=()=>{sfx("tap");ENC.p.site?go("site"):enterDraw();};
+/* ---------- into the draw ------------------------------------------------------ */
+/**
+ * What happens once the requisition has been read.
+ *
+ * The site question is only asked when this patient's arms actually pose one;
+ * everything else about the tubes is decided at the cart, in the draw itself.
+ */
+function afterRequisition(){
+  if(ENC.p.site) return go("site");
+  enterDraw();
 }
 
 /* ---------- site selection ----------------------------------------------------- */
@@ -335,7 +252,10 @@ function renderSite(){
 
 /* ---------- collect: the venipuncture procedure (2D fallback) ------------------ */
 function renderCollect(){
-  if(!ENC.collect){ ENC.collect = createProcedureState(ENC.selected, { patient: ENC.p, handedness: SS.handedness }); }
+  // The tubes this draw NEEDS come from the requisition. Which tubes the
+  // learner actually picks up, and the order they rack them in, is the supply
+  // cart's job — it is the one place that question is asked now.
+  if(!ENC.collect){ ENC.collect = createProcedureState(ENC.p.reqSet, { patient: ENC.p, handedness: SS.handedness }); }
   const c=ENC.collect;
   // A complication the learner answered by stopping really did stop the
   // draw: there is no next step to render, and the report is built from what
@@ -616,7 +536,7 @@ function vpFinish(){
     : `${haltNote}
        <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
        ${stagingBlock}
-       <div class="vp-scorewrap">${chips.map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
+       <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
        ${complicationSummaryHTML(c.complicationMeasurements)}
        ${labReceivingHTML(c.specimenQuality)}
        ${renderRubricSummary(report)}
@@ -637,6 +557,15 @@ function vpFinish(){
    ---------------------------------------------------------------------------- */
 function labReceivingHTML(q){
   if(!q || !q.total) return "";
+  // A clean delivery is one line. There is nothing to read tube by tube when
+  // every tube was accepted as drawn, and making the learner scroll past it
+  // to reach the next button is friction with no lesson in it.
+  if(!q.rejectedCount && !q.flaggedCount){
+    return `<div class="lab-receiving lab-clean">
+      <div class="lab-head"><span class="lab-title">🧫 Specimen receiving</span><span class="lab-score">${q.score}/100</span></div>
+      <p class="vt-narrative">All ${q.total} tube${q.total===1?"":"s"} accepted as drawn. ${q.testsOrdered.length?`${q.testsOrdered.join(", ")} can be reported.`:""}</p>
+    </div>`;
+  }
   const rows = q.tubes.map(t=>`
     <li class="lab-row lab-${t.verdict}">
       <span class="lab-tube">${t.name}</span>
@@ -692,15 +621,29 @@ function gradeAttempt(c){
   return { report, replay, progressLine:c.progressLine };
 }
 
-/* ---------- labeling ------------------------------------------------------------ */
+/* ---------- labeling and routing ------------------------------------------------
+   One screen, not two. Labeling at the bedside and deciding how the batch
+   travels are the same moment of work — you are standing at the chair with the
+   tubes in your hand — and splitting them cost a screen and a click without
+   teaching anything the second half did not already teach.
+   ------------------------------------------------------------------------------ */
 function renderLabel(){
-  const ev=ENC.p.event;
+  const p=ENC.p, ev=p.event;
   const note = ev.type==="label" ? `<div class="fb no"><b>Heads up:</b> ${ev.prompt} ${ev.why}</div>`:"";
   const f=ENC.labelFields;
+  if(!ENC.handlingOptions){
+    ENC.handlingOptions = shuffle([
+      {key:"routine",t:pick(HANDLING.routine.labels),ok:p.handling==="routine"},
+      {key:"chilled",t:pick(HANDLING.chilled.labels),ok:p.handling==="chilled"},
+      {key:"light",t:pick(HANDLING.light.labels),ok:p.handling==="light"},
+    ]);
+  }
+  const opts = ENC.handlingOptions;
+  const chosen = ENC.handlingChoice;
   panel.innerHTML=`
-    <h2>🏷️ Label the tubes</h2>
+    <h2>🏷️ Label and route</h2>
     ${teach("label")}
-    ${guided()?says(DOT.name,DOT.emoji,pick(["Label right here at the chair, before we go anywhere.","Last thing at the bedside: label every tube fully.","Don't leave the chair unlabeled! Check each field."]),"your guide"):""}
+    ${guided()?says(DOT.name,DOT.emoji,pick(["Label right here at the chair, before we go anywhere.","Last thing at the bedside: label every tube fully, then decide how they travel.","Don't leave the chair unlabeled! Check each field, then pick the transport."]),"your guide"):""}
     ${note}
     <div id="fields">
       ${labelRow("name","Patient full name",f.name)}
@@ -708,49 +651,41 @@ function renderLabel(){
       ${labelRow("datetime","Date & time of collection",f.datetime)}
       ${labelRow("initials","Your (phlebotomist) initials",f.initials)}
     </div>
-    <button class="btn gold" id="print">🖨️ Print & apply labels</button>
+    <div class="route-head">📦 How does this batch travel to the lab?</div>
+    <div id="routeOpts">${opts.map(o=>`<button class="opt${chosen===o.key?" good":""}" data-route="${o.key}">${o.t}</button>`).join("")}</div>
+    <button class="btn gold" id="print">🖨️ Print labels &amp; send ▶</button>
   `;
   ["name","iddob","datetime","initials"].forEach(k=>{
     $("lr-"+k).onclick=()=>{ ENC.labelFields[k]=!ENC.labelFields[k]; sfx("click"); renderLabel(); };
   });
+  panel.querySelectorAll("[data-route]").forEach(b=>{
+    b.onclick=()=>{
+      const o = opts.find(x=>x.key===b.dataset.route);
+      if(guided() && !o.ok){
+        sfx("bad");
+        showHint($("routeOpts"), HANDLING[p.handling].why);
+        return;
+      }
+      sfx("click");
+      ENC.handlingChoice=o.key;
+      (ENC.answers=ENC.answers||{}).handling={your:o.t,correct:(opts.find(x=>x.ok)||{}).t};
+      renderLabel();
+    };
+  });
   $("print").onclick=()=>{
+    const f2=ENC.labelFields, miss=[];
     if(guided()){
-      const f2=ENC.labelFields, miss=[];
       if(!f2.name)miss.push("full name"); if(!f2.iddob)miss.push("ID/DOB");
       if(!f2.datetime)miss.push("date & time"); if(!f2.initials)miss.push("your initials");
       if(miss.length){ toast("A complete label still needs: "+miss.join(", ")+"."); sfx("bad"); return; }
     }
-    sfx("tap"); go("handle");
+    if(!ENC.handlingChoice){ toast("Choose how these specimens travel to the lab."); sfx("bad"); return; }
+    sfx("tap");
+    if(p.event.type==="respond" && p.eventWhen==="post"){ ENC.respondReturn="score"; go("respond"); }
+    else runScoreEncounter();
   };
 }
 function labelRow(k,label,on){return `<div class="chk ${on?'on':''}" id="lr-${k}"><div class="box">${on?'✓':''}</div>${label}</div>`;}
-
-/* ---------- handling / transport -------------------------------------------------- */
-function renderHandle(){
-  const p=ENC.p;
-  const opts=[
-    {key:"routine",t:pick(HANDLING.routine.labels),ok:p.handling==="routine",reply:p.handling==="routine"?"Room temp, deliver soon, perfect.":"Hmm, these don't need that."},
-    {key:"chilled",t:pick(HANDLING.chilled.labels),ok:p.handling==="chilled",reply:p.handling==="chilled"?"On ice it goes. Nice.":"Hmm, these don't need that."},
-    {key:"light",t:pick(HANDLING.light.labels),ok:p.handling==="light",reply:p.handling==="light"?"Keep it covered, good call.":"Hmm, these don't need that."}
-  ];
-  const proceed=(o)=>{ ENC.handlingChoice=o.key; (ENC.answers=ENC.answers||{}).handling={your:o.t,correct:(opts.find(x=>x.ok)||{}).t}; if(ENC.p.event.type==="respond" && ENC.p.eventWhen==="post"){ ENC.respondReturn="score"; go("respond"); } else { runScoreEncounter(); } };
-  if(guided()){
-    runDialogue("handle",{
-      head:`<h2>📦 Specimen handling</h2>${teach("handle")}`,
-      who:DOT.name, emoji:DOT.emoji, sub:"your guide",
-      lines:[pick(["Filled and labeled, how do these travel to the lab?","Transport time. What does this batch need?","Last call: how should these get to the lab?"])],
-      prompt:"Choose the handling.", options:opts,
-      learn:HANDLING[p.handling].why, teachWhy:HANDLING[p.handling].why,
-      rerender: renderHandle,
-      onDone:proceed
-    });
-  }else{
-    panel.innerHTML=`<h2>📦 Specimen handling</h2>
-      <p class="sub">${pick(["How should these travel to the lab?","Pick the right transport for this batch.","Choose handling for these specimens."])}</p>
-      <div id="opts"></div>`;
-    optionStep(opts,proceed,HANDLING[p.handling].why);
-  }
-}
 
 /* ---------- professional response (event) ---------------------------------------- */
 function renderRespond(){

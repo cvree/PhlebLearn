@@ -276,59 +276,36 @@ export const REQ_ISSUES=[
 ];
 export const ALL_CATCHES=REQ_ISSUES.map(x=>x.catch);
 
-/* draw complications, recognition + high-level professional response (NO needle technique).
-   who: "patient" speaks, otherwise a "⚠️ Heads up" observation bubble.
-   when: "mid" = interrupts the active draw, before pressure/bandaging (needle still in or
-         blood still flowing); "post" = discovered after the stick is done and bandaged.       */
+/* WHAT IS LEFT OF THE DRAW EVENTS.
+
+   This list used to hold eight mid-draw interruptions — no flash, a swelling
+   bruise, bright red pulsing blood, the flow stopping, a patient who flinched
+   — each of which paused the draw to ask a multiple-choice question about it.
+   Every one of those is now a real complication that the draw itself causes
+   and the learner answers in the moment, with the patient's arm showing it:
+   see venipuncture/complications/. Keeping both meant being asked about a
+   hematoma in a quiz and then again on the arm, which taught nothing the
+   second time and interrupted the work to do it.
+
+   What remains is the two that are NOT needle technique and do not happen
+   while the needle is in: an exposure during cleanup, and an extra tube that
+   was never ordered. Both are professional-judgement moments after the draw,
+   which is exactly what this format is good at.
+
+   who: "patient" speaks, otherwise a "⚠️ Heads up" observation bubble.       */
 export const DRAW_EVENTS=[
-  {emoji:"⚠️", who:"⚠️ Heads up", safety:true, when:"mid",
-   lines:["The needle's in but no blood is flashing back."],
-   options:[{t:"Make one careful adjustment; if it still fails, stop and ask a colleague.",ok:true,reply:"Right, limited attempts, then hand off."},
-     {t:"Probe around under the skin until you hit it.",ok:false,reply:"That risks nerve injury and real pain."},
-     {t:"Say the patient just has 'bad veins' and give up loudly.",ok:false,reply:"Unkind and unprofessional."}],
-   learn:"Limit attempts (usually two). Never probe or redirect blindly, it can injure nerves. After two tries, hand off to a colleague."},
-  {emoji:"⚠️", who:"⚠️ Heads up", safety:true, when:"mid",
-   lines:["A bruise is swelling up at the site."],
-   options:[{t:"Stop, remove the needle, and apply firm pressure.",ok:true,reply:"Yes, pressure controls a hematoma."},
-     {t:"Keep drawing through it.",ok:false,reply:"That makes the hematoma worse."},
-     {t:"Ignore it and bandage lightly.",ok:false,reply:"It'll keep bleeding under the skin."}],
-   learn:"A forming hematoma means stop and apply firm pressure. Continuing worsens the bruise and pain."},
-  {emoji:"😣", who:"patient", safety:true, when:"mid",
-   lines:["Sorry, I flinched!"],
-   options:[{t:"Pause, make sure everything's safe, then reassure them.",ok:true,reply:"Thanks for stopping."},
-     {t:"Pin their arm down hard and keep going.",ok:false,reply:"Please don't restrain me!"},
-     {t:"Scold them for moving.",ok:false,reply:"That's not kind."}],
-   learn:"If a patient moves, pause and make sure everything is safe before continuing. Never restrain forcefully."},
-  {emoji:"⚠️", who:"⚠️ Heads up", safety:true, when:"mid",
-   lines:["The blood is bright red and pulsing into the tube."],
-   options:[{t:"Remove, apply firm pressure several minutes, and notify staff.",ok:true,reply:"Correct, that may be arterial."},
-     {t:"Keep filling all the tubes.",ok:false,reply:"That's not safe."},
-     {t:"Bandage lightly and send them off.",ok:false,reply:"It could keep bleeding."}],
-   learn:"Bright red, pulsing blood may be arterial, remove, hold firm pressure for several minutes, and notify staff. Arterial puncture is outside CPT I scope."},
   {emoji:"⚠️", who:"⚠️ Heads up", safety:true, when:"post",
    lines:["Cleaning up, you nick your own finger on the used needle."],
    options:[{t:"Stop, wash the area, and report it per exposure protocol.",ok:true,reply:"Right, wash and report immediately."},
      {t:"Wipe it and keep working.",ok:false,reply:"Exposures must be reported."},
      {t:"Hide it so you don't get in trouble.",ok:false,reply:"Never conceal an exposure."}],
    learn:"A needlestick is an exposure: wash the site and report it right away per protocol. Never conceal it."},
-  {emoji:"⚠️", who:"⚠️ Heads up", safety:true, when:"mid",
-   lines:["Blood started, then the flow just stopped."],
-   options:[{t:"If it won't flow, stop, don't dig, reassess or get help.",ok:true,reply:"Good, no blind probing."},
-     {t:"Push the needle deeper, searching for it.",ok:false,reply:"That can injure the patient."},
-     {t:"Yank it straight out fast.",ok:false,reply:"That can cause a hematoma."}],
-   learn:"If flow stops, don't probe blindly. Stop, reassess, and seek help if needed."},
   {emoji:"⚠️", who:"⚠️ Heads up", safety:false, when:"post",
    lines:["There's an extra tube on the tray that wasn't ordered."],
    options:[{t:"Set it aside and use only what's ordered.",ok:true,reply:"Exactly, only what's ordered."},
      {t:"Use it too, more is better.",ok:false,reply:"That's an extra, unneeded draw."},
      {t:"Dump all the tubes and start over.",ok:false,reply:"No need to waste them."}],
-   learn:"Collect only the tubes the order calls for; set any extras aside."},
-  {emoji:"⚠️", who:"⚠️ Heads up", safety:true, when:"mid",
-   lines:["There's an IV running in that arm, above where you'd draw."],
-   options:[{t:"Use the other arm, or follow policy / ask the nurse.",ok:true,reply:"Smart, avoid drawing above an IV."},
-     {t:"Draw right above the running IV.",ok:false,reply:"That contaminates the sample."},
-     {t:"Stop the IV yourself.",ok:false,reply:"That's not your call."}],
-   learn:"Avoid drawing above an active IV, it contaminates results. Use the other arm or follow policy / ask the nurse."}
+   learn:"Collect only the tubes the order calls for; set any extras aside."}
 ];
 
 /* ---------- economy / progression data ------------------------------------ */

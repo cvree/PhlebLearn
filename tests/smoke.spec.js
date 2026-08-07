@@ -15,6 +15,13 @@ const ALLOWLISTED_WARNINGS = [
   // headless Chromium's software/virtualized GPU driver chatter — an artifact
   // of the CI/sandbox environment's graphics stack, not app behavior.
   /GL Driver Message/,
+  // GSAP, Lenis and Vanta come from a CDN behind `onerror` fallbacks: the app
+  // is designed to run without them, which is the whole point of loading them
+  // that way. On a machine with no outbound network those three requests fail
+  // and the app carries on, so the failure is the designed behaviour rather
+  // than a regression. A REAL breakage still shows up here as a pageerror or
+  // as the assertion that follows it.
+  /Failed to load resource/,
 ];
 
 function attachDiagnostics(page){
@@ -53,39 +60,53 @@ test("main interaction panel shows Clock In and offers the three modes", async (
   expect(errors).toEqual([]);
 });
 
-test("patient-identification options render and a correct choice advances the encounter", async ({ page }) => {
+test("greeting the patient goes straight to the requisition — identity is the draw's own step", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
   await page.getByRole("button", { name: /Greet & begin/i }).click();
-  await expect(page.getByRole("heading", { name: /Verify identity/i })).toBeVisible();
 
-  // advance through the dialogue "..." beats to the option list
-  for(let i=0;i<3;i++){
-    const btn = page.locator("#panel button").last();
-    const text = await btn.textContent();
-    if(!text) break;
-    await btn.click();
+  // The identity multiple-choice screen is gone: the physical introduction
+  // step inside the draw asks for two identifiers properly. See
+  // game/scoring.js's deriveChoices().
+  await expect(page.getByRole("heading", { name: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole("heading", { name: /Verify identity/i })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("reading the requisition leads into the draw, not into two tube-tapping screens", async ({ page }) => {
+  const { errors } = attachDiagnostics(page);
+  await page.goto("/");
+  await page.locator("#modeLearn").click();
+  await page.getByRole("button", { name: /Greet & begin/i }).click();
+  await expect(page.getByRole("heading", { name: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
+
+  // advance the guide's dialogue beats to the option list
+  for(let i=0;i<4;i++){
     if(await page.locator("#opts .opt").count() > 0) break;
+    const btn = page.locator("#panel button").last();
+    if(!(await btn.count())) break;
+    await btn.click();
   }
   const options = page.locator("#opts .opt");
-  await expect(options.first()).toBeVisible();
+  await expect(options.first()).toBeVisible({ timeout: 5000 });
+  // Which requisition answer is correct depends on whether this patient's
+  // order was rolled with a flaw, and Learn mode keeps the options up with a
+  // hint after a wrong pick — so try each in turn until the screen moves on.
   const count = await options.count();
-  expect(count).toBeGreaterThan(0);
-
-  // every correct verify/nickname option mentions DOB / date of birth — the
-  // wrong options never do (see config.js's VERIFY_WRONG / NICK_WRONG).
-  let clicked = false;
   for(let i=0;i<count;i++){
-    const opt = options.nth(i);
-    const text = (await opt.textContent()) || "";
-    if(/DOB|date of birth|birth date/i.test(text)){ await opt.click(); clicked = true; break; }
+    if(await page.locator("#opts").count() === 0) break;
+    await page.locator("#opts .opt").nth(i).click();
+    await page.waitForTimeout(200);
   }
-  expect(clicked, "expected to find a DOB-mentioning correct option").toBe(true);
+  const cont = page.locator("#panel button", { hasText: /Continue/i });
+  if(await cont.count()) await cont.first().click();
 
-  // "Continue" on the reaction screen should move us to the requisition review
-  await page.locator("#panel button", { hasText: /Continue/i }).click();
-  await expect(page.getByRole("heading", { name: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
+  // Site selection only when this patient's arms pose one; otherwise the draw.
+  await expect(
+    page.getByRole("heading", { name: /Venipuncture|Site selection|says…/i })
+  ).toBeVisible({ timeout: 8000 });
+  await expect(page.getByRole("heading", { name: /Select the tubes|Order of draw/i })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -111,48 +132,22 @@ test("camera receives pointer input (orbit drag changes the room framing)", asyn
   expect(errors).toEqual([]);
 });
 
-test("a tube can be selected through the raycaster", async ({ page }) => {
+test("the room's tube rack is scenery now, and clicking it breaks nothing", async ({ page }) => {
+  // Choosing tubes moved to the supply cart, where the learner picks up real
+  // packages and reads their labels — see tests/staging.e2e.spec.js. The rack
+  // in the room stays as set dressing, so what matters here is that pointer
+  // hits on it are inert rather than throwing.
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
   await page.getByRole("button", { name: /Greet & begin/i }).click();
-  // Fastest path to the tube rack regardless of which patient/event was rolled.
-  // Learn mode keeps re-showing the same options with a hint on a wrong
-  // pick, so this tries each option in turn (rather than always index 0)
-  // until the screen actually advances, instead of assuming the first
-  // option is correct.
-  for(let i=0;i<20;i++){
-    if(await page.getByRole("heading", { name: /Select the tubes/i }).isVisible().catch(()=>false)) break;
-    const optCount = await page.locator("#opts .opt").count();
-    if(optCount > 0){
-      for(let j=0;j<optCount;j++){
-        // in Learn mode a wrong pick just appends a hint and keeps #opts
-        // around for another try; #opts disappearing is the real "advanced" signal.
-        if(await page.locator("#opts").count() === 0) break;
-        await page.locator("#opts .opt").nth(j).click();
-        await page.waitForTimeout(200);
-        if(await page.locator("#opts").count() === 0) break; // this option was correct
-      }
-      continue;
-    }
-    const anyBtn = page.locator("#panel button").last();
-    if(await anyBtn.isVisible().catch(()=>false)){ await anyBtn.click(); await page.waitForTimeout(200); continue; }
-    break;
-  }
-  await expect(page.getByRole("heading", { name: /Select the tubes/i })).toBeVisible({ timeout: 8000 });
-
   const canvas = page.locator("canvas");
   const box = await canvas.boundingBox();
-  // scan a horizontal line across the tube-rack region (empirically ~20-45% width, ~35-55% height)
-  // rather than one fixed point, so this doesn't depend on pixel-perfect camera framing.
-  let selected = false;
-  for(let fx=0.20; fx<=0.45 && !selected; fx+=0.03){
+  for(let fx=0.20; fx<=0.45; fx+=0.06){
     await page.mouse.click(box.x + box.width*fx, box.y + box.height*0.42);
-    await page.waitForTimeout(150);
-    const chipsText = await page.locator("#selChips").textContent();
-    if(chipsText && !/No tubes selected/i.test(chipsText)){ selected = true; }
+    await page.waitForTimeout(80);
   }
-  expect(selected, "expected clicking the tube rack to select at least one tube").toBe(true);
+  await expect(page.locator("#panel")).toBeVisible();
   expect(errors).toEqual([]);
 });
 

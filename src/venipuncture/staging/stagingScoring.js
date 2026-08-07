@@ -56,6 +56,17 @@ export function measureStaging(state, catalog, evalResult, now){
   const orderMatches = required.reduce((n,k,i)=>n+(rackKeys[i]===k?1:0), 0);
   const tubeOrderAccuracy = required.length ? orderMatches/required.length : 1;
 
+  /* The learner's actual tube SELECTION, and their actual order of draw.
+     This used to be two separate 2D screens — tap tubes on a rack, then tap
+     them again in sequence — asked before the learner ever reached the cart
+     and then asked again, physically, at it. The cart is the real answer to
+     both questions, so these are the fields the encounter score reads. */
+  const stagedTubeKeys = [];
+  for(const d of stagedDefs){
+    if(d.tubeKey && stagedTubeKeys.indexOf(d.tubeKey) < 0) stagedTubeKeys.push(d.tubeKey);
+  }
+  const rackedTubeKeys = rackKeys.filter(Boolean);
+
   // Did any tube ever get seated in a slot that wasn't its final, correct one?
   const rackEvents = state.events.filter(e=>e.type==="place" && e.to===ZONE.RACK);
   const misseats = rackEvents.filter(e=>{
@@ -105,6 +116,12 @@ export function measureStaging(state, catalog, evalResult, now){
     timeMs: elapsedMs(state, now),
     replacements: state.replacements,
     tubeOrderAccuracy,
+    /** the tubes actually staged, and the order they sit in the rack */
+    stagedTubeKeys,
+    rackedTubeKeys,
+    /** exactly the required tubes, no extras and none missing */
+    tubeSelectionCorrect: required.length === stagedTubeKeys.length
+      && required.every(k => stagedTubeKeys.indexOf(k) >= 0),
     tubeOrderFirstTry: misseats===0,
     tubeMisseats: misseats,
     sharpsAccessible,

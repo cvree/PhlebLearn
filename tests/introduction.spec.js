@@ -56,6 +56,43 @@ function textbook(patient){
    ASKING IS NOT CONFIRMING
    ------------------------------------------------------------------------- */
 
+
+/* =========================================================================
+   THE NICKNAME PATIENT
+
+   This used to be a separate multiple-choice screen before the draw ("the
+   patient gives only a nickname — what do you do?"), asked in addition to
+   this step doing identification properly. It lives here now, where the
+   learner has to notice that what they were told is not a legal name.
+   ========================================================================= */
+
+test("a nickname patient's first open ask confirms nothing, and says so out loud", () => {
+  const s = createIntroductionState({
+    patient: { name: "Alice Nguyen", first: "Alice", dob: "01/02/1990", id: "AN1",
+      history: {}, event: { type: "verify", nickname: true } },
+    now: 1000,
+  });
+  say(s, ACT.ASK_NAME_OPEN, { now: 1000 });
+  assert.equal(s.identifiers.name, false, "a nickname is not an identifier");
+  assert.match(s.transcript[0].reply, /calls me/i);
+  assert.equal(s.leadingAsks, 0);
+
+  // asking again gets the legal name
+  say(s, ACT.ASK_NAME_OPEN, { now: 2000 });
+  assert.equal(s.identifiers.name, true);
+  assert.match(s.transcript[1].reply, /Alice Nguyen/);
+});
+
+test("an ordinary patient states their name the first time, as before", () => {
+  const s = createIntroductionState({
+    patient: { name: "Omar Haddad", first: "Omar", dob: "03/04/1970", id: "OH1", history: {} },
+    now: 1000,
+  });
+  say(s, ACT.ASK_NAME_OPEN, { now: 1000 });
+  assert.equal(s.identifiers.name, true);
+  assert.match(s.transcript[0].reply, /Omar Haddad/);
+});
+
 test("an open question obtains an identifier", () => {
   const s = fresh();
   say(s, ACT.ASK_NAME_OPEN);

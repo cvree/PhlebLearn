@@ -6,10 +6,12 @@
    toggle a tube, show a toast) is decided in main.js, which is the only
    place allowed to import both input/ and ui/. */
 export const INTERACTABLE_STATES = {
-  tube: ["select"],
+  // The rack in the room is scenery now: choosing tubes is something the
+  // learner does at the supply cart, with real packages they have to read.
+  tube: [],
   patient: ["arrive"],
   screen: ["review"],
-  bin: ["handle"],
+  bin: ["label"],
   mascot: null,        // null = always interactable, regardless of screen
   shop: null,
   stickerbook: null,
