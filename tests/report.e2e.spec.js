@@ -9,12 +9,28 @@
    from the event logs the steps were already keeping.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+// The number of rubric rows is a POLICY decision, not a fact about the app —
+// policy.js exists precisely so a programme can add or remove one. Reading it
+// here means adding a row (Phase 3b added two) updates these tests instead of
+// breaking them.
+import { CATEGORIES } from "../src/venipuncture/rubric/policy.js";
+
+const ROWS = CATEGORIES.length;
+const MAX_TOTAL = ROWS * 4;
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
   /THREE\.WebGLShadowMap: PCFSoftShadowMap has been deprecated/,
   /GL Driver Message/,
+  // GSAP, Lenis and Vanta load from a CDN behind onerror fallbacks — the app
+  // is built to run without them. On a machine with no outbound network those
+  // requests fail and the app carries on, which is the designed behaviour.
+  /Failed to load resource/,
 ];
+
+// These walk a whole encounter — the draw, the labelling and the patient's
+// question — in one test, which is more than the default budget allows for.
+test.describe.configure({ timeout: 90000 });
 
 function attachDiagnostics(page){
   const errors = [];
@@ -47,6 +63,57 @@ async function finishDrawIn(page, mode, upTo){
   await expect(page.locator("#vpToLabel")).toBeVisible({ timeout:10000 });
 }
 
+/**
+ * ...and on to the end of the encounter, which is where the report is now.
+ *
+ * It used to print the moment the needle was out — before the tubes were
+ * labelled, before the patient had been answered — and was then followed two
+ * clicks later by a second grading screen. The draw now ends with a recap of
+ * what it measured and every judgement lands together, once, at the end.
+ */
+async function reportAtEnd(page, mode, upTo){
+  await finishDrawIn(page, mode, upTo);
+  await page.locator("#vpToLabel").click();
+  await finishLabelling(page);
+  await answerAnyQuestion(page);
+  await expect(page.locator(".scoregrid")).toBeVisible({ timeout:10000 });
+}
+
+/** Ticks every label field, picks a routing option, and sends the batch. */
+async function finishLabelling(page){
+  const label = page.locator("#print");
+  if(!(await label.count())) return;
+  for(const k of ["name", "iddob", "datetime", "initials"]){
+    const row = page.locator(`#lr-${k}`);
+    if(await row.count()) await row.click();
+  }
+  // Learn mode refuses a wrong routing choice, so try each until it sticks.
+  const routes = page.locator("[data-route]");
+  const n = await routes.count();
+  for(let i = 0; i < n; i++){
+    await routes.nth(i).click();
+    await page.waitForTimeout(80);
+    if(await page.locator("[data-route].good").count()) break;
+  }
+  await label.click();
+  await page.waitForTimeout(200);
+}
+
+/** Walks the post-draw conversation, if this patient had one. */
+async function answerAnyQuestion(page){
+  for(let i = 0; i < 8; i++){
+    if(await page.locator(".scoregrid").count()) return;
+    const opts = page.locator("#opts .opt");
+    if(await opts.count()){ await opts.first().click(); }
+    else {
+      const btn = page.locator("#panel button").last();
+      if(!(await btn.count())) return;
+      await btn.click();
+    }
+    await page.waitForTimeout(200);
+  }
+}
+
 const report = page => page.evaluate(()=>window.__phlebTest.practicalReport());
 const replay = page => page.evaluate(()=>window.__phlebTest.sessionReplay());
 const progress = page => page.evaluate(()=>window.__phlebTest.modeProgress());
@@ -57,28 +124,28 @@ const progress = page => page.evaluate(()=>window.__phlebTest.modeProgress());
 
 test("a Final Practical ends with a 0–4 score for every rubric category", async ({ page }) => {
   const errors = attachDiagnostics(page);
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
 
   await expect(page.getByRole("heading", { name: /Practical report/i })).toBeVisible();
   const r = await report(page);
   expect(r).not.toBeNull();
-  expect(r.categories.length).toBe(5);
+  expect(r.categories.length).toBe(ROWS);
   for(const c of r.categories){
     expect(c.score).toBeGreaterThanOrEqual(0);
     expect(c.score).toBeLessThanOrEqual(4);
     expect(c.max).toBe(4);
   }
   expect(r.total).toBe(r.categories.reduce((s, c)=>s + c.score, 0));
-  expect(r.maxTotal).toBe(20);
+  expect(r.maxTotal).toBe(MAX_TOTAL);
 
   // every row is on screen with its chip and its band name
   const chips = page.locator(".rep-row .rep-chip");
-  await expect(chips).toHaveCount(5);
+  await expect(chips).toHaveCount(ROWS);
   expect(errors).toEqual([]);
 });
 
 test("the report states pass or fail and says exactly why", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   const r = await report(page);
   const verdict = page.locator(".rep-verdict");
   await expect(verdict).toContainText(r.passed ? "PASS" : "FAIL");
@@ -89,12 +156,12 @@ test("the report states pass or fail and says exactly why", async ({ page }) => 
 });
 
 test("the report names the procedure that was actually performed", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   await expect(page.locator(".rep-proc")).toContainText(/Straight multisample needle, antecubital fossa/i);
 });
 
 test("what prevented an Excellent is stated in the learner's own numbers", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   const r = await report(page);
   const blocked = r.preventedExcellence.flatMap(p=>p.reasons);
   expect(blocked.length).toBeGreaterThan(0);
@@ -107,7 +174,7 @@ test("what prevented an Excellent is stated in the learner's own numbers", async
 });
 
 test("specimen results and patient outcomes are reported apart from the score", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   await expect(page.locator(".rep-sec", { hasText: "Specimen" })).toBeVisible();
   await expect(page.locator(".rep-sec", { hasText: "The patient" })).toBeVisible();
   const r = await report(page);
@@ -116,7 +183,7 @@ test("specimen results and patient outcomes are reported apart from the score", 
 });
 
 test("the practice plan is prioritised, and every entry cites a measurement", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   const r = await report(page);
   expect(r.practicePlan.length).toBeGreaterThan(0);
   for(let i = 1; i < r.practicePlan.length; i++){
@@ -126,7 +193,7 @@ test("the practice plan is prioritised, and every entry cites a measurement", as
 });
 
 test("the policy the attempt was graded against is named on the report", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   await expect(page.locator(".rep-policy").first()).toContainText("documented-defaults");
 });
 
@@ -161,6 +228,11 @@ async function playPalpationThenFinish(page, mode){
 
   await page.evaluate(()=>window.__phlebTest.finishDraw());
   await expect(page.locator("#vpToLabel")).toBeVisible({ timeout:10000 });
+  // ...and on to the score screen, where the report and its replay are shown
+  await page.locator("#vpToLabel").click();
+  await finishLabelling(page);
+  await answerAnyQuestion(page);
+  await expect(page.locator(".scoregrid")).toBeVisible({ timeout:10000 });
 }
 
 test("the replay is merged from the event logs the steps already kept", async ({ page }) => {
@@ -222,7 +294,7 @@ test("bests are kept per mode and never pooled", async ({ page }) => {
   expect(p.practice.attempts).toBe(1);
   expect(p.final).toBeUndefined();
 
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   p = await progress(page);
   expect(p.practice.attempts).toBe(1);
   expect(p.final.attempts).toBe(1);
@@ -230,7 +302,7 @@ test("bests are kept per mode and never pooled", async ({ page }) => {
 });
 
 test("returning to the report does not count a second attempt", async ({ page }) => {
-  await finishDrawIn(page, "final");
+  await reportAtEnd(page, "final");
   const before = await progress(page);
   await page.evaluate(()=>window.__phlebTest.finishDraw());
   await expect(page.locator("#vpToLabel")).toBeVisible();

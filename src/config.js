@@ -68,6 +68,18 @@ export const HAIR_STYLES=["bald","buzz","short","long","bun","ponytail","afro","
 export const FABRIC=[0x6b5b95,0x88498f,0x2f6f6f,0x4a6fa5,0xb5651d,0xe05a5a,0x33808a,0x5c6bc0,0x2a2440,0xffc24d];
 export const SHIRTS=[0xff9cc0,0xbcd6f7,0xc7e9b0,0xffd98a,0xc9b3e8,0xff6b6b,0x4fb0ff,0x33c08a,0xffc24d,0xa06bff,0xf06595,0x20c0c0,0x8d6e63,0xff7a3c,0x5c6bc0,0xfdfdfd];
 
+/* WHAT THE PATIENT BRINGS UP THEMSELVES.
+
+   These are conversations, not clinical history-taking. Anything the
+   introduction step ELICITS by asking — a latex allergy, a history of
+   fainting — was removed from this table when that step became real: the
+   patient discloses it in the interview, from `patient.history`, to a learner
+   who actually asks. Being told about latex in a bubble and then asked about
+   it thirty seconds later taught nothing the second time.
+
+   What stays is what a patient volunteers and a phlebotomist has to answer
+   well: fear, pain, scope-of-practice questions, and the medication history
+   that carries real trigger data into the post-draw branch.                 */
 export const EVENTS=[
   {type:"none"},{type:"none"},{type:"none"},
   {type:"respond", emoji:"😰", safety:false, when:"pre",
@@ -77,20 +89,6 @@ export const EVENTS=[
      {t:"Promise it won't hurt at all.",ok:false,reply:"You said that, and then it did. Now I don't trust you."}],
    learn:"Acknowledge anxiety, explain calmly, and offer comfort measures. Don't dismiss feelings or over promise a pain free stick.",
    why:"Honesty and empathy build trust and lower fainting risk."},
-  {type:"respond", emoji:"🧤", safety:true, when:"pre",
-   lines:["Just so you know, I have a latex allergy."],
-   options:[{t:"Thank them, switch to latex free gloves and supplies, and note it.",ok:true,reply:"Great, thank you for checking."},
-     {t:"Say your gloves are probably fine.",ok:false,reply:"Please don't risk it!"},
-     {t:"Ignore it, you're almost done anyway.",ok:false,reply:"That could send me to the ER."}],
-   learn:"Always honor a stated latex allergy: use latex free gloves, tourniquet, and bandages, and document it.",
-   why:"Latex exposure can trigger a serious allergic reaction."},
-  {type:"respond", emoji:"😵‍💫", safety:true, when:"pre",
-   lines:["Heads up, I usually pass out when I get blood drawn."],
-   options:[{t:"Have them lie down or recline before you begin, and stay with them.",ok:true,reply:"Lying down does help. Thanks."},
-     {t:"Tell them to sit up straight so it's over faster.",ok:false,reply:"That's how I hit my head last time."},
-     {t:"Say fainting is all in their head.",ok:false,reply:"That's dismissive."}],
-   learn:"For a known fainter, position them reclined before the draw and monitor them. Preventing a fall beats reacting to one.",
-   why:"Vasovagal syncope can cause real injury from a fall."},
   {type:"respond", emoji:"🧐", safety:false, when:"post",
    lines:["So… what do these results mean?","Am I okay?"],
    options:[{t:"Explain that you collect and transport the samples, and the provider reviews and explains results.",ok:true,reply:"Okay, I'll ask my doctor. Thank you."},
@@ -140,13 +138,6 @@ export const EVENTS=[
      {t:"Decide it's fine without checking.",ok:false,reply:"Shouldn't you check first?"}],
    learn:"Draws are generally avoided on the same side as certain surgeries (like a mastectomy). Follow policy and confirm when unsure.",
    why:"Honor it and follow policy."},
-  {type:"respond", emoji:"🙋", safety:true,
-   lines:["Before we start —","I'm allergic to latex."],
-   options:[{t:"Switch to latex-free supplies and note the allergy.",ok:true,reply:"Great, thank you for listening."},
-     {t:"Use whatever's closest to save time.",ok:false,reply:"But I told you I'm allergic!"},
-     {t:"Say a little latex is fine.",ok:false,reply:"That's really not okay."}],
-   learn:"Honor stated allergies and use latex-free supplies to prevent a reaction.",
-   why:"Use latex-free supplies and note it."},
   {type:"respond", emoji:"🤔", safety:false,
    lines:["So once you draw this…","can you tell me what my results mean?"],
    options:[{t:"Kindly explain the provider will share and discuss results.",ok:true,reply:"Fair enough — I'll ask my doctor."},

@@ -64,12 +64,14 @@ test("greeting the patient goes straight to the requisition — identity is the 
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
-  await page.getByRole("button", { name: /Greet & begin/i }).click();
 
-  // The identity multiple-choice screen is gone: the physical introduction
-  // step inside the draw asks for two identifiers properly. See
-  // game/scoring.js's deriveChoices().
-  await expect(page.getByRole("heading", { name: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
+  // Saying hello was a screen with one button on it, which is a click rather
+  // than a decision — the patient greets you here, and greeting them back is
+  // an act inside the draw's introduction step. The identity multiple-choice
+  // screen is gone for the same reason. See game/scoring.js's deriveChoices().
+  await expect(page.getByRole("heading", { name: /Patient 1 of/i })).toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".dlg .bubble").first()).toBeVisible();
+  await expect(page.locator(".req")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Verify identity/i })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -78,7 +80,6 @@ test("reading the requisition leads into the draw, not into two tube-tapping scr
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
-  await page.getByRole("button", { name: /Greet & begin/i }).click();
   await expect(page.getByRole("heading", { name: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
 
   // advance the guide's dialogue beats to the option list
@@ -140,7 +141,6 @@ test("the room's tube rack is scenery now, and clicking it breaks nothing", asyn
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
-  await page.getByRole("button", { name: /Greet & begin/i }).click();
   const canvas = page.locator("canvas");
   const box = await canvas.boundingBox();
   for(let fx=0.20; fx<=0.45; fx+=0.06){

@@ -134,13 +134,13 @@ test("the draw-complete screen reports real measurements, not ticks", async ({ p
   if(await carryOn.count()) await carryOn.click();
   await expect(page.locator("h2").first()).toContainText("Draw complete", { timeout:8000 });
 
-  // The chips carry measured values, not ticks. A draw stopped this early has
-  // measurements only for what actually ran — which is itself the behaviour
-  // worth pinning: a chip with nothing behind it shows no number rather than
-  // a zero it did not earn.
+  // The chips carry measured values, not ticks — and a step that never ran
+  // shows no chip at all rather than a zero it did not earn, which is why a
+  // draw stopped this early has a short list of them.
   const chips = await page.locator(".vp-chip").allTextContents();
+  expect(chips.length).toBeGreaterThan(0);
   expect(chips.join(" | ")).toMatch(/\d+\/\d+|\d+(\.\d+)?\s*(°|s|mm|%|mL)/);
-  expect(chips.some(t=>/Insertion angle$/.test(t.trim().replace(/^[•✓]\s*/, "")))).toBe(true);
+  expect(chips.every(t=>/[\d]/.test(t) || /none/i.test(t))).toBe(true);
   // and the laboratory's verdict is on the same screen
   await expect(page.locator(".lab-receiving")).toBeVisible();
   expect(errors).toEqual([]);

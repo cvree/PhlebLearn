@@ -259,9 +259,9 @@ and calls `render()`, which calls exactly one `renderXxx()` function per
 screen. One patient is:
 
 ```
-arrive → review (the requisition) → [site, only if this patient's arms
-pose a question] → collect (the draw) → label and route → [respond, only if
-they asked something] → score
+review (the patient arrives with their requisition) → [site, only if their
+arms pose a question] → collect (the draw) → label and route → [respond,
+only if they asked something] → score
 ```
 
 **Three screens were removed once the physical steps made them redundant**,
@@ -274,6 +274,9 @@ reads what they did instead.*
 | "Verify identity" multiple choice | the `introduce` step: two identifiers, from the patient's own mouth, before anything is touched — including the patient who answers with a nickname |
 | "Select the tubes" (tap a rack) | the supply cart: real packages, expiry dates on the back, a wrong tube that sits there until you remove it |
 | "Order of draw" (tap them in sequence) | the same cart's numbered rack, plus the order they actually came off the holder |
+| "Greet & begin" (one button) | the patient greets you on the requisition screen; greeting them back is an act in the introduction |
+| the mid-draw event quiz | real complications, caused by the draw and answered on the arm |
+| the report printed at the end of the draw | one verdict, on the score screen, once the patient is finished with |
 
 `game/scoring.js`'s `deriveChoices()` is where that mapping lives — it fills
 in `ENC.idChoice`, `ENC.selected` and `ENC.ordered` from the introduction and

@@ -32,6 +32,7 @@ import { getScene } from "../rendering/scene.js";
 import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
 import { tubeMeshes, resetTubeSelection } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
+import { ensureArmSession } from "../venipuncture/physicalSteps.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
 import { VP_TIPS, VP_ICON } from "../venipuncture/questions.js";
@@ -59,18 +60,19 @@ export function render(){
 }
 /* THE SHAPE OF ONE PATIENT
 
-   arrive → review the requisition → [site, if this patient's arms need a
-   decision] → the draw → label and route → [respond, if they asked something]
-   → score.
+   the patient arrives with their requisition → [site, if this patient's arms
+   need a decision] → the draw → label and route → [respond, if they asked
+   something] → score.
 
-   Three screens that used to sit between "review" and the draw are gone:
-   identity was a multiple-choice question the physical introduction step now
-   asks properly, and tube selection and order of draw were two taps-on-a-rack
-   screens the supply cart now makes the learner do for real. Asking twice
-   taught nothing the second time. See game/scoring.js's deriveChoices(). */
+   Four screens that used to sit in front of the draw are gone, all for the
+   same reason: the draw itself now does the thing they were asking about.
+   Identity is the introduction step. Tube selection and order of draw are the
+   supply cart. And the greeting was its own screen with one button on it,
+   which is a click, not a decision — the patient now says hello on the
+   requisition screen, and greeting them properly is an act inside the
+   introduction. See game/scoring.js's deriveChoices(). */
 function renderStep(){
   if(state==="idle")        return renderIdle();
-  if(state==="arrive")      return renderArrive();
   if(state==="review")      return renderReview();
   if(state==="site")        return renderSite();
   if(state==="collect")     return renderCollect();
@@ -138,20 +140,7 @@ function nextPatient(){
        handlingChoice:null, respondChoice:null, scores:{}, startedAt:Date.now()});
   spawnPatient(getScene(), p);
   resetTubeSelection();
-  go("arrive");
-}
-
-/* ---------- arrive ---------------------------------------------------------- */
-function renderArrive(){
-  const p=ENC.p;
-  const greet=pick(["Hi, I'm here for my blood draw.","Hello! Ready when you are.","Hi there. I've got my lab order right here.","Morning! Hope this is quick."]);
-  panel.innerHTML=`
-    <h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
-    ${guided()&&SHIFT.index===0?teach("arrive"):""}
-    ${says(p.first,pEmoji(p),greet,p.mood)}
-    <button class="btn" id="greet">🙋 Greet & begin</button>
-  `;
-  $("greet").onclick=()=>{ sfx("tap"); go("review"); };
+  go("review");
 }
 
 /* ---------- review requisition ----------------------------------------------- */
@@ -173,6 +162,10 @@ function reqCardHTML(p){
 }
 function renderReview(){
   const p=ENC.p;
+  // The patient arrives here rather than on a screen of their own: saying
+  // hello was never a decision, and the introduction step inside the draw is
+  // where greeting them is actually performed and measured.
+  const greet=pick(["Hi, I'm here for my blood draw.","Hello! Ready when you are.","Hi there. I've got my lab order right here.","Morning! Hope this is quick."]);
   let options;
   if(p.reqIssue){
     const other=pick(ALL_CATCHES.filter(c=>c!==p.reqIssue.catch));
@@ -192,7 +185,7 @@ function renderReview(){
   const learn="Read every field, name, DOB, tests, date, provider. If anything's missing or mismatched, hold and clarify before drawing.";
   if(guided()){
     runDialogue("review",{
-      head:`<h2>🖥️ Check the requisition</h2>${teach("review")}`,
+      head:`<h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>${says(p.first,pEmoji(p),greet,p.mood)}${teach("review")}`,
       extra:reqCardHTML(p),
       who:DOT.name, emoji:DOT.emoji, sub:"your guide",
       lines:[pick(["Before we touch a tube, give the order a good scan.","Quick check of the requisition first. Anything off?","Let's read the whole order before we draw."])],
@@ -202,7 +195,9 @@ function renderReview(){
       onDone:(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; afterRequisition(); }
     });
   }else{
-    panel.innerHTML=`<h2>🖥️ Check the requisition</h2>${reqCardHTML(p)}
+    panel.innerHTML=`<h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
+      ${says(p.first,pEmoji(p),greet,p.mood)}
+      ${reqCardHTML(p)}
       <p class="sub">${pick(["Anything missing or mismatched before you draw?","Scan it, is it ready to use?","Is the order complete and matching?"])}</p>
       <div id="opts"></div>`;
     optionStep(options,(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; afterRequisition(); }, "If something's missing or doesn't match, hold and clarify before drawing.");
@@ -392,6 +387,11 @@ function renderProcedureChoice(c){
       c.chosenProcedure = b.dataset.proc;
       c.procedureChosenByLearner = true;
       c.procedureMatchedIndication = (b.dataset.proc === indicated);
+      // Commit it now rather than at whichever later step first needs an arm:
+      // the device decides the site, the gauge, the entry window and the
+      // vessel set, and all of those are properties of THIS decision, made
+      // here. ensureArmSession is idempotent.
+      ensureArmSession(c);
       renderCollect();
     };
   });
@@ -531,8 +531,21 @@ function vpFinish(){
     <div class="fb no"><b>You stopped the draw.</b> That was the right call for a
     ${(c.complicationMeasurements && (c.complicationMeasurements.events.find(e=>e.id===c.complicationHalt.id)||{}).label) || "complication"},
     and the report below is built from what was actually collected before it — not from what was ordered.</div>` : "";
+  // THE REPORT COMES AT THE END, NOT HERE.
+  //
+  // The Final Practical used to print its whole rubric report the moment the
+  // needle was out — before the tubes were labelled, before the patient had
+  // been answered, and then followed it two clicks later with a second
+  // grading screen. That is two verdicts on one encounter, delivered in the
+  // middle of the job. The draw now ends with a recap of what it measured,
+  // and every judgement lands together on the score screen once the patient
+  // is finished with. `gradeAttempt()` still runs here, because this is the
+  // moment the attempt genuinely ended.
   const body = finalPractical()
-    ? `${haltNote}${renderPracticalReport(report, replay, { progress: progressLine })}${labReceivingHTML(c.specimenQuality)}`
+    ? `${haltNote}
+       <div class="fb"><b>Draw complete.</b> Your practical report follows once you have finished with the patient.</div>
+       <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
+       ${labReceivingHTML(c.specimenQuality)}`
     : `${haltNote}
        <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
        ${stagingBlock}
@@ -799,6 +812,12 @@ function starHTML(stars){
 }
 function renderScore(){
   const s=ENC.scores, cats=Object.keys(s);
+  // The Final Practical's rubric report lands here, with the encounter score,
+  // so there is exactly one place a learner reads how the whole thing went.
+  const c = ENC.collect;
+  const practical = (finalPractical() && c && c.report)
+    ? `<h3 class="rep-sec rep-title">📋 Practical report</h3>${renderPracticalReport(c.report, c.replay, { progress: c.progressLine })}`
+    : "";
   const correct=cats.filter(c=>s[c]).length, pct=Math.round(correct/cats.length*100);
   const stars = pct>=95?5:pct>=80?4:pct>=65?3:pct>=45?2:1;
   const teaching = guided();
@@ -813,6 +832,7 @@ function renderScore(){
     <div class="scoregrid">
       ${cats.map((c,i)=>`<button type="button" class="scorecell ${s[c]?'ok':'no'}" data-cat="${c}" style="animation-delay:${i*60}ms"><div class="lab">${FEEDBACK[c].label}</div>${s[c]?'✓ Good':'✗ Review'}<span class="more">Tap for details</span></button>`).join("")}
     </div>
+    ${practical}
     <div id="fbs"></div>
     <button class="btn" id="cont">${SHIFT.index+1>=SHIFT.len?(teaching?'🎓 Finish lesson':'🏁 Finish shift'):'➡️ Next patient'}</button>
   `;

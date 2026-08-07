@@ -57,9 +57,9 @@ and a rejection names the tests the patient has to be drawn again for.
 
 ## One patient, start to finish
 
-Greet them → read the requisition → assess the arms, if they need it → the
+They arrive with their requisition → assess the arms, if they need it → the
 draw → label the tubes and decide how they travel → answer whatever they
-asked you → the score.
+asked you → the score, and your practical report.
 
 Identification, tube selection and order of draw are not questions you answer
 before the draw; they are things you do inside it, at the patient and at the

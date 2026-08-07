@@ -1038,8 +1038,27 @@ about it and score what they did.*
   every tube was accepted, and hides recap chips for steps that never ran
   rather than showing a zero they did not earn.
 
-Net: eleven screens per patient became six, and the three categories those
-screens used to measure are now scored from real technique — see
+A second pass went further:
+
+- **The greeting screen** was one button that said "Greet & begin". That is a
+  click, not a decision — and greeting the patient is already an act inside
+  the introduction step, where it is measured. The patient now says hello on
+  the requisition screen they arrive with.
+- **Events the introduction elicits** were removed from the `EVENTS` table.
+  Being told about a latex allergy in a bubble and then asking about it
+  thirty seconds later taught nothing the second time; the patient discloses
+  it in the interview now, from `patient.history`, to a learner who asks.
+  Fainting history went the same way. What stays is what a patient actually
+  volunteers and a phlebotomist has to answer well.
+- **The Final Practical's report moved to the end.** It used to print the
+  moment the needle was out — before the tubes were labelled, before the
+  patient had been answered — and was then followed two clicks later by a
+  second grading screen. Two verdicts on one encounter, delivered mid-job.
+  The draw now ends with a recap of what it measured, and every judgement
+  lands together, once, on the score screen.
+
+Net: eleven screens per patient became five, and the three categories the
+deleted screens used to measure are now scored from real technique — see
 `deriveChoices()` in `game/scoring.js`. 14 unit tests.
 
 ### Still open

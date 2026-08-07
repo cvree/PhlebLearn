@@ -225,7 +225,7 @@ function handlePick(e, canvasEl){
   const { data, obj } = hit;
   const alwaysOn = data.pickType==="mascot" || data.pickType==="stickerbook" || data.pickType==="shop";
   if(!alwaysOn && !isInteractableNow(data.pickType, state)) return;
-  if(data.pickType==="patient"){ sfx("tap"); if(state==="arrive") flashPanel(); return; }
+  if(data.pickType==="patient"){ sfx("tap"); if(state==="review") flashPanel(); return; }
   if(data.pickType==="mascot"){ sfx("coin"); reactMascot("good"); toast(pickOne(DOT_LINES)); return; }
   if(data.pickType==="screen" && state==="review"){ sfx("tap"); flashPanel(); return; }
   if(data.pickType==="bin" && state==="label"){ sfx("tap"); flashPanel(); return; }

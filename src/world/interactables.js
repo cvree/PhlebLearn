@@ -9,7 +9,7 @@ export const INTERACTABLE_STATES = {
   // The rack in the room is scenery now: choosing tubes is something the
   // learner does at the supply cart, with real packages they have to read.
   tube: [],
-  patient: ["arrive"],
+  patient: ["review"],
   screen: ["review"],
   bin: ["label"],
   mascot: null,        // null = always interactable, regardless of screen
