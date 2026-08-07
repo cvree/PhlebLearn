@@ -88,3 +88,32 @@ body[data-reduced="on"] .cx-card{animation:none}
 
 /* labelling and routing, on one screen */
 .route-head{margin:12px 0 6px;font-weight:900;font-size:13.5px;color:var(--ink)}
+
+/* =========================================================================
+   PAYING AS YOU GO — the streak, and the draw's own progress
+
+   The chip only exists while there is a streak to show: two clean sections in
+   a row brings it in, a poor section takes it away again. It is not a HUD
+   element that sits there empty.
+   ========================================================================= */
+.streak-chip{
+  position:absolute; left:50%; top:52px; transform:translateX(-50%);
+  z-index:30; pointer-events:none;
+  background:linear-gradient(135deg,var(--gold),#ffb37a);
+  color:#4a2d00; font-weight:900; font-size:12.5px; letter-spacing:.02em;
+  padding:5px 12px; border-radius:999px; box-shadow:0 6px 18px rgba(43,39,64,.25);
+}
+.streak-chip.pop{ animation:streakPop .45s cubic-bezier(.2,1.4,.4,1) both }
+@keyframes streakPop{
+  0%{ transform:translateX(-50%) scale(.7); opacity:0 }
+  60%{ transform:translateX(-50%) scale(1.12); opacity:1 }
+  100%{ transform:translateX(-50%) scale(1); opacity:1 }
+}
+body[data-reduced="on"] .streak-chip.pop{ animation:none }
+
+/* the draw's progress, as one bar rather than seventeen pips to count */
+.vp-bar{height:8px;border-radius:999px;background:#ece6f5;overflow:hidden;margin:6px 0 10px}
+.vp-bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--mint),var(--plum));
+  transition:width .35s cubic-bezier(.2,.9,.3,1)}
+body[data-reduced="on"] .vp-bar-fill{transition:none}
+.vp-bar-lab{display:flex;justify-content:space-between;font-size:11px;font-weight:800;color:var(--ink-soft);margin-top:-6px}

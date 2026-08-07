@@ -55,6 +55,7 @@ export function startComplicationWatch(c, o){
     sfx: opt.sfx || null,
     showing: null,
     halted: false,
+    lastSnapshot: null,
   };
   return session;
 }
@@ -73,16 +74,35 @@ export function currentComplications(){ return session ? session.state : null; }
  * One frame. Cheap when nothing is happening: a snapshot of a dozen numbers
  * and a table of thresholds.
  */
+/* How often the draw is actually examined for new complications.
+   Nothing here changes in a sixtieth of a second — the fastest threshold in
+   the rules is measured in whole seconds — and the snapshot walks the arm's
+   vessel set, so doing it every frame was sixty times the work for none of
+   the resolution. The elapsed time still accumulates exactly; only the
+   inspection is throttled. */
+const WATCH_HZ = 1/8;
+let sinceLook = 0;
+
 export function tickComplications(dt){
   if(!session) return;
   const { c, state } = session;
   const now = Date.now();
+  sinceLook += dt || 0;
+  const look = sinceLook >= WATCH_HZ;
+  if(!look){
+    // still progress what is already running — that is a clock, not a search
+    tickComplicationState(state, dt, session.lastSnapshot || {}, now);
+    presentNext(now);
+    return;
+  }
+  sinceLook = 0;
 
   // The post-draw branch owns the volume of blood in the tissue; the bruise
   // on the arm is that number rather than a second one drawn beside it.
   if(c.postDraw) syncFromAftercare(state, c.postDraw.extravasatedMl);
 
   const snapshot = snapshotDraw(c, now);
+  session.lastSnapshot = snapshot;
   for(const found of detectOnsets(snapshot, state)){
     onset(state, found.id, found.data, now);
     if(session.sfx) session.sfx(complicationFor(found.id).severity === "urgent" ? "bad" : "click");

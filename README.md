@@ -76,6 +76,19 @@ cart. Nothing asks you twice.
 Bests are tracked per mode, because a 26/28 with the coach talking is not the
 same achievement as one scored in silence.
 
+## Getting paid
+
+Every step you finish pays a little. Every **section** you finish pays
+properly, scaled by its own 0–100 measurement — the same number the rubric
+grades from, so the reward and the assessment can never disagree. Three clean
+sections in a row starts a streak; a section below 60 breaks it and pays
+nothing. The end of the draw settles up on outcomes: how much you finished,
+whether every section was clean, whether every specimen was accepted, whether
+you missed nothing.
+
+Clicking through cannot out-earn technique. That is arithmetic, not policy —
+see `src/game/rewards.js`.
+
 ## Progress
 
 Coins from good draws buy the room — and four pieces of **equipment that

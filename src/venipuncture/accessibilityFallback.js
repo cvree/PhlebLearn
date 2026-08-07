@@ -81,6 +81,12 @@ export function renderCurrentStep(c, stage, hooks){
       hooks.onMidDrawEvent(c.step);
       return;
     }
+    // Every finished step is worth acknowledging the moment it is finished.
+    // What that acknowledgement IS belongs to the caller — this module knows
+    // nothing about XP, streaks or sound; it knows a step just ended and
+    // which one. See game/rewards.js.
+    if(hooks.onStepFinished) hooks.onStepFinished(finishedId, c.step < c.steps.length ? c.steps[c.step] : null);
+
     // End of a section. Whether anything is SHOWN is the caller's decision —
     // this module knows nothing about modes. Practice mode returns a payload
     // and renders the section's own measurements; Learn and the Final

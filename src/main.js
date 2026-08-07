@@ -407,13 +407,18 @@ function installTestSeam(){
       // broke" rather than "a bigger patient got rolled".
       if(p.appearance){ p.appearance.width = 1; p.appearance.height = 1; }
       const { ENC } = await import("./game/gameState.js");
-      if(procedureId){
-        // Built directly, with the override already on it, rather than
-        // letting renderCollect() build the default one on first render —
-        // ensureArmSession() reads `forcedProcedure` the first time ANY step
-        // runs, which is before this function would get a second chance.
-        ENC.collect = createProcedureState(selected, { patient: p, handedness: SS.handedness, forcedProcedure: procedureId });
-      }
+      // The draw's tube set comes from the REQUISITION now — the learner's own
+      // selection happens physically at the cart — so pinning which tubes a
+      // test draws means pinning what was ordered. Without this the seam's
+      // `tubes` argument silently stopped meaning anything.
+      p.reqSet = selected.slice();
+      // Built directly rather than letting renderCollect() build one on first
+      // render, because ensureArmSession() reads `forcedProcedure` the first
+      // time ANY step runs — before this function would get a second chance.
+      ENC.collect = createProcedureState(selected, {
+        patient: p, handedness: SS.handedness,
+        forcedProcedure: procedureId || null,
+      });
       go("collect");
       const idx = ENC.collect ? ENC.collect.steps.indexOf(stepId) : -1;
       if(idx > 0){ ENC.collect.step = idx; go("collect"); }
@@ -473,6 +478,18 @@ function installTestSeam(){
       const { onset } = await import("./venipuncture/complications/complicationState.js");
       onset(s, id, null, Date.now());
       return true;
+    },
+    /** What the draw has paid out so far, and the streak it is on. */
+    async rewardSnapshot(){
+      const [{ ENC, SS }] = await Promise.all([import("./game/gameState.js")]);
+      const c = ENC && ENC.collect;
+      return {
+        xp: SS.xp, coins: SS.coins,
+        streak: c ? (c.streak || 0) : 0,
+        sectionsDone: c ? (c.sectionsDone || 0) : 0,
+        cleanSections: c ? (c.cleanSections || 0) : 0,
+        step: c ? c.step : null,
+      };
     },
     /** The tubes as the laboratory receives them. */
     async specimenSnapshot(){

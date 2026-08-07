@@ -311,15 +311,28 @@ export function buildArm(o){
   }
 
   let clock = 0;
+  let pulseAccum = 0;
+  // Found once. `vesselMeshes` never changes after the arm is built, and
+  // scanning it every frame to find the same mesh was pure waste.
+  const arteryMesh = [...vesselMeshes.values()].find(m=>m.userData.vessel.kind === VESSEL_KIND.ARTERY) || null;
+  /* A pulse is a vertex rewrite of a whole tube — the one genuinely expensive
+     thing in this scene's per-frame work. It does not need 60 updates a
+     second to read as a pulse: 30 is indistinguishable and halves the cost. */
+  const PULSE_HZ = 1/30;
+
   /** Pulses the artery. The tendon and the nerve stay still, on purpose. */
   function tick(dt){
-    clock += dt || 0;
-    const artery = [...vesselMeshes.values()].find(m=>m.userData.vessel.kind === VESSEL_KIND.ARTERY);
-    if(artery){
-      const beat = Math.max(0, Math.sin(clock*7.6));
-      applySwell(artery, 0.25 + beat*0.75);
+    const d = dt || 0;
+    clock += d;
+    if(arteryMesh){
+      pulseAccum += d;
+      if(pulseAccum >= PULSE_HZ){
+        pulseAccum = 0;
+        const beat = Math.max(0, Math.sin(clock*7.6));
+        applySwell(arteryMesh, 0.25 + beat*0.75);
+      }
     }
-    applyCondition(dt);
+    applyCondition(d);
   }
 
   function dispose(){

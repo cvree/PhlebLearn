@@ -26,6 +26,9 @@ import { awardBadge, difficultyName, addXP, addCoins } from "../game/saveSystem.
 import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
 import { getRoomLevel, canChooseProcedure, hasUpgrade } from "../game/progression.js";
+import {
+  STEP_XP, sectionScore, sectionReward, nextStreak, streakTier, drawReward,
+} from "../game/rewards.js";
 import { PROCEDURE, PROCEDURES, indicatedProcedure } from "../venipuncture/procedure.js";
 import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint, clearHint } from "../game/dialogue.js";
 import { getScene } from "../rendering/scene.js";
@@ -266,7 +269,11 @@ function renderCollect(){
   const id=c.steps[c.step];
   const info=VP_TIPS[id];
   const done=c.step, total=c.steps.length;
-  const dots=c.steps.map((s,i)=>`<span class="vp-pip ${i<done?'done':i===done?'now':''}" title="${VP_TIPS[s].t}">${VP_ICON[s]}</span>`).join("");
+  // One bar and the name of the piece of technique you are inside, rather
+  // than seventeen pips to count. The section is what the learner is actually
+  // being paid and graded on, so it is what the progress is labelled with.
+  const section = sectionForStep(id);
+  const pctDone = Math.round(done/total*100);
   const r = reveal();
   // Learn teaches the step. Practice is reminded what the step is FOR.
   // The Final Practical is told the step's name and nothing else — the
@@ -277,8 +284,9 @@ function renderCollect(){
       ? `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b> ${info.tip}</div>`
       : `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b></div>`;
   panel.innerHTML=`
-    <h2>🩸 Venipuncture <span class="vp-count">step ${done+1}/${total}</span></h2>
-    <div class="vp-progress">${dots}</div>
+    <h2>🩸 ${section ? section.label : "Venipuncture"} <span class="vp-count">step ${done+1}/${total}</span></h2>
+    <div class="vp-bar"><div class="vp-bar-fill" style="width:${pctDone}%"></div></div>
+    <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%${c.streak>=2?` · ${streakTier(c.streak)?streakTier(c.streak).emoji:"✨"} ${c.streak} clean`:""}</span></div>
     ${lesson}
     <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
     <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`;
@@ -290,6 +298,7 @@ function renderCollect(){
     hasMidDrawEvent: ()=> !!(ENC.p.drawEvent && ENC.p.drawEvent.when==="mid" && !ENC.drawEventHandled),
     onMidDrawEvent: (resumeStep)=>{ ENC.drawResumeBeat=resumeStep; go("drawresp"); },
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
+    onStepFinished: (finishedId, nextId)=> rewardStep(c, finishedId, nextId),
     onCleanup: ()=>{ if(ENC._collectCleanup) ENC._collectCleanup(); },
     // Practice mode only. The driver asks; the mode decision lives here.
     sectionFeedbackFor: (finishedId, nextId)=>{
@@ -397,6 +406,72 @@ function renderProcedureChoice(c){
   });
 }
 
+/* ---------- paying as you go -------------------------------------------------
+   The draw used to pay out once, on a screen the learner reached minutes
+   after the work that earned it. Now every finished step ticks, and every
+   finished SECTION pays according to its own measurement — the same 0–100 the
+   rubric grades from, so the feedback and the assessment can never disagree.
+
+   Nothing here decides what is good; `rewards.js` does the arithmetic and
+   `sections.js` says which measurements a section produced.
+   ---------------------------------------------------------------------------- */
+function rewardStep(c, finishedId, nextId){
+  addXP(STEP_XP);
+  floatXP(`+${STEP_XP} XP`);
+  syncTop();
+
+  if(!endsSection(finishedId, nextId)) return;
+  const section = sectionForStep(finishedId);
+  if(!section) return;
+
+  const score = sectionScore(sectionMeasurements(c, section));
+  const streak = c.streak || 0;
+  const r = sectionReward(score, streak);
+  c.streak = nextStreak(streak, score);
+  c.sectionsDone = (c.sectionsDone || 0) + 1;
+  if(r.clean) c.cleanSections = (c.cleanSections || 0) + 1;
+
+  if(r.xp){ addXP(r.xp); saveSS(); }
+  if(r.coins){ addCoins(r.coins); saveSS(); }
+  syncTop();
+
+  const tier = streakTier(c.streak);
+  if(r.clean){
+    sfx("win");
+    if(tier && c.streak === tier.at){ confetti(28); toast(`${tier.emoji} ${tier.blurb}`); }
+    else confetti(10);
+  }else if(r.broke && streak >= 3){
+    sfx("bad");
+    toast("Streak broken — that section did not hold together.");
+  }else if(r.xp){
+    sfx("coin");
+  }
+
+  // The banner says WHICH section and WHAT it scored, because "+14 XP" on its
+  // own teaches nothing about which piece of technique earned it.
+  if(r.label){
+    floatXP(`${r.label} · ${section.label} ${score}/100 +${r.xp} XP`);
+  }
+  renderStreakChip(c.streak);
+}
+
+/** A chip that only exists while there is a streak to show. */
+function renderStreakChip(streak){
+  const host = document.getElementById("app");
+  let el = document.getElementById("streakChip");
+  if(!streak || streak < 2){ if(el) el.remove(); return; }
+  if(!el && host){
+    el = document.createElement("div");
+    el.id = "streakChip";
+    el.className = "streak-chip";
+    host.appendChild(el);
+  }
+  if(!el) return;
+  const tier = streakTier(streak);
+  el.textContent = `${tier ? tier.emoji : "✨"} ${streak} clean`;
+  el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
+}
+
 /* ---------- complications ---------------------------------------------------
    The watch is opened here rather than inside any one step, because a
    complication outlives every step: it is the draw that has one, not the
@@ -497,10 +572,23 @@ function vpFinish(){
   const items=[["gatherOk","Supplies gathered"],["veinOk","Vein selected"],["cleanOk","Site cleaned"],["assembleOk","Needle assembled"],["uncapOk","Uncapped"],
     ["insertOk","Clean insertion"],["fillGood","Filled to line"],["tqGood","Tourniquet timing"],["tubeOrderOk","Order of draw"],
     ["pressureOk","Pressure held"],["disposeOk","Sharps disposed"],["mixOk","Tubes inverted"]];
-  const got=items.filter(([k])=>c[k]);
-  const bonus=Math.max(2, got.length*1);
-  if(!c.awarded){ addXP(bonus*2); addCoins(bonus); c.awarded=true; saveSS(); syncTop();
-    floatXP("+"+(bonus*2)+" XP"); if(got.length>=9){ sfx("win"); confetti(40); } else sfx("coin"); }
+  // The steps and sections have been paying as they went, so this is the
+  // small end-of-draw part: how much got finished, and the three outcomes a
+  // lump sum is actually good at recognising. See game/rewards.js.
+  const q = c.specimenQuality;
+  const cx = c.complicationMeasurements;
+  const payout = drawReward({
+    stepsDone: Math.min(c.step, c.steps.length), stepsTotal: c.steps.length,
+    cleanSections: c.cleanSections || 0, sectionsDone: c.sectionsDone || 0,
+    specimensAccepted: q ? q.acceptedCount : 0, specimensTotal: q ? q.total : 0,
+    complicationsHandled: !!(cx && cx.missedCount === 0 && cx.worsenedCount === 0 && !cx.fainted),
+  });
+  if(!c.awarded){
+    addXP(payout.xp); addCoins(payout.coins); c.awarded=true; saveSS(); syncTop();
+    floatXP("+"+payout.xp+" XP");
+    if(payout.notes.length >= 2){ sfx("win"); confetti(40); } else sfx("coin");
+  }
+  renderStreakChip(0);
   const hasPostDraw = !!ENC.p.drawEvent && ENC.p.drawEvent.when!=="mid" && !ENC.drawEventHandled;
   const sm = c.stagingMeasurements;
   // Teaching mode reports technique immediately; a scored shift holds it back
@@ -547,7 +635,8 @@ function vpFinish(){
        <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
        ${labReceivingHTML(c.specimenQuality)}`
     : `${haltNote}
-       <div class="fb"><b>Nicely done.</b> +${bonus*2} XP · +${bonus} 🪙 for a smooth, safe collection.</div>
+       <div class="fb"><b>Nicely done.</b> +${payout.xp} XP · +${payout.coins} 🪙 for a ${payout.completion}% complete draw${payout.notes.length?` — ${payout.notes.join(", ")}`:""}.</div>
+       ${c.cleanSections?`<div class="hint">${c.cleanSections} of ${c.sectionsDone} sections were clean, and they paid as you went.</div>`:""}
        ${stagingBlock}
        <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
        ${complicationSummaryHTML(c.complicationMeasurements)}

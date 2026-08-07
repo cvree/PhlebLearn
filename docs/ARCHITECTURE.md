@@ -188,6 +188,33 @@ runs at the end of the draw over the states the steps left behind.
 measurement produced by something?" has an honest answer and Practice mode's
 per-section feedback knows not to look for them.
 
+## When the learner gets paid
+
+`game/rewards.js` is pure arithmetic over the measurements the steps already
+produce, and it exists because the old payout was one lump at the end of a
+seventeen-interaction procedure — no acknowledgement of anything until a
+screen the learner reached minutes after the work that earned it.
+
+Three tiers, and the rule that keeps them honest is that **only the middle one
+is worth much**:
+
+| When | What | Scaled by |
+|---|---|---|
+| every finished step | `STEP_XP` (2) | nothing — doing it is progress |
+| every finished SECTION | 2–16 XP, a coin when clean | the section's own 0–100 mean, the same number the rubric grades from |
+| the end of the draw | completion, plus three outcome bonuses | how much got finished, whether every section was clean, whether every specimen was accepted, whether nothing was missed |
+
+A streak counts consecutive *clean* sections (≥88) and multiplies the section
+bonus only — never the step tick — so a long streak is worth having and is
+still only ever paid for good work. A section below 60 pays nothing and breaks
+it. `tests/rewards.spec.js` asserts the property that matters: a whole draw
+clicked through badly earns less than half what the same draw done well earns,
+and no amount of finishing things substitutes for doing them properly.
+
+The driver calls one hook, `onStepFinished(finishedId, nextId)`;
+`ui/panels.js` decides everything else, exactly as it does for Practice mode's
+section feedback. `venipuncture/` still knows nothing about XP.
+
 ## How an upgrade changes the draw
 
 `game/progression.js` holds the equipment rules, and they follow one

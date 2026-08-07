@@ -350,3 +350,33 @@ test("the tubes here are the tubes the collection step actually filled", async (
   expect(snap.tubes.every(t => t.inversions === 0)).toBe(true);
   expect(snap.tubes.every(t => !t.racked)).toBe(true);
 });
+
+/* =========================================================================
+   PAYING AS YOU GO
+
+   The arithmetic is unit-tested in tests/rewards.spec.js. What this proves is
+   that a step the learner actually finished pays them at the moment they
+   finish it, and that a section done well pays more than the step tick alone
+   — rather than the whole draw settling up on a screen minutes later.
+   ========================================================================= */
+
+test("finishing a section pays out there and then, scaled by how well it went", async ({ page })=>{
+  await open(page, "teach");
+  await useControls(page);
+  const before = await page.evaluate(()=>window.__phlebTest.rewardSnapshot());
+
+  for(const key of TUBES){
+    await page.locator(`[data-inv="pick:${key}"]`).click();
+    await page.locator('[data-inv="mix"]').click();
+    await page.locator('[data-inv="rack"]').click();
+  }
+  await expect(page.locator("#invReady")).toBeEnabled();
+  await page.locator("#invReady").click();
+
+  const after = await page.evaluate(()=>window.__phlebTest.rewardSnapshot());
+  // the step tick alone is 2 XP; a section mixed to every tube's own count is
+  // worth a great deal more than that
+  expect(after.xp - before.xp).toBeGreaterThan(6);
+  expect(after.sectionsDone).toBe(before.sectionsDone + 1);
+  expect(after.cleanSections).toBe(before.cleanSections + 1);
+});
