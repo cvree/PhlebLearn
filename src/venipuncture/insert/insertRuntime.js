@@ -41,7 +41,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
 import { evaluateInsert, isInVein } from "./insertRules.js";
 import {
@@ -80,7 +80,7 @@ let ctx = null;
  */
 export function startInsert(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "insert", arm: o.arm || {} });
   const state = o.state || createInsertState({});
 
   const thumb = buildThumb();

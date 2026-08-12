@@ -1,22 +1,49 @@
 /* =========================================================================
-   ARM SCENE — the close-up the draw actually happens in.
+   ARM SCENE — the draw chair, seen from the operator's own seat.
 
-   Its own THREE.Scene and camera, rendered through the app's single renderer,
-   exactly as the supply cart is. This is Phase 1b's deliverable and it is
-   deliberately generic: the tourniquet branch is the first tenant, but
-   palpation, cleaning, insertion, collection and post-draw care all work at
-   this same bench with this same arm.
+   Its own THREE.Scene and camera, rendered through the app's single renderer.
+   One of these exists per encounter (see bench/benchSession.js): every mode —
+   tourniquet, palpation, cleaning, assembly, insert, collection, post-draw,
+   inversion — leases THIS scene rather than building its own, so the band you
+   tied is still tied because it is the same object.
 
-   The one piece of maths worth reading is pointerToLimb(). Everything the
-   learner does to a limb is naturally cylindrical — where along it, how far
-   round it, how far off it — so the pointer is mapped into exactly those
-   three numbers instead of into screen pixels. Wrap direction, band position,
-   tension and tuck direction all fall out of that one conversion.
+   Two pieces of maths are worth reading.
+
+   1. pointerToLimb(). Everything the learner does to a limb is naturally
+      cylindrical — where along it, how far round it, how far off it — so the
+      pointer is mapped into exactly those three numbers instead of into screen
+      pixels. Wrap direction, band position, tension and tuck direction all
+      fall out of that one conversion.
+
+   2. The camera basis. The old framing laid the arm across the screen and
+      yawed the camera 24 degrees, because a square-on view sees the limb's
+      cross-section edge-on and the wrap becomes unsolvable. That bought
+      solvability at the cost of believability — you were looking at a
+      specimen on a bench, not at a patient across from you.
+
+      The camera now sits at a seated operator's eyeline, past the patient's
+      hand, looking down the limb as it runs away into the screen. That is a
+      steeply oblique view of every cross-section, so the ellipse the solve
+      needs is LARGER than the old framing gave it, not smaller: the basis
+      vectors come out at ~53 degrees to each other where they used to be much
+      closer to parallel. Believability and conditioning point the same way
+      here, which is why this framing is safe to prefer.
+
+   HANDEDNESS is a single transform on `root` — a Z mirror — and nothing else
+   in the game knows about it. Every gesture solves in LIMB-LOCAL coordinates
+   (rays are pulled back through the root's inverse; points are pushed out
+   through its forward matrix), so a left-handed bench is the same numbers
+   producing the mirrored picture. The 2x2 solve recovers cos and sin from a
+   projected basis rather than assuming a sign, so a negative determinant
+   changes nothing about the answer — see tests/handedness.spec.js, which
+   exists precisely because assuming would have been silent and wrong.
    ========================================================================= */
 import * as THREE from "three";
 import { buildArm, buildArmrest, ARM_Y, siteWorldPoint } from "./armMesh.js";
+import { buildPatientBody } from "./patientBody.js";
 import { SITE, SHOULDER_X, HAND_X, WRIST_X } from "./armAnatomy.js";
 import { contactShadowTexture } from "../../rendering/labelTexture.js";
+import { FRAMINGS, DEFAULT_FRAMING } from "./benchFramings.js";
 
 let bgTexture = null;
 function gradientBackground(){
@@ -25,50 +52,109 @@ function gradientBackground(){
   c.width = 4; c.height = 128;
   const g = c.getContext("2d");
   const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, "#cfdced");
-  grad.addColorStop(0.5, "#e4ecf4");
-  grad.addColorStop(1, "#f2eee8");
+  grad.addColorStop(0, "#c3d2e6");
+  grad.addColorStop(0.44, "#dde7f1");
+  grad.addColorStop(1, "#efeae2");
   g.fillStyle = grad; g.fillRect(0, 0, 4, 128);
   bgTexture = new THREE.CanvasTexture(c);
   bgTexture.colorSpace = THREE.SRGBColorSpace;
   return bgTexture;
 }
 
+/* ---------- the operator's seat ------------------------------------------------
+   The camera's offset from whatever it is looking at, as a direction in
+   limb-local metres. Read it as a sentence: back down the arm past the hand
+   (-X), up to a seated eyeline (+Y), and round to the side the operator
+   actually sits on (+Z).
+
+   PITCH 0.56 rad is 32 degrees of downward look — the brief's 30-35 window,
+   and the angle at which you can see both the fossa and the patient's face.
+   SWING 0.96 rad puts the view direction 55 degrees off the limb's axis: far
+   enough along it that the arm visibly recedes into the screen, far enough
+   across it that the hand stays in frame, because a hand going pale is how a
+   band that is too tight announces itself.
+
+   These two numbers are what make the ellipse solve work, so they are not
+   free to taste. At this pair the cross-section's two projected basis vectors
+   come out 53 degrees apart (|det| / |A||B| = 0.80). The old across-the-bench
+   framing was chosen to scrape past the same test; this one clears it by a
+   wide margin, which is why believability cost nothing here.
+   ---------------------------------------------------------------------------- */
+const PITCH = 0.56;
+const SWING = 0.96;
+
+/** How fast a framing change is chased. Never a cut — see NOTES on beats. */
+const EASE_POS = 3.4;      // per second, exponential
+const EASE_LOOK = 4.2;
+
 /**
  * @param {object} o
  *   skin, build, armSide, scenarioKeys, vigour   → armMesh.buildArm
- *   handedness   which side of the bench the operator works from
+ *   handedness   "right" | "left" — which side of the bench the operator works
+ *                from. Implemented as a mirror of `root`; nothing downstream
+ *                of this function needs to know which it got.
  */
 export function buildArmScene(o){
   const opt = o || {};
   const scene = new THREE.Scene();
   scene.background = gradientBackground();
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xc9d3de, 1.0));
-  const key = new THREE.DirectionalLight(0xfff4e6, 1.25);
-  key.position.set(-0.35, 1.1, 0.85);
+  const leftHanded = opt.handedness === "left";
+  const SZ = leftHanded ? -1 : 1;
+
+  /* Atmospheric depth. The patient's shoulder and face sit a long way behind
+     the working area, and pushing them back into the haze is what lets them be
+     PRESENT without competing with a 4 mm vein for attention. */
+  scene.fog = new THREE.Fog(0xdfe7f1, 0.62, 1.55);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xc9d3de, 0.94));
+  const key = new THREE.DirectionalLight(0xfff4e6, 1.22);
+  key.position.set(-0.55, 1.05, 0.72);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xdce9ff, 0.42);
-  fill.position.set(0.7, 0.5, -0.7);
+  const fill = new THREE.DirectionalLight(0xdce9ff, 0.40);
+  fill.position.set(0.62, 0.45, -0.70);
   scene.add(fill);
   // a soft rim so the limb's silhouette reads against the background — the
   // silhouette is what the learner judges "round the back of the arm" against
-  const rim = new THREE.DirectionalLight(0xffffff, 0.30);
-  rim.position.set(0.1, 0.35, -1.0);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.34);
+  rim.position.set(0.15, 0.30, -1.0);
   scene.add(rim);
 
   // far plane has room for the long throw fitCamera uses (see BASE_FOV there)
   const camera = new THREE.PerspectiveCamera(20, 1.6, 0.02, 20);
 
   const root = new THREE.Group();
+  root.scale.z = SZ;
   scene.add(root);
 
+  /* A mirrored root has a negative determinant, so every triangle under it
+     winds backwards and back-face culling eats the front of the arm. Normals
+     are still correct (three.js takes the inverse transpose, which for a pure
+     mirror is the mirror), so the ONLY thing that has to change is culling.
+     Patching `add` rather than fixing up in tick() means a prop is correct on
+     the very first frame it exists, including one added mid-gesture. */
+  if(leftHanded){
+    const _add = root.add.bind(root);
+    root.add = function(...objs){
+      const r = _add(...objs);
+      objs.forEach(obj => obj && obj.traverse && obj.traverse(n => {
+        const ms = Array.isArray(n.material) ? n.material : (n.material ? [n.material] : []);
+        ms.forEach(m => { if(m) m.side = THREE.DoubleSide; });
+      }));
+      return r;
+    };
+  }
+
   /* --- bench ------------------------------------------------------------- */
+  /* The bench stops short of the patient. It used to be 1.4 m of counter
+     running the full width of the scene, which was invisible while the arm
+     was the only thing in shot and became a slab through the patient's chest
+     the moment there was a patient. */
   const bench = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 0.024, 0.62),
+    new THREE.BoxGeometry(0.80, 0.024, 0.62),
     new THREE.MeshStandardMaterial({ color: 0xf1ece3, roughness: 0.62 })
   );
-  bench.position.set(0, -0.042, 0.06);
+  bench.position.set(-0.26, -0.042, 0.06);
   root.add(bench);
 
   root.add(buildArmrest(opt.build));
@@ -77,12 +163,12 @@ export function buildArmScene(o){
   const arm = buildArm(opt);
   root.add(arm.group);
 
-  // A hint of the patient beyond the elbow, so the arm is attached to someone.
-  const sleeveMat = new THREE.MeshStandardMaterial({ color: opt.shirt == null ? 0x7f9bc4 : opt.shirt, roughness: 0.85 });
-  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.062, 0.06, 18), sleeveMat);
-  sleeve.rotation.z = Math.PI/2;
-  sleeve.position.set(SHOULDER_X + 0.022, ARM_Y, 0);
-  root.add(sleeve);
+  /* The rest of the person, beyond the elbow and up into the frame's top
+     third. Not decoration: the brief's whole camera argument is that you
+     should be able to see who you are sticking, and the patient's face is
+     where a wince, a held breath and the exhale at flashback are read. */
+  const body = buildPatientBody(opt);
+  root.add(body.group);
 
   /* --- contact shadow ---------------------------------------------------- */
   const shadow = new THREE.Mesh(
@@ -106,42 +192,50 @@ export function buildArmScene(o){
   root.add(siteRing);
   function setSiteVisible(on){ siteRing.material.opacity = on ? 0.55 : 0; }
 
-  /* ---------- pointer → limb ---------------------------------------------
-     Manipulating a limb is naturally cylindrical — where along it, how far
-     round it, how far off it — so the pointer is converted into exactly those
-     numbers rather than into pixels.
+  /* ---------- local space ↔ world ----------------------------------------
+     Everything above lives under `root`, which may be mirrored. Every gesture
+     below solves in root-LOCAL metres, so points are pushed out through the
+     root's matrix and rays are pulled back through its inverse. That one pair
+     of conversions is the entirety of what handedness costs the rest of the
+     game. */
+  const _localToWorld = new THREE.Matrix4();
+  const _worldToLocal = new THREE.Matrix4();
+  function syncMatrices(){
+    root.updateMatrixWorld();
+    _localToWorld.copy(root.matrixWorld);
+    _worldToLocal.copy(_localToWorld).invert();
+  }
+  syncMatrices();
 
-     WHY THE CAMERA IS YAWED (see CAM_YAW below). The limb's cross-section is a
-     circle lying in the plane perpendicular to the arm's axis. If the camera's
-     view direction also lies in that plane — which is exactly what a straight
-     above-and-in-front view gives you — the circle is seen EDGE-ON and projects
-     to a line segment. Near side and far side land on the same pixels, so no
-     screen position can say which side of the arm the hand is on, and "passed
-     underneath" is indistinguishable from "laid over the top". No amount of
-     inference fixes that; the information is not in the picture.
-
-     Yawing the camera along the arm's length tilts the view direction out of
-     the cross-section plane, so the circle projects to a real ellipse with
-     area. The two screen axes then carry two independent numbers, and the
-     angle round the limb can be solved for EXACTLY — one small 2x2 inverse,
-     no ambiguity, no momentum tracking, no turning points to survive.
-     -------------------------------------------------------------------- */
+  /* ---------- pointer → limb ---------------------------------------------- */
   const worldScratch = new THREE.Vector3();
   const projA = new THREE.Vector3();
   const projB = new THREE.Vector3();
   const projC = new THREE.Vector3();
   const _ndc = new THREE.Vector2();
   const _caster = new THREE.Raycaster();
-  // the horizontal plane through the limb's own axis, y = ARM_Y
+  const _ray = new THREE.Ray();
+  // the horizontal plane through the limb's own axis, y = ARM_Y (local)
   const _axisPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -ARM_Y);
   // a second horizontal plane, re-aimed at whatever height was just solved for
   const _levelPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -ARM_Y);
   const _planeHit = new THREE.Vector3();
 
-  /** Projects a world point to canvas pixels, written into `out` (or a fresh vector). */
+  /** The pointer as a ray in ROOT-LOCAL space. */
+  function localRay(screen, rect){
+    _ndc.set(
+      ((screen.x - rect.left)/rect.width)*2 - 1,
+      -((screen.y - rect.top)/rect.height)*2 + 1
+    );
+    _caster.setFromCamera(_ndc, camera);
+    _ray.copy(_caster.ray).applyMatrix4(_worldToLocal);
+    return _ray;
+  }
+
+  /** Projects a ROOT-LOCAL point to canvas pixels, written into `out`. */
   function toScreen(v, rect, out){
     const p = out || new THREE.Vector3();
-    p.copy(v).project(camera);
+    p.copy(v).applyMatrix4(_localToWorld).project(camera);
     p.x = rect.left + (p.x*0.5 + 0.5)*rect.width;
     p.y = rect.top + (-p.y*0.5 + 0.5)*rect.height;
     return p;
@@ -150,15 +244,10 @@ export function buildArmScene(o){
   /**
    * Reads the pointer as a position on the limb.
    *
-   * @param {{x:number,y:number}} screen  pointer position in client pixels
-   * @param {DOMRect} rect                the canvas' bounding box
-   * @param {number} axisX                where along the arm to measure round
-   * @param {number} radius               the limb's radius there
    * @returns {{x, theta, rho, radius, along, mPerPx, ok}}
    *   x      metres along the arm (0 = the antecubital fossa, +ve proximal)
    *   theta  radians round the limb: 0 is the top, +ve turns toward the
    *          operator, so 0→π is the near half and π→2π is the far half.
-   *          Exact and unambiguous — see the yaw note above.
    *   rho    metres from the limb's axis. Less than `radius` is on the arm,
    *          more than it is the band being pulled clear.
    *
@@ -170,11 +259,12 @@ export function buildArmScene(o){
    * where A and B are the screen offsets of a step straight up the limb and a
    * step toward the operator. Solving that for the two coefficients recovers
    * cos and sin separately, hence the true angle and the true distance — as
-   * long as A and B are not parallel, which is exactly what CAM_YAW buys.
+   * long as A and B are not parallel, which the seated framing guarantees far
+   * more comfortably than the old across-the-bench one did.
    *
-   * `x` deliberately does NOT come from that solve: both screen axes are
-   * already spent on theta and rho, so it is measured independently, from
-   * where the pointer's ray crosses the limb's own axis height.
+   * Solving rather than assuming is also what makes the mirror free: under a
+   * left-handed root the determinant is negative and the recovered angle is
+   * still the true one, because both A and B came out of the same projection.
    */
   function pointerToLimb(screen, rect, axisX, radius){
     const ax = axisX == null ? SITE.x : axisX;
@@ -182,18 +272,11 @@ export function buildArmScene(o){
 
     // --- where along the arm: an independent reading, so it does not have to
     // share the two screen dimensions the angle solve below needs.
-    _ndc.set(
-      ((screen.x - rect.left)/rect.width)*2 - 1,
-      -((screen.y - rect.top)/rect.height)*2 + 1
-    );
-    _caster.setFromCamera(_ndc, camera);
-    const along = _caster.ray.intersectPlane(_axisPlane, _planeHit) ? _planeHit.x : ax;
+    const ray = localRay(screen, rect);
+    const along = ray.intersectPlane(_axisPlane, _planeHit) ? _planeHit.x : ax;
 
     // projA is the screen position of the axis reference point — every offset
-    // below is measured from here. toScreen() writes INTO its `out` argument;
-    // dropping that argument (as an earlier version of this function did)
-    // leaves projA holding world-space metres instead of screen pixels, which
-    // silently turns every distance in this function into a unit mismatch.
+    // below is measured from here.
     toScreen(worldScratch.set(ax, ARM_Y, 0), rect, projA);
     toScreen(worldScratch.set(ax, ARM_Y + r, 0), rect, projB);   // straight up the limb
     toScreen(worldScratch.set(ax, ARM_Y, r), rect, projC);       // toward the operator
@@ -209,7 +292,7 @@ export function buildArmScene(o){
     const det = Ax*By - Ay*Bx;
     if(Math.abs(det) < 1e-6){
       // the cross-section is edge-on: the angle genuinely is not in the picture
-      return { x: along, theta: 0, rho: r, radius: r, along, mPerPx, ok: false };
+      return { x: along, theta: 0, rho: r, radius: r, along, mPerPx, ok: false, det };
     }
     const c = (Dx*By - Dy*Bx)/det;   // (rho/r)·cos(theta)
     const s = (Ax*Dy - Ay*Dx)/det;   // (rho/r)·sin(theta)
@@ -218,20 +301,13 @@ export function buildArmScene(o){
 
     // Refine where along the arm it is. `along` above crosses the plane at the
     // limb's AXIS height, but the hand is up on the surface or out past it, and
-    // with the camera yawed a ray reaches that height a couple of centimetres
-    // further down the arm than the point it passed through. Re-crossing at the
-    // height just solved for removes that shift — which matters because the
-    // side of the band a loop is tucked on is decided by this number.
+    // a ray reaches that height further down the arm than the point it passed
+    // through. Re-crossing at the height just solved for removes that shift.
     const yHit = ARM_Y + Math.cos(theta)*rho;
     _levelPlane.setComponents(0, 1, 0, -yHit);
-    const refined = _caster.ray.intersectPlane(_levelPlane, _planeHit) ? _planeHit.x : along;
+    const refined = ray.intersectPlane(_levelPlane, _planeHit) ? _planeHit.x : along;
 
-    return {
-      x: refined,
-      theta, rho,
-      radius: r,
-      along, mPerPx, ok: true,
-    };
+    return { x: refined, theta, rho, radius: r, along, mPerPx, ok: true, det };
   }
 
   /**
@@ -239,28 +315,16 @@ export function buildArmScene(o){
    * along the arm it is as well as where round it.
    *
    * pointerToLimb has to be told which cross-section to work in, and it will
-   * happily answer for any of them: every choice of axisX yields some
-   * (theta, rho) that projects back onto the same pixel, so x cannot simply be
-   * read off. The extra constraint that pins it down is that the strap is
-   * being dragged ALONG THE SKIN — so the answer is the cross-section whose
-   * solution actually lands on the limb's surface, rho = radius. Since rho
-   * only grows as axisX moves away from the true one, that is a clean minimum
-   * to search for rather than a root to bracket.
+   * happily answer for any of them. The extra constraint that pins x down is
+   * that the hand is being dragged ALONG THE SKIN — so the answer is the
+   * cross-section whose solution actually lands on the surface, rho = radius.
    *
-   * Letting x float does, however, bring back the front/back ambiguity the
-   * camera yaw was there to remove: a ray meets the limb twice, and BOTH hits
-   * sit on the surface, so "lands on the skin" alone cannot separate the near
-   * side from the far side. Left to itself the search flips between them and
-   * the wrap direction inverts. `thetaRef` breaks the tie the way the hand
-   * does — the strap was somewhere a moment ago and has not jumped to the
-   * other side of the arm since.
-   *
-   * @param {function(number):number} radiusOf  limb radius at an x
-   * @param {number} xHint  where to search around — the previous reading. Pass
-   *        null for the first sample of a gesture, which sweeps the whole limb:
-   *        seeding the narrow window from wherever the strap was picked up off
-   *        the bench cannot reach a band being placed high on the upper arm.
-   * @param {number} thetaRef  the previous angle, to stay on its branch
+   * Letting x float brings back a front/back ambiguity: a ray meets the limb
+   * twice and both hits sit on the surface. `thetaRef` breaks the tie the way
+   * the hand does — the hand was somewhere a moment ago and has not jumped to
+   * the other side of the arm since. `preferNear` rules out the hidden half
+   * outright for anything that is, by definition, on the face of the arm
+   * turned toward the operator.
    */
   function pointerToLimbSurface(screen, rect, xHint, radiusOf, thetaRef, preferNear){
     let lo = xHint == null ? WRIST_X : xHint - 0.11;
@@ -269,6 +333,7 @@ export function buildArmScene(o){
     // the opposite side of the limb
     const BRANCH_W = 0.004;
     let best = null;
+    const camLocal = _camLocal.copy(camera.position).applyMatrix4(_worldToLocal);
     for(let pass = 0; pass < 3; pass++){
       const N = 16;
       let bestErr = Infinity, bestX = lo;
@@ -276,17 +341,10 @@ export function buildArmScene(o){
         const x = lo + (hi - lo)*(i/N);
         const rr = radiusOf(x);
         const s = pointerToLimb(screen, rect, x, rr);
-        // `preferNear` rules out the half of the limb turned away from the
-        // camera. Both hits along a ray are equally "on the skin", so the
-        // residual cannot separate them and a symmetric angle hint will not
-        // either — but a fingertip cannot be on a surface facing away from
-        // the person doing the pressing, so that half is simply not a
-        // candidate. (The tourniquet does not pass this: it is deliberately
-        // taken round the hidden underside.)
         if(preferNear){
           const ny = Math.cos(s.theta), nz = Math.sin(s.theta);
-          const vy = camera.position.y - (ARM_Y + ny*rr);
-          const vz = camera.position.z - nz*rr;
+          const vy = camLocal.y - (ARM_Y + ny*rr);
+          const vz = camLocal.z - nz*rr;
           if(ny*vy + nz*vz <= 0) continue;
         }
         let err = Math.abs(s.rho - rr);
@@ -298,43 +356,27 @@ export function buildArmScene(o){
     }
     // How far off the skin the best fit still is. Small means the hand really
     // is against the arm and this x can be trusted; large means it is held
-    // clear of it, where no cross-section puts it on the surface and the x is
-    // a guess.
+    // clear of it, where no cross-section puts it on the surface.
     if(best) best.residual = Math.abs(best.rho - radiusOf(best.x));
     return best;
   }
+  const _camLocal = new THREE.Vector3();
 
   /**
    * The pointer relative to the arm's axis LINE on screen — the one reading
    * about a limb that carries no ambiguity at all.
    *
    * @returns {{x, p, rProj, pMax}}
-   *   x      metres along the arm, from the pointer ray crossing axis height
-   *   p      signed perpendicular offset in pixels, +ve on the NEAR side of
-   *          the arm (toward the operator, which is down-screen)
-   *   rProj  the limb's radius measured straight toward the operator
-   *   pMax   the limb's SILHOUETTE half-width along that same perpendicular —
-   *          the largest |p| any point on the skin can have. So |p|/pMax ≤ 1
-   *          means the hand is against the arm, and > 1 means it is held clear
-   *          of it. That ratio is the one honest thing this view can say about
-   *          depth, and both the wrap and the tension are built on it.
-   *
-   * Routing uses this rather than the angle solve above. Round the back of the
-   * limb the angle is genuinely not in the picture — the underside is hidden
-   * behind the arm — so the honest reading is not "what angle is the hand at"
-   * but "is it against the skin, which side, and how far has it travelled".
-   * That is what a phlebotomist's hand knows too.
+   *   p      signed perpendicular offset in pixels, +ve on the NEAR side
+   *   pMax   the limb's SILHOUETTE half-width along that same perpendicular,
+   *          so |p|/pMax ≤ 1 means the hand is against the arm.
    */
   function pointerToAxis(screen, rect, axisX, radius){
     const ax = axisX == null ? SITE.x : axisX;
     const r = radius == null ? 0.043 : radius;
 
-    _ndc.set(
-      ((screen.x - rect.left)/rect.width)*2 - 1,
-      -((screen.y - rect.top)/rect.height)*2 + 1
-    );
-    _caster.setFromCamera(_ndc, camera);
-    const alongX = _caster.ray.intersectPlane(_axisPlane, _planeHit) ? _planeHit.x : ax;
+    const ray = localRay(screen, rect);
+    const alongX = ray.intersectPlane(_axisPlane, _planeHit) ? _planeHit.x : ax;
 
     toScreen(worldScratch.set(ax, ARM_Y, 0), rect, projA);
     // the near side of the limb: +Z, toward the operator
@@ -344,9 +386,6 @@ export function buildArmScene(o){
     wx /= rProj; wy /= rProj;
 
     // How far a step straight UP the limb moves along that same perpendicular.
-    // The silhouette is wider than rProj because the top of the arm is offset
-    // across the view as well as up it; without this the skin itself measures
-    // as "held clear of the arm".
     toScreen(worldScratch.set(ax, ARM_Y + r, 0), rect, projC);
     const upComp = (projC.x - projA.x)*wx + (projC.y - projA.y)*wy;
 
@@ -367,24 +406,14 @@ export function buildArmScene(o){
   }
 
   /**
-   * The pointer as a point on a horizontal plane at height `y`.
-   *
-   * None of the limb's ambiguity applies here: the bench is a known plane, so
-   * a ray crossing it gives one exact world point. Steps whose work happens on
-   * the bench rather than on the arm — threading a needle into a holder,
-   * pulling a sheath along its axis — measure in these coordinates, in metres,
-   * and get real distances and real angles without any inference at all.
-   *
-   * @returns {THREE.Vector3|null} null when the ray runs parallel to the plane
+   * The pointer as a point on a horizontal plane at height `y`, in local
+   * metres. The bench is a known plane, so a ray crossing it gives one exact
+   * point with none of the limb's ambiguity.
    */
   function pointerToPlane(screen, rect, y){
-    _ndc.set(
-      ((screen.x - rect.left)/rect.width)*2 - 1,
-      -((screen.y - rect.top)/rect.height)*2 + 1
-    );
-    _caster.setFromCamera(_ndc, camera);
+    const ray = localRay(screen, rect);
     _levelPlane.setComponents(0, 1, 0, -(y || 0));
-    return _caster.ray.intersectPlane(_levelPlane, new THREE.Vector3());
+    return ray.intersectPlane(_levelPlane, new THREE.Vector3());
   }
 
   /** The inverse, for placing things the learner has not grabbed. */
@@ -392,89 +421,238 @@ export function buildArmScene(o){
     return new THREE.Vector3(x, ARM_Y + Math.cos(theta)*r, Math.sin(theta)*r);
   }
 
-  /* ---------- camera framing ---------------------------------------------- */
-  // Looking down the operator's own eyeline: the arm runs across the view, the
-  // fossa is centred, and there is room above the arm for the band's zone.
-  const PITCH = 0.72;              // radians above horizontal
-  // Centred so the fossa and the band's zone sit in the middle of the frame
-  // with the hand still visible off to one side.
-  const LOOK_X = -0.045;
-  /* Swung along the arm's length, NOT decoration. Square-on, the camera's view
-     direction lies in the limb's cross-section plane, the cross-section is seen
-     edge-on, and which side of the arm the hand is on is simply not present in
-     the image (see pointerToLimb). This angle is what gives that circle area on
-     screen and makes the wrap solvable — and a three-quarter view of an arm
-     reads better than a flat side-on one anyway. */
-  const CAM_YAW = 0.42;            // ~24° round the limb's axis
+  /* ==========================================================================
+     CAMERA RIG
+
+     fitCamera() no longer moves the camera. It sets a TARGET, and tick() eases
+     toward it. That is the whole reason the game can stop cutting between
+     steps: a mode change is a new target, and the camera takes half a second
+     to get there while the scene underneath it never blinks.
+
+     Three things ride on top of the eased pose, in this order:
+       lean    the operator leaning in to look — a dolly toward the subject
+       sway    breathing, ±2 mm, killed dead when precision matters
+       kick    a one-shot impulse, for the moment the skin gives
+     ========================================================================== */
+
+  const BASE_FOV = 20, MAX_FOV = 34;
+
+  const rig = {
+    /** where the camera wants to be, and where it currently is */
+    want: { look: new THREE.Vector3(), dist: 0.9, fov: BASE_FOV },
+    have: { look: new THREE.Vector3(), dist: 0.9, fov: BASE_FOV },
+    settled: false,
+    lean: 0, leanWant: 0,
+    sway: 1, swayWant: 1,
+    swayPhase: Math.random()*6.28,
+    kick: new THREE.Vector2(),
+    kickVel: new THREE.Vector2(),
+    framing: DEFAULT_FRAMING,
+    lastAspect: 1.6,
+    lastOb: { rightFrac: 0, bottomFrac: 0 },
+  };
+
+  /** Unit offset from look-point to camera, in local metres. */
+  function camDir(){
+    return new THREE.Vector3(
+      -Math.cos(PITCH)*Math.cos(SWING),
+      Math.sin(PITCH),
+      Math.cos(PITCH)*Math.sin(SWING)
+    );
+  }
+  const _dir = camDir();
+  const _right = new THREE.Vector3();
+  const _up = new THREE.Vector3();
+  (function basis(){
+    const f = _dir.clone().negate();
+    _right.copy(f).cross(new THREE.Vector3(0, 1, 0)).normalize();
+    _up.copy(_right).clone().cross(f).normalize();
+    _up.copy(new THREE.Vector3().crossVectors(_right, f)).normalize();
+  })();
 
   /**
-   * @param {object} [focus] where the work actually is, for steps that happen
-   *   at the bench rather than on the limb. `{ lookX, lookZ, spanX, spanZ }`.
-   *   Omitted (the default) frames the whole limb exactly as before, so the
-   *   tourniquet, palpation and cleaning branches are untouched. The camera
-   *   angles — PITCH and especially CAM_YAW — are the same either way, because
-   *   they are what makes the limb's cross-section solvable and the operator's
-   *   eyeline believable; only the framing moves.
+   * Solves the distance at which every point of a framing fits on screen.
+   *
+   * The lens is long and the working area small, so the projection is near
+   * enough affine over it to fit by projecting onto the camera's own right and
+   * up axes — which is exact for the direction, and the 15% margin covers the
+   * perspective the approximation drops. Fitting a POINT SET rather than an
+   * axis-aligned span is what lets a framing say "keep the hand and the
+   * patient's face in shot" without anyone computing a bounding box by hand.
+   */
+  function solveFraming(f, aspect, ob){
+    const look = new THREE.Vector3(f.look[0], f.look[1] == null ? ARM_Y : f.look[1], f.look[2] || 0);
+    const rightFrac = Math.min(0.45, Math.max(0, ob.rightFrac || 0));
+    const bottomFrac = Math.min(0.6, Math.max(0, ob.bottomFrac || 0));
+
+    let halfR = 0.02, halfU = 0.02;
+    const pts = f.frame || [];
+    for(let i = 0; i < pts.length; i++){
+      const p = worldScratch.set(pts[i][0], pts[i][1] == null ? ARM_Y : pts[i][1], pts[i][2] || 0).sub(look);
+      halfR = Math.max(halfR, Math.abs(p.dot(_right)));
+      halfU = Math.max(halfU, Math.abs(p.dot(_up)));
+    }
+    // The panel eats an edge, so the framing has to survive in what is left.
+    halfR /= (1 - rightFrac);
+    halfU /= (1 - bottomFrac);
+    halfR *= 1.15; halfU *= 1.15;
+
+    let fov = BASE_FOV;
+    let halfTan = Math.tan((fov*Math.PI/180)/2);
+    let dist = Math.max(halfU/halfTan, halfR/(halfTan*aspect));
+    // Only widen the lens when the throw would otherwise be absurd; a long
+    // lens is what keeps a 5 cm pull reading the same on both sides of the arm.
+    if(dist > 1.6){
+      fov = Math.min(MAX_FOV, BASE_FOV*(dist/1.6));
+      halfTan = Math.tan((fov*Math.PI/180)/2);
+      dist = Math.max(halfU/halfTan, halfR/(halfTan*aspect));
+    }
+
+    // Shift the aim so the subject sits in the UNOBSTRUCTED part of the frame.
+    const visH = 2*dist*halfTan, visW = visH*aspect;
+    look.addScaledVector(_right, visW*rightFrac/2);
+    look.addScaledVector(_up, -visH*bottomFrac/2);
+
+    return { look, dist, fov };
+  }
+
+  /**
+   * Requests a framing. Backwards-compatible with the old signature — a
+   * `focus` of `{lookX, lookZ, spanX, spanZ}` is translated into a point set —
+   * so the bench modes that only ever wanted "frame the whole limb" keep
+   * working untouched.
+   *
+   * @param {object|string} [focus] a FRAMINGS key, a framing object, or the
+   *   legacy focus rectangle.
    */
   function fitCamera(aspect, obstruction, focus){
     const a = Math.max(0.4, aspect || 1.6);
     const ob = obstruction || { rightFrac: 0, bottomFrac: 0 };
-    const rightFrac = Math.min(0.45, Math.max(0, ob.rightFrac || 0));
-    const bottomFrac = Math.min(0.6, Math.max(0, ob.bottomFrac || 0));
-    const f = focus || null;
+    rig.lastAspect = a; rig.lastOb = ob;
+
+    let f = rig.framing;
+    if(typeof focus === "string") f = FRAMINGS[focus] || DEFAULT_FRAMING;
+    else if(focus && (focus.frame || focus.look)) f = focus;
+    else if(focus && (focus.spanX != null || focus.lookX != null)) f = legacyFraming(focus);
+    else if(focus === undefined && rig.framing) f = rig.framing;
+    rig.framing = f;
+
+    const want = solveFraming(f, a, ob);
+    rig.want.look.copy(want.look);
+    rig.want.dist = want.dist;
+    rig.want.fov = want.fov;
+
+    if(!rig.settled){
+      rig.have.look.copy(rig.want.look);
+      rig.have.dist = rig.want.dist;
+      rig.have.fov = rig.want.fov;
+      rig.settled = true;
+    }
     camera.aspect = a;
+    applyCamera(0);
+  }
 
-    // The whole limb, hand included. Cropped tighter it reads as a cylinder
-    // rather than an arm — and the hand has to be in shot, because a hand
-    // going pale is how a band that is too tight announces itself.
-    const spanX = (f && f.spanX ? f.spanX : 0.62) / (1 - rightFrac);
-    const spanZ = (f && f.spanZ ? f.spanZ : 0.34) / (1 - bottomFrac);
+  function legacyFraming(focus){
+    const lx = focus.lookX == null ? -0.045 : focus.lookX;
+    const lz = focus.lookZ == null ? 0 : focus.lookZ;
+    const ly = focus.lookY == null ? ARM_Y : focus.lookY;
+    const sx = (focus.spanX || 0.62)/2, sz = (focus.spanZ || 0.34)/2;
+    return {
+      look: [lx, ly, lz],
+      frame: [
+        [lx - sx, ly, lz], [lx + sx, ly, lz],
+        [lx, ly, lz - sz], [lx, ly, lz + sz],
+        [lx, ly + sz*0.7, lz],
+      ],
+    };
+  }
 
-    /* A long lens, deliberately. Everything the gesture measures is a small
-       offset compared with the camera's distance, and a wide short-throw lens
-       makes those offsets project non-linearly: the same 5 cm pull reads as
-       half again as much on one side of the arm as the other, so a steady hand
-       looks like a tightening one. Pulling the camera back and narrowing the
-       lens keeps the working area the same size on screen while making the
-       projection near enough affine over it to trust. */
-    const BASE_FOV = 20, MAX_FOV = 32;
-    camera.fov = BASE_FOV;
-    let halfTan = Math.tan((BASE_FOV*Math.PI/180)/2);
-    let dist = (spanZ/2)/halfTan * 1.15;
-    const neededFov = 2*Math.atan((spanX/2)/dist/a)*180/Math.PI;
-    if(neededFov > BASE_FOV){
-      camera.fov = Math.min(MAX_FOV, neededFov);
-      halfTan = Math.tan((camera.fov*Math.PI/180)/2);
-      if(neededFov > MAX_FOV) dist = (spanX/2)/halfTan/a;
+  /**
+   * Switches to a named beat framing. This is the ONLY way a mode should
+   * change the camera, and it is deliberately not instant: the ease is what
+   * makes the encounter feel like one continuous session rather than a
+   * sequence of screens.
+   */
+  function frameBeat(name){
+    const f = FRAMINGS[name];
+    if(!f || f === rig.framing) return;
+    rig.framing = f;
+    fitCamera(rig.lastAspect, rig.lastOb, f);
+  }
+
+  /** 0 → resting, 1 → leaning right in. Eased; call it every frame. */
+  function setLean(k){ rig.leanWant = Math.max(0, Math.min(1, k || 0)); }
+  /** Breathing sway. Killed to 0 for the insertion approach. */
+  function setSway(k){ rig.swayWant = Math.max(0, Math.min(1, k == null ? 1 : k)); }
+  /** A one-shot impulse, in screen-ish metres. The skin giving is ~0.0016. */
+  function kickCamera(mag, dirX, dirY){
+    rig.kickVel.x += (dirX == null ? 0.35 : dirX)*(mag || 0.0016)*60;
+    rig.kickVel.y += (dirY == null ? -1 : dirY)*(mag || 0.0016)*60;
+  }
+
+  const _pos = new THREE.Vector3();
+  const _aim = new THREE.Vector3();
+
+  function applyCamera(dt){
+    const d = dt || 0;
+    if(d > 0){
+      const kp = 1 - Math.exp(-EASE_POS*d);
+      const kl = 1 - Math.exp(-EASE_LOOK*d);
+      rig.have.look.lerp(rig.want.look, kl);
+      rig.have.dist += (rig.want.dist - rig.have.dist)*kp;
+      rig.have.fov  += (rig.want.fov  - rig.have.fov )*kp;
+      rig.lean += (rig.leanWant - rig.lean)*(1 - Math.exp(-2.6*d));
+      rig.sway += (rig.swayWant - rig.sway)*(1 - Math.exp(-3.0*d));
+      rig.swayPhase += d*2*Math.PI*0.2;                 // ~0.2 Hz
+      // critically-damped spring back to zero, so a kick snaps and settles
+      const K = 260, C = 2*Math.sqrt(K);
+      rig.kickVel.x += (-K*rig.kick.x - C*rig.kickVel.x)*d;
+      rig.kickVel.y += (-K*rig.kick.y - C*rig.kickVel.y)*d;
+      rig.kick.x += rig.kickVel.x*d;
+      rig.kick.y += rig.kickVel.y*d;
     }
 
-    const visH = 2*dist*halfTan;
-    const visW = visH*a;
-    const baseX = f && f.lookX != null ? f.lookX : LOOK_X;
-    const baseZ = f && f.lookZ != null ? f.lookZ : 0;
-    // orbit height and aim height are 8 mm apart by design: the camera sits
-    // level with the limb's axis and looks fractionally below it.
-    const orbitY = f && f.lookY != null ? f.lookY : ARM_Y;
-    const aimY = orbitY - 0.008;
-    const cx = baseX + visW*rightFrac/2;
-    const cz = baseZ + visH*bottomFrac/2;
+    const dist = rig.have.dist*(1 - 0.15*rig.lean);     // lean-in is 15% closer
+    _aim.copy(rig.have.look);
+    _pos.copy(_aim).addScaledVector(_dir, dist);
 
-    // orbit the camera round the look point: up by PITCH, along by CAM_YAW
-    const horiz = Math.cos(PITCH)*dist;
-    camera.position.set(
-      cx + horiz*Math.sin(CAM_YAW),
-      orbitY + Math.sin(PITCH)*dist,
-      cz + horiz*Math.cos(CAM_YAW)
-    );
-    camera.lookAt(cx, aimY, cz);
+    // breathing: a small circular drift in the camera's own screen plane
+    const sw = rig.sway*0.002;
+    _pos.addScaledVector(_right, Math.sin(rig.swayPhase)*sw);
+    _pos.addScaledVector(_up, Math.cos(rig.swayPhase*0.83)*sw*0.7);
+    // and the kick, which moves the camera without moving what it looks at
+    _pos.addScaledVector(_right, rig.kick.x);
+    _pos.addScaledVector(_up, rig.kick.y);
+
+    // local → world, because the camera is not a child of the mirrored root
+    camera.position.copy(_pos).applyMatrix4(_localToWorld);
+    _aim.applyMatrix4(_localToWorld);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(_aim);
+    camera.fov = rig.have.fov*(1 - 0.05*rig.lean);
     camera.updateProjectionMatrix();
-  }
-  fitCamera(1.6, { rightFrac: 0.27, bottomFrac: 0 });
 
-  function tick(dt){ arm.tick(dt); }
+    // Haze starts just BEYOND whatever is being worked on and saturates well
+    // past it, so the working area is always crisp and the person behind it is
+    // always soft, at every framing.
+    if(scene.fog){
+      scene.fog.near = dist*1.04;
+      scene.fog.far = dist*2.35;
+    }
+  }
+
+  fitCamera(1.6, { rightFrac: 0.27, bottomFrac: 0 }, DEFAULT_FRAMING);
+
+  function tick(dt){
+    const d = dt || 0;
+    arm.tick(d);
+    body.tick(d, arm);
+    applyCamera(d);
+  }
 
   function dispose(){
     arm.dispose();
+    body.dispose();
     root.traverse(obj=>{
       if(obj.geometry) obj.geometry.dispose();
       const ms = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
@@ -484,9 +662,13 @@ export function buildArmScene(o){
   }
 
   return {
-    scene, camera, root, arm,
+    scene, camera, root, arm, body,
+    handedness: leftHanded ? "left" : "right",
     pointerToLimb, pointerToLimbSurface, pointerToAxis, pointerToPlane, angleDelta, limbToWorld, toScreen,
-    fitCamera, setSiteVisible, tick, dispose,
+    fitCamera, frameBeat, setLean, setSway, kickCamera,
+    setSiteVisible, tick, dispose,
+    /** the current framing name, for modes that want to avoid redundant asks */
+    get framing(){ return rig.framing; },
     ARM_Y,
   };
 }

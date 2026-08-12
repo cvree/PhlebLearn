@@ -14,7 +14,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
 import {
   FIELD_RADIUS, GRID, evaluateCleaning, cellFor, secondsDrying,
@@ -33,7 +33,7 @@ let ctx = null;
 
 export async function startCleaning(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "cleaning", arm: o.arm || {} });
   const state = o.state || createCleaningState();
 
   // where the learner marked the vein, or the fossa if they never did

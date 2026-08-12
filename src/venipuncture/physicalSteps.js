@@ -287,8 +287,15 @@ export function ensureArmSession(c){
   c.arm = {
     skin: a.skin,
     shirt: p.shirt,
+    hair: a.hair,
     build: a.width || 1,
     armSide: chosen.side,
+    /* Which side of the bench the operator works from. This is the ONLY place
+       it is read for the 3D bench: armScene turns it into a mirror of the
+       whole scene root, so no individual system can forget to flip. Roughly
+       one learner in ten is left-handed and used to be taught a mirrored-wrong
+       motor pattern by this game. */
+    handedness: handednessOf(),
     scenarioKeys: chosen.keys,
     // A LIVE reference, not a copy: every scene built from here on shows
     // whatever state this arm is currently in, including the damage done to

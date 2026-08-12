@@ -21,7 +21,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
 import { FIELD_RADIUS, dryness, secondsDrying } from "../cleaning/cleaningRules.js";
 import {
@@ -90,7 +90,7 @@ let ctx = null;
  */
 export async function startAssembly(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "assembly", arm: o.arm || {} });
   const state = o.state || createAssemblyState({});
   const mode = o.mode === "uncap" ? "uncap" : "assemble";
   if(mode === "uncap") beginUncap(state);

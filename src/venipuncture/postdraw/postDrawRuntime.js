@@ -25,7 +25,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { HAND_X, WRIST_X } from "../arm/armAnatomy.js";
 import { ARM_Y } from "../arm/armMesh.js";
 import { evaluatePostDraw, forceBandFor, PAD_ON_SITE_M } from "./postDrawRules.js";
@@ -73,7 +73,7 @@ let ctx = null;
  */
 export async function startPostDraw(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "postdraw", arm: o.arm || {} });
   const state = o.state || createPostDrawState({});
 
   const site = o.site || { x: 0, z: 0.004 };

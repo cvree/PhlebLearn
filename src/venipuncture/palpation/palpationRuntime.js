@@ -17,7 +17,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { ARM_Y } from "../arm/armMesh.js";
 import { VESSEL_KIND, veinDistension, distalPallor } from "../arm/armAnatomy.js";
 import {
@@ -41,7 +41,7 @@ let ctx = null;
 
 export async function startPalpation(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "palpation", arm: o.arm || {} });
   const state = o.state || createPalpationState();
 
   const finger = buildFinger();

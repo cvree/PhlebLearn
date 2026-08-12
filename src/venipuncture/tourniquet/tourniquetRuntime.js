@@ -31,7 +31,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { ARM_Y } from "../arm/armMesh.js";
 import { SITE, distalPallor, radiusAt } from "../arm/armAnatomy.js";
 import { buildStrap, contactArc, freeTail, STRAP_WIDTH } from "./strapMesh.js";
@@ -89,7 +89,7 @@ let ctx = null;
  */
 export function startTourniquet(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "tourniquet", arm: o.arm || {} });
   const state = o.state || createTourniquetState({
     itemId: o.itemId,
     armSide: (o.arm && o.arm.armSide) || "right",

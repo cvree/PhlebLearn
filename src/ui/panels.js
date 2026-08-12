@@ -36,6 +36,7 @@ import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
 import { tubeMeshes, resetTubeSelection } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
 import { ensureArmSession } from "../venipuncture/physicalSteps.js";
+import { closeBench } from "../bench/benchSession.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
 import { VP_TIPS, VP_ICON } from "../venipuncture/questions.js";
@@ -137,6 +138,11 @@ function startShift(mode){
   nextPatient();
 }
 function nextPatient(){
+  // The previous patient's bench goes with them. This is the one place an
+  // encounter's scene is torn down — every step in between leases it (see
+  // bench/benchSession.js), which is what keeps the band tied and the swab
+  // decal painted from one action to the next.
+  closeBench();
   if(SHIFT.index>=SHIFT.len){ return endShift(); }
   const p=makePatient(); SHIFT.patients.push(p);
   setEnc({p, selected:[], ordered:[], idChoice:null, labelFields:{name:false,iddob:false,datetime:false,initials:false},

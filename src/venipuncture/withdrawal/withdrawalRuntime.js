@@ -30,7 +30,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SHOULDER_X, HAND_X } from "../arm/armAnatomy.js";
 import { ARM_Y } from "../arm/armMesh.js";
 import { buildStrap, contactArc, freeTail } from "../tourniquet/strapMesh.js";
@@ -90,7 +90,7 @@ let ctx = null;
  */
 export async function startWithdrawal(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "withdrawal", arm: o.arm || {} });
   const state = o.state || createWithdrawalState({});
 
   const axis = holderAxisFrom(view, o.insert || {});

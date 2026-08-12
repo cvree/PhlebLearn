@@ -28,7 +28,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { TUBES } from "../../config.js";
 import { evaluateInversion, inversionsFor, mustNotMix } from "./inversionRules.js";
 import {
@@ -68,7 +68,7 @@ let ctx = null;
  */
 export async function startInversion(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "inversion", arm: o.arm || {} });
   const state = o.state || createInversionState({});
 
   const rackGroup = buildRack(state);

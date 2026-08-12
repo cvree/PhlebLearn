@@ -43,7 +43,7 @@
    ========================================================================= */
 import * as THREE from "three";
 import { sfx } from "../../audio/audioManager.js";
-import { buildArmScene } from "../arm/armScene.js";
+import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor } from "../arm/armAnatomy.js";
 import { TUBES } from "../../config.js";
 import {
@@ -98,7 +98,7 @@ let ctx = null;
  */
 export async function startCollection(opts){
   const o = opts || {};
-  const view = buildArmScene(o.arm || {});
+  const view = leaseBenchView({ mode: "collection", arm: o.arm || {} });
   const state = o.state || createCollectionState({});
 
   const axis = holderAxisFrom(view, o.insert || {});
