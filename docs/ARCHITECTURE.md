@@ -23,7 +23,10 @@ world/  (room, furniture, patient, tubeRack, sharpsBin, interactables)
         │
 venipuncture/  (procedureState, questions, clinicalRules, steps,
                accessibilityFallback = the driver, physicalSteps,
-               encounterState, sections, one directory per converted step —
+               encounterState, sections, viewport = the shared canvas
+               measurement every runtime frames its camera from,
+               stepRuntimes = the table main.js dispatches through,
+               one directory per converted step —
                staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
                assembly/*, insert/*, collection/*, withdrawal/*, postdraw/*,
                inversion/*, butterfly/* — the rubric/* grading layer, and
@@ -132,10 +135,19 @@ browser and the visuals can change without touching the rules:
 | `stagingRuntime.js` | THREE + DOM | Pick up, turn over, put down. Writes through `stagingState`, asks `stagingRules` |
 | `stagingCoach.js` | DOM | Status, coaching, and the accessible list view |
 
-`main.js` couples to exactly four runtime hooks (`isStagingActive`,
-`renderStaging`, `stagingPointer*`) — the composition root's usual job. While
-staging is active the canvas renders the staging scene instead of the room,
-through the same renderer, so there is only ever one WebGL context.
+`main.js` does not import this runtime — or any of the other nine — directly.
+Every converted step exposes the same five hooks (`isXActive`, `renderX`,
+`xPointerDown/Move/Up/Cancel`), so they are listed once as a table in
+`venipuncture/stepRuntimes.js` and the composition root asks
+`activeStepRuntime()` whose canvas it is. While a step is active the canvas
+renders that step's scene instead of the room, through the same renderer, so
+there is only ever one WebGL context.
+
+**Adding a converted step is one row in that table and nothing in `main.js`.**
+It used to be five separate ten-branch `if`-chains — pointer down, move, up,
+cancel, and the render loop — which all had to be edited together, and which
+would silently drop a step from one gesture if a branch were added to only
+four of them.
 
 **Guided vs. scored is a rendering and gating decision, never a rules
 decision.** `stagingRules.js` always computes the full truth; `stagingCoach.js`

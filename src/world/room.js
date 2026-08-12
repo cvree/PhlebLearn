@@ -26,6 +26,14 @@ export function setRoomScene(s){ scene = s; }
 /* ---------- room shell (fades walls as the camera orbits) ----------------- */
 let roomGroup=null;
 export let roomWallParts={front:[],back:[],left:[],right:[]};
+// Fixed key list, so the two per-frame wall passes below don't allocate an
+// Object.keys() array on every frame of the room loop.
+const WALL_SIDES=["front","back","left","right"];
+// The wall targets are a pure function of the orbit angle, and the ease has a
+// resting state. Both passes below are skipped once there is nothing to do —
+// see updateRoomWallVisibility() and tickWallFade().
+let lastWallTheta=null;
+let wallFadeSettled=false;
 
 export function buildRoom(){ refreshRoomShell(true); }
 
@@ -34,6 +42,8 @@ export function refreshRoomShell(){
   if(roomGroup){ scene.remove(roomGroup); }
   roomGroup=new THREE.Group(); roomGroup.name="room-shell"; scene.add(roomGroup);
   roomWallParts={front:[],back:[],left:[],right:[]};
+  // brand-new meshes: neither cached angle nor "settled" says anything about them
+  lastWallTheta=null; wallFadeSettled=false;
   const spec=currentRoomSpec(), w=spec.w, d=spec.d, h=spec.h;
   const backZ=-d/2, frontZ=d/2, leftX=-w/2, rightX=w/2;
   const addRoom=obj=>{ roomGroup.add(obj); return obj; };
@@ -81,31 +91,51 @@ export function setMeshOpacity(mesh,opacity){
   // store a target; the animation loop eases toward it so walls fade in/out smoothly
   mesh.userData.wallTarget=opacity;
   if(mesh.userData.wallOpac===undefined) mesh.userData.wallOpac=opacity;
+  // anything the material does not already reflect is work for the fade pass,
+  // including the very first sync of a freshly built wall
+  if(mesh.userData.wallApplied!==opacity) wallFadeSettled=false;
   mesh.castShadow=false; mesh.receiveShadow=false; // map walls take no shadows at all (kept clean)
 }
+/* Eases every wall toward the target the orbit angle set. Once every wall has
+   arrived there is nothing left to ease, so the pass parks itself rather than
+   rewriting the same opacity onto every wall material for the rest of the
+   session; setMeshOpacity() wakes it again the moment a target moves. */
 export function tickWallFade(){
-  if(!roomWallParts) return;
-  Object.keys(roomWallParts).forEach(side=>{
-    roomWallParts[side].forEach(m=>{
-      if(!m.material||m.userData.wallTarget===undefined) return;
+  if(!roomWallParts||wallFadeSettled) return;
+  let moving=false;
+  for(const side of WALL_SIDES){
+    for(const m of roomWallParts[side]){
+      if(!m.material||m.userData.wallTarget===undefined) continue;
       const tgt=m.userData.wallTarget;
       let o=m.userData.wallOpac; if(o===undefined)o=tgt;
-      o += (tgt-o)*0.12;                          // ease (~0.2s) instead of snapping
-      if(Math.abs(tgt-o)<0.005) o=tgt;
-      m.userData.wallOpac=o;
-      m.material.transparent=o<0.99;
-      m.material.opacity=o;
-      m.material.depthWrite=o>0.45;
-    });
-  });
+      if(o!==tgt){
+        o += (tgt-o)*0.12;                        // ease (~0.2s) instead of snapping
+        if(Math.abs(tgt-o)<0.005) o=tgt; else moving=true;
+        m.userData.wallOpac=o;
+      }
+      // write only what the material is not already showing — this is what
+      // makes a settled wall cost nothing, and it still covers the first sync
+      if(m.userData.wallApplied!==o){
+        m.material.transparent=o<0.99;
+        m.material.opacity=o;
+        m.material.depthWrite=o>0.45;
+        m.userData.wallApplied=o;
+      }
+    }
+  }
+  wallFadeSettled=!moving;
 }
+/* The per-side target opacity is a pure function of the orbit angle, so an
+   unchanged angle can only produce the targets the walls already carry. */
 export function updateRoomWallVisibility(){
   if(!roomWallParts||!orbit) return;
   const theta=normAngle(orbit.theta);
-  Object.keys(roomWallParts).forEach(side=>{
+  if(theta===lastWallTheta) return;
+  lastWallTheta=theta;
+  for(const side of WALL_SIDES){
     const opacity=wallOpacityForSide(side,theta);
-    roomWallParts[side].forEach(m=>setMeshOpacity(m,opacity));
-  });
+    for(const m of roomWallParts[side]) setMeshOpacity(m,opacity);
+  }
 }
 
 /* ---------- movable decor: grid placement system -------------------------- */

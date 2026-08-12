@@ -28,46 +28,9 @@ import { isInteractableNow } from "./world/interactables.js";
 import { pickAt } from "./input/raycasting.js";
 import { createOrbitControls } from "./input/cameraControls.js";
 import { createArrangeDragHandlers } from "./input/pointerInput.js";
-import {
-  isStagingActive, renderStaging,
-  stagingPointerDown, stagingPointerMove, stagingPointerUp, stagingPointerCancel,
-} from "./venipuncture/staging/stagingRuntime.js";
-import {
-  isTourniquetActive, renderTourniquet,
-  tourniquetPointerDown, tourniquetPointerMove, tourniquetPointerUp, tourniquetPointerCancel,
-} from "./venipuncture/tourniquet/tourniquetRuntime.js";
-import {
-  isPalpationActive, renderPalpation,
-  palpationPointerDown, palpationPointerMove, palpationPointerUp, palpationPointerCancel,
-} from "./venipuncture/palpation/palpationRuntime.js";
-import {
-  isCleaningActive, renderCleaning,
-  cleaningPointerDown, cleaningPointerMove, cleaningPointerUp, cleaningPointerCancel,
-} from "./venipuncture/cleaning/cleaningRuntime.js";
-import {
-  isAssemblyActive, renderAssembly,
-  assemblyPointerDown, assemblyPointerMove, assemblyPointerUp, assemblyPointerCancel,
-} from "./venipuncture/assembly/assemblyRuntime.js";
-import {
-  isInsertActive, renderInsert,
-  insertPointerDown, insertPointerMove, insertPointerUp, insertPointerCancel,
-} from "./venipuncture/insert/insertRuntime.js";
-import {
-  isCollectionActive, renderCollection,
-  collectionPointerDown, collectionPointerMove, collectionPointerUp, collectionPointerCancel,
-} from "./venipuncture/collection/collectionRuntime.js";
-import {
-  isWithdrawalActive, renderWithdrawal,
-  withdrawalPointerDown, withdrawalPointerMove, withdrawalPointerUp, withdrawalPointerCancel,
-} from "./venipuncture/withdrawal/withdrawalRuntime.js";
-import {
-  isPostDrawActive, renderPostDraw,
-  postDrawPointerDown, postDrawPointerMove, postDrawPointerUp, postDrawPointerCancel,
-} from "./venipuncture/postdraw/postDrawRuntime.js";
-import {
-  isInversionActive, renderInversion,
-  inversionPointerDown, inversionPointerMove, inversionPointerUp, inversionPointerCancel,
-} from "./venipuncture/inversion/inversionRuntime.js";
+// Every converted step exposes the same five hooks; the table that maps them
+// lives next to the steps themselves. See venipuncture/stepRuntimes.js.
+import { activeStepRuntime } from "./venipuncture/stepRuntimes.js";
 // The one branch that is not a step: it runs across all of them, ticked here
 // because the composition root owns the frame. See complicationRuntime.js.
 import { tickComplications } from "./venipuncture/complications/complicationRuntime.js";
@@ -127,44 +90,20 @@ function setupInput(canvasEl){
   // its own scene, its own camera, its own drag semantics. Orbit and arrange
   // are suppressed so a pick-up gesture can never be read as a camera drag.
   canvasEl.addEventListener("pointerdown", e=>{
-    if(isStagingActive()){ stagingPointerDown(e, canvasEl); return; }
-    if(isTourniquetActive()){ tourniquetPointerDown(e, canvasEl); return; }
-    if(isPalpationActive()){ palpationPointerDown(e, canvasEl); return; }
-    if(isCleaningActive()){ cleaningPointerDown(e, canvasEl); return; }
-    if(isAssemblyActive()){ assemblyPointerDown(e, canvasEl); return; }
-    if(isInsertActive()){ insertPointerDown(e, canvasEl); return; }
-    if(isCollectionActive()){ collectionPointerDown(e, canvasEl); return; }
-    if(isWithdrawalActive()){ withdrawalPointerDown(e, canvasEl); return; }
-    if(isPostDrawActive()){ postDrawPointerDown(e, canvasEl); return; }
-    if(isInversionActive()){ inversionPointerDown(e, canvasEl); return; }
+    const step = activeStepRuntime();
+    if(step){ step.down(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
   canvasEl.addEventListener("pointermove", e=>{
-    if(isStagingActive()){ stagingPointerMove(e, canvasEl); return; }
-    if(isTourniquetActive()){ tourniquetPointerMove(e, canvasEl); return; }
-    if(isPalpationActive()){ palpationPointerMove(e, canvasEl); return; }
-    if(isCleaningActive()){ cleaningPointerMove(e, canvasEl); return; }
-    if(isAssemblyActive()){ assemblyPointerMove(e, canvasEl); return; }
-    if(isInsertActive()){ insertPointerMove(e, canvasEl); return; }
-    if(isCollectionActive()){ collectionPointerMove(e, canvasEl); return; }
-    if(isWithdrawalActive()){ withdrawalPointerMove(e, canvasEl); return; }
-    if(isPostDrawActive()){ postDrawPointerMove(e, canvasEl); return; }
-    if(isInversionActive()){ inversionPointerMove(e, canvasEl); return; }
+    const step = activeStepRuntime();
+    if(step){ step.move(e, canvasEl); return; }
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
   canvasEl.addEventListener("pointerup", e=>{
-    if(isStagingActive()){ stagingPointerUp(e, canvasEl); return; }
-    if(isTourniquetActive()){ tourniquetPointerUp(e, canvasEl); return; }
-    if(isPalpationActive()){ palpationPointerUp(e, canvasEl); return; }
-    if(isCleaningActive()){ cleaningPointerUp(e, canvasEl); return; }
-    if(isAssemblyActive()){ assemblyPointerUp(e, canvasEl); return; }
-    if(isInsertActive()){ insertPointerUp(e, canvasEl); return; }
-    if(isCollectionActive()){ collectionPointerUp(e, canvasEl); return; }
-    if(isWithdrawalActive()){ withdrawalPointerUp(e, canvasEl); return; }
-    if(isPostDrawActive()){ postDrawPointerUp(e, canvasEl); return; }
-    if(isInversionActive()){ inversionPointerUp(e, canvasEl); return; }
+    const step = activeStepRuntime();
+    if(step){ step.up(e, canvasEl); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -172,16 +111,8 @@ function setupInput(canvasEl){
     if(wasDragging && !moved && !arrangeIsOpen()) handlePick(e, canvasEl);
   });
   canvasEl.addEventListener("pointercancel", e=>{
-    if(isStagingActive()) stagingPointerCancel(e, canvasEl);
-    else if(isTourniquetActive()) tourniquetPointerCancel(e, canvasEl);
-    else if(isPalpationActive()) palpationPointerCancel(e, canvasEl);
-    else if(isCleaningActive()) cleaningPointerCancel(e, canvasEl);
-    else if(isAssemblyActive()) assemblyPointerCancel(e, canvasEl);
-    else if(isInsertActive()) insertPointerCancel(e, canvasEl);
-    else if(isCollectionActive()) collectionPointerCancel(e, canvasEl);
-    else if(isWithdrawalActive()) withdrawalPointerCancel(e, canvasEl);
-    else if(isPostDrawActive()) postDrawPointerCancel(e, canvasEl);
-    else if(isInversionActive()) inversionPointerCancel(e, canvasEl);
+    const step = activeStepRuntime();
+    if(step) step.cancel(e, canvasEl);
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();
@@ -264,16 +195,8 @@ function animate(){
   // While the learner is working a close-up — the supply cart, or the
   // patient's arm — the canvas shows that instead of the room. Same renderer,
   // different scene, so there is only ever one WebGL context.
-  if(isStagingActive()){ renderStaging(getRenderer(), dt); return; }
-  if(isTourniquetActive()){ renderTourniquet(getRenderer(), dt); return; }
-  if(isPalpationActive()){ renderPalpation(getRenderer(), dt); return; }
-  if(isCleaningActive()){ renderCleaning(getRenderer(), dt); return; }
-  if(isAssemblyActive()){ renderAssembly(getRenderer(), dt); return; }
-  if(isInsertActive()){ renderInsert(getRenderer(), dt); return; }
-  if(isCollectionActive()){ renderCollection(getRenderer(), dt); return; }
-  if(isWithdrawalActive()){ renderWithdrawal(getRenderer(), dt); return; }
-  if(isPostDrawActive()){ renderPostDraw(getRenderer(), dt); return; }
-  if(isInversionActive()){ renderInversion(getRenderer(), dt); return; }
+  const step = activeStepRuntime();
+  if(step){ step.render(getRenderer(), dt); return; }
 
   updateRoomWallVisibility();
   tickWallFade();

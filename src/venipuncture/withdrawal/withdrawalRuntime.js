@@ -42,6 +42,7 @@ import {
   slideSafety, activateSafetyCleanly, attemptRecap, setDownUnit,
   disposeUnit, markCrossedPatient,
 } from "./withdrawalState.js";
+import { measureObstruction, viewportAspect } from "../viewport.js";
 
 /** The bench top, shared with the assembly and collection branches. */
 const BENCH_Y = -0.030;
@@ -832,8 +833,7 @@ function doRelease(){
 
 export function renderWithdrawal(renderer, dt){
   if(!ctx) return false;
-  const size = renderer.getSize(new THREE.Vector2());
-  const aspect = size.x/Math.max(1, size.y);
+  const aspect = viewportAspect(renderer);
   ctx.frame++;
   if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){
     // Framed to hold the arm, the unit and the containers on the bench in the
@@ -866,18 +866,6 @@ export function renderWithdrawal(renderer, dt){
   ctx.view.tick(dt || 0.016);
   renderer.render(ctx.view.scene, ctx.view.camera);
   return true;
-}
-
-function measureObstruction(renderer){
-  const canvas = renderer.domElement;
-  const panel = typeof document !== "undefined" ? document.getElementById("panel") : null;
-  if(!canvas || !panel) return { rightFrac: 0, bottomFrac: 0 };
-  const c = canvas.getBoundingClientRect();
-  const p = panel.getBoundingClientRect();
-  if(!c.width || !c.height || !p.width) return { rightFrac: 0, bottomFrac: 0 };
-  const sideSheet = p.width < c.width*0.75;
-  if(sideSheet) return { rightFrac: Math.min(0.45, (c.right - p.left)/c.width), bottomFrac: 0 };
-  return { rightFrac: 0, bottomFrac: Math.min(0.6, (c.bottom - p.top)/c.height) };
 }
 
 /* ---------- programmatic (accessible path + tests) ------------------------------------------ */

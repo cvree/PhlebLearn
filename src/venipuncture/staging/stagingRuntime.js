@@ -23,6 +23,7 @@ import { ZONE, placeItem, inspectItem, markContaminated, recordEvent } from "./s
 import { zoneAt, rackSlotAt, rackSlotPosition, crossesField, orientationForAspect, applyTrayOffset } from "./stagingLayout.js";
 import { evaluateStaging } from "./stagingRules.js";
 import { CATEGORY } from "./supplyCatalog.js";
+import { measureObstruction, viewportAspect } from "../viewport.js";
 
 const TAP_PX = 7;              // pointer travel below this is a tap, not a drag
 const LIFT = 0.045;            // how high a held object floats above the surface
@@ -90,8 +91,7 @@ function notify(){
 
 export function renderStaging(renderer, dt){
   if(!ctx) return false;
-  const size = renderer.getSize(new THREE.Vector2());
-  const aspect = size.x / Math.max(1, size.y);
+  const aspect = viewportAspect(renderer);
   // the coach panel is a side panel on desktop and a bottom sheet on phones;
   // either way the cart has to be framed in what's left of the canvas.
   ctx.frame = (ctx.frame||0) + 1;
@@ -113,18 +113,6 @@ export function renderStaging(renderer, dt){
   tickTweens(dt||0.016);
   renderer.render(ctx.view.scene, ctx.view.camera);
   return true;
-}
-
-function measureObstruction(renderer){
-  const canvas = renderer.domElement;
-  const panel = typeof document!=="undefined" ? document.getElementById("panel") : null;
-  if(!canvas || !panel) return { rightFrac:0, bottomFrac:0 };
-  const c = canvas.getBoundingClientRect();
-  const p = panel.getBoundingClientRect();
-  if(!c.width || !c.height || !p.width) return { rightFrac:0, bottomFrac:0 };
-  const sideSheet = p.width < c.width * 0.75;
-  if(sideSheet) return { rightFrac: Math.min(0.45, (c.right - p.left)/c.width), bottomFrac:0 };
-  return { rightFrac:0, bottomFrac: Math.min(0.6, (c.bottom - p.top)/c.height) };
 }
 
 function tickTweens(dt){

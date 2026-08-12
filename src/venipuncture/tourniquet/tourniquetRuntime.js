@@ -41,6 +41,7 @@ import {
   markSecured, markUnravelled, markReleased, secondsOn, isSecured,
 } from "./tourniquetState.js";
 import { evaluateTourniquet } from "./tourniquetRules.js";
+import { measureObstruction, viewportAspect } from "../viewport.js";
 
 /* ---------- gesture constants ---------------------------------------------- */
 
@@ -726,8 +727,7 @@ export function adjustTension(delta){
 
 export function renderTourniquet(renderer, dt){
   if(!ctx) return false;
-  const size = renderer.getSize(new THREE.Vector2());
-  const aspect = size.x/Math.max(1, size.y);
+  const aspect = viewportAspect(renderer);
   ctx.frame++;
 
   if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){
@@ -749,18 +749,6 @@ export function renderTourniquet(renderer, dt){
 
   renderer.render(ctx.view.scene, ctx.view.camera);
   return true;
-}
-
-function measureObstruction(renderer){
-  const canvas = renderer.domElement;
-  const panel = typeof document !== "undefined" ? document.getElementById("panel") : null;
-  if(!canvas || !panel) return { rightFrac: 0, bottomFrac: 0 };
-  const c = canvas.getBoundingClientRect();
-  const p = panel.getBoundingClientRect();
-  if(!c.width || !c.height || !p.width) return { rightFrac: 0, bottomFrac: 0 };
-  const sideSheet = p.width < c.width*0.75;
-  if(sideSheet) return { rightFrac: Math.min(0.45, (c.right - p.left)/c.width), bottomFrac: 0 };
-  return { rightFrac: 0, bottomFrac: Math.min(0.6, (c.bottom - p.top)/c.height) };
 }
 
 /** Live gesture feedback for the coach panel, so it can name what is happening. */
