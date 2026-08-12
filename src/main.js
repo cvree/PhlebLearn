@@ -34,6 +34,11 @@ import { activeStepRuntime } from "./venipuncture/stepRuntimes.js";
 // The one branch that is not a step: it runs across all of them, ticked here
 // because the composition root owns the frame. See complicationRuntime.js.
 import { tickComplications } from "./venipuncture/complications/complicationRuntime.js";
+// Nothing in this game integrates forces; every object moves along an authored
+// curve. One flat tween list, ticked here because the composition root owns the
+// frame. See bench/motion.js.
+import { tickMotion } from "./bench/motion.js";
+import { startRoomTone, stopRoomTone, roomToneRunning } from "./audio/procedural.js";
 
 import { SS, DARK, REDUCED, state } from "./game/gameState.js";
 import { sfx } from "./audio/audioManager.js";
@@ -196,7 +201,15 @@ function animate(){
   // patient's arm — the canvas shows that instead of the room. Same renderer,
   // different scene, so there is only ever one WebGL context.
   const step = activeStepRuntime();
-  if(step){ step.render(getRenderer(), dt); return; }
+  if(step){
+    tickMotion(dt);
+    // Room tone runs for as long as the learner is at the bench. Silence is
+    // what makes a simulator feel like a worksheet.
+    if(!roomToneRunning()) startRoomTone();
+    step.render(getRenderer(), dt);
+    return;
+  }
+  if(roomToneRunning() && (state==="idle" || state==="summary" || state==="score")) stopRoomTone();
 
   updateRoomWallVisibility();
   tickWallFade();
@@ -292,6 +305,21 @@ function boot(){
    its time not testing the thing it is named after. Nothing here is reachable
    in normal play, and the flag is absent from every link the game itself
    renders. */
+/**
+ * A point in LIMB-LOCAL metres, projected to client pixels through the bench's
+ * own transform.
+ *
+ * Not the same thing as projecting through the bare camera any more: the bench
+ * root carries the handedness mirror, so a local point and a world point are
+ * different points on a left-handed bench and only the view knows the
+ * difference. Test seam only.
+ */
+function projectLocal(view, local, rect){
+  const r = rect || document.querySelector("canvas").getBoundingClientRect();
+  const p = view.toScreen(local.clone ? local.clone() : local, r, new THREE.Vector3());
+  return { x: p.x, y: p.y };
+}
+
 function installTestSeam(){
   let e2e = false;
   try{ e2e = new URLSearchParams(location.search).get("e2e")==="1"; }catch(_){}
@@ -509,8 +537,7 @@ function installTestSeam(){
       const v = new THREE.Vector3();
       mesh.getWorldPosition(v);
       v.project(ctx.view.camera);
-      const canvas = document.querySelector("canvas");
-      const r = canvas.getBoundingClientRect();
+      const r = document.querySelector("canvas").getBoundingClientRect();
       return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height };
     },
     /** The tourniquet's state and the arm's response, as the rules see them. */
@@ -563,11 +590,34 @@ function installTestSeam(){
       if(!ctx) return null;
       const end = ctx.strap.ends[index];
       if(!end) return null;
-      const p = end.position.clone();
-      p.project(ctx.view.camera);
-      const canvas = document.querySelector("canvas");
-      const rect = canvas.getBoundingClientRect();
-      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+      return projectLocal(ctx.view, end.position);
+    },
+    /**
+     * A point part-way ALONG the strap, in screen pixels.
+     *
+     * The band can now be grabbed anywhere on its length rather than only by
+     * its two tips, so a test that can only address the tips can no longer
+     * drive the gesture the way a hand does.
+     * @param {number} t  0…1 along the strap; 0.5 is its middle
+     */
+    async screenPointOnStrap(t){
+      const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      const ctx = getTourniquetContext();
+      if(!ctx || !ctx.geom.line || !ctx.geom.line.length) return null;
+      const line = ctx.geom.line;
+      const i = Math.max(0, Math.min(line.length - 1, Math.round((t == null ? 0.5 : t)*(line.length - 1))));
+      return projectLocal(ctx.view, line[i]);
+    },
+    /** Which of the five insertion phases the gesture is in right now. */
+    async insertBeat(){
+      const { currentInsert } = await import("./venipuncture/insert/insertRuntime.js");
+      const c = currentInsert();
+      return c ? c.beat : null;
+    },
+    /** How many scenes the encounter has built. Should be exactly one. */
+    async benchStats(){
+      const { benchStats } = await import("./bench/benchSession.js");
+      return benchStats();
     },
     /**
      * Projects a point in the arm's own cylindrical coordinates to the screen,
@@ -587,21 +637,13 @@ function installTestSeam(){
       if(!ctx) return null;
       const canvas = document.querySelector("canvas");
       const rect = canvas.getBoundingClientRect();
-      return list.map(([x, theta, r])=>{
-        const p = ctx.view.limbToWorld(x, theta, r);
-        p.project(ctx.view.camera);
-        return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
-      });
+      return list.map(([x, theta, r])=> projectLocal(ctx.view, ctx.view.limbToWorld(x, theta, r), rect));
     },
     async screenPointOnLimb(x, theta, r){
       const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
       const ctx = getTourniquetContext();
       if(!ctx) return null;
-      const p = ctx.view.limbToWorld(x, theta, r);
-      p.project(ctx.view.camera);
-      const canvas = document.querySelector("canvas");
-      const rect = canvas.getBoundingClientRect();
-      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+      return projectLocal(ctx.view, ctx.view.limbToWorld(x, theta, r));
     },
     /**
      * The exact radius the wrap gesture is measured against. A test has to
@@ -635,6 +677,8 @@ function installTestSeam(){
         blocking: r.blocking.map(i=>i.code), issues: r.issues.map(i=>i.code),
         feel: t ? t.feel : null, press: t ? t.press : 0,
         touching: t ? t.vesselId : null,
+        arteryProximity: t ? t.arteryProximity : 0,
+        markable: t ? t.markable : false,
         finger: ctx && ctx.finderPos ? { x:ctx.finderPos.x, z:ctx.finderPos.z, theta:ctx.finderPos.theta } : null,
       };
     },
@@ -658,11 +702,7 @@ function installTestSeam(){
       const m = v.path[Math.floor(v.path.length/2)];
       const r = ctx.view.arm.radiusAt(m.x);
       const theta = Math.asin(Math.max(-1, Math.min(1, m.z/r)));
-      const p = ctx.view.limbToWorld(m.x, theta, r);
-      p.project(ctx.view.camera);
-      const canvas = document.querySelector("canvas");
-      const rect = canvas.getBoundingClientRect();
-      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+      return projectLocal(ctx.view, ctx.view.limbToWorld(m.x, theta, r));
     },
     /** The prep field's state, as the rules see it. */
     async cleaningSnapshot(){
@@ -688,11 +728,7 @@ function installTestSeam(){
       const x = ctx.site.x + dx, z = ctx.site.z + dz;
       const r = ctx.view.arm.radiusAt(x);
       const theta = Math.asin(Math.max(-1, Math.min(1, z/r)));
-      const p = ctx.view.limbToWorld(x, theta, r);
-      p.project(ctx.view.camera);
-      const canvas = document.querySelector("canvas");
-      const rect = canvas.getBoundingClientRect();
-      return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
+      return projectLocal(ctx.view, ctx.view.limbToWorld(x, theta, r));
     },
     /**
      * Skips the drying wait. Tests only — never reachable in play.
@@ -868,11 +904,7 @@ function installTestSeam(){
       if(!ctx) return null;
       const canvas = document.querySelector("canvas");
       const rect = canvas.getBoundingClientRect();
-      return list.map(([x, theta, r])=>{
-        const p = ctx.view.limbToWorld(x, theta, r);
-        p.project(ctx.view.camera);
-        return { x: rect.left + (p.x*0.5+0.5)*rect.width, y: rect.top + (-p.y*0.5+0.5)*rect.height };
-      });
+      return list.map(([x, theta, r])=> projectLocal(ctx.view, ctx.view.limbToWorld(x, theta, r), rect));
     },
     /** Every tube's real volume, ratio and state, plus the arm's verdict. */
     async collectionSnapshot(){

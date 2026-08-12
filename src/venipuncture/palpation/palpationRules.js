@@ -50,18 +50,24 @@ export const CONTACT_PRESS = 0.12;
  * @param {number} x        along the arm, metres
  * @param {number} z        across the arm, metres
  * @param {number} press    0..1, how hard the finger is pressing
+ * @param {number} [reachBonus]  extra metres of feelable width, from the
+ *   global assist layer. Defaults to zero, so every existing caller and every
+ *   existing test measures exactly what it always did.
+ *
+ *   This is assistance in the sense the assist layer defines: it widens the
+ *   SEARCH so that sweeping an arm finds the vein, and it changes nothing
+ *   about which vessel the finger is then on, or about what that vessel is.
+ *   It is deliberately capped well below the ~1 cm that separates the basilic
+ *   from the brachial artery, because telling those two apart is the one
+ *   distinction this whole step exists to teach.
  * @returns {{feel, vessel, depth, distance}}
  */
-export function feelAt(vessels, x, z, press){
+export function feelAt(vessels, x, z, press, reachBonus){
   if(press < CONTACT_PRESS) return { feel: FEEL.NOTHING, vessel: null };
 
   // A pressing finger flattens a wider patch of skin, so it finds things a
-  // light touch would miss — which is why you palpate rather than stroke. It
-  // stays discriminating though: the basilic runs about a centimetre from the
-  // brachial artery, and a fingertip that grabbed everything within a
-  // centimetre could never tell those two apart, which is the one distinction
-  // this whole step exists to teach.
-  const reach = 0.0035 + press*0.0025;
+  // light touch would miss — which is why you palpate rather than stroke.
+  const reach = 0.0035 + press*0.0025 + Math.max(0, Math.min(0.005, reachBonus || 0));
   const near = vesselsNear(vessels, x, z, reach);
   if(!near.length) return { feel: FEEL.SOFT, vessel: null };
 

@@ -27,7 +27,7 @@ import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
 import { getRoomLevel, canChooseProcedure, hasUpgrade } from "../game/progression.js";
 import {
-  STEP_XP, sectionScore, sectionReward, nextStreak, streakTier, drawReward,
+  STEP_XP, sectionScore, sectionReward, nextStreak, drawReward,
 } from "../game/rewards.js";
 import { PROCEDURE, PROCEDURES, indicatedProcedure } from "../venipuncture/procedure.js";
 import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint, clearHint } from "../game/dialogue.js";
@@ -44,10 +44,29 @@ import { startComplicationWatch, finishComplications } from "../venipuncture/com
 import { complicationSummaryHTML } from "../venipuncture/complications/complicationCoach.js";
 import { assessSpecimens, applySpecimenOutcome } from "../venipuncture/specimen/specimenQuality.js";
 import { fbCard } from "./coachLayer.js";
+import { buildDebrief, sectionScores } from "../game/debrief.js";
+import { normaliseMastery, applyDraw as applyMastery } from "../game/mastery.js";
+import { offerBests } from "../game/personalBests.js";
 
 /* ---------- top bar + panel entrance -------------------------------------- */
+/**
+ * The top bar. Inside an encounter it shows NO SCORE OF ANY KIND.
+ *
+ * A running XP counter is a score banner that happens to be small, and it is
+ * on screen for every second of the four minutes the draw is meant to be
+ * absorbing. The values are still being accumulated — they are simply not
+ * shown until the debrief, which is the whole point of holding them back.
+ */
 export function syncTop(){
-  countUp($("tXp"),SS.xp,{pop:true}); countUp($("tCoins"),SS.coins,{pop:true});
+  const inEncounter = state !== "idle" && state !== "summary" && state !== "score";
+  const xp = $("tXp"), coins = $("tCoins");
+  if(inEncounter){
+    if(xp) xp.textContent = "—";
+    if(coins) coins.textContent = "—";
+  }else{
+    countUp(xp, SS.xp, { pop:true });
+    countUp(coins, SS.coins, { pop:true });
+  }
   $("tPatient").textContent="Patient "+Math.min(SHIFT.index+ (state==="idle"||state==="summary"?0:1), SHIFT.len)+"/"+SHIFT.len;
 }
 function animatePanelIn(){ if(!panel)return; panel.classList.remove("enter"); void panel.offsetWidth; panel.classList.add("enter"); fxPanelIn(); }
@@ -292,7 +311,7 @@ function renderCollect(){
   panel.innerHTML=`
     <h2>🩸 ${section ? section.label : "Venipuncture"} <span class="vp-count">step ${done+1}/${total}</span></h2>
     <div class="vp-bar"><div class="vp-bar-fill" style="width:${pctDone}%"></div></div>
-    <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%${c.streak>=2?` · ${streakTier(c.streak)?streakTier(c.streak).emoji:"✨"} ${c.streak} clean`:""}</span></div>
+    <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%</span></div>
     ${lesson}
     <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
     <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`;
@@ -412,19 +431,31 @@ function renderProcedureChoice(c){
   });
 }
 
-/* ---------- paying as you go -------------------------------------------------
-   The draw used to pay out once, on a screen the learner reached minutes
-   after the work that earned it. Now every finished step ticks, and every
-   finished SECTION pays according to its own measurement — the same 0–100 the
-   rubric grades from, so the feedback and the assessment can never disagree.
+/* ---------- paying as you go, without saying so -------------------------------
+   The arithmetic here is unchanged and lives, as it always did, in
+   `rewards.js`: every step ticks, every finished SECTION pays according to
+   its own 0-100 measurement, and a streak of clean sections multiplies the
+   section bonus only.
 
-   Nothing here decides what is good; `rewards.js` does the arithmetic and
-   `sections.js` says which measurements a section produced.
+   What changed is WHEN it is shown. The draw used to fire eleven graded
+   banners — "Clean · Tourniquet 92/100 +14 XP" — plus a floating +2 XP per
+   step, which told the learner their score before they had finished the
+   patient. Now every payout accrues to `c.held` in silence and is released as
+   one act of the debrief. Nothing during an encounter shows a number, a
+   grade, a coin, a chip or a banner.
+
+   The only feedback during the draw is diegetic: the vein filling, the hand
+   pinking or blanching, the patient's face, the flash of blood, the vacuum's
+   decay, the click of the safety.
    ---------------------------------------------------------------------------- */
+function heldFor(c){
+  if(!c.held) c.held = { xp:0, coins:0, sections:[], streakPeak:0 };
+  return c.held;
+}
+
 function rewardStep(c, finishedId, nextId){
-  addXP(STEP_XP);
-  floatXP(`+${STEP_XP} XP`);
-  syncTop();
+  const held = heldFor(c);
+  held.xp += STEP_XP;
 
   if(!endsSection(finishedId, nextId)) return;
   const section = sectionForStep(finishedId);
@@ -437,45 +468,10 @@ function rewardStep(c, finishedId, nextId){
   c.sectionsDone = (c.sectionsDone || 0) + 1;
   if(r.clean) c.cleanSections = (c.cleanSections || 0) + 1;
 
-  if(r.xp){ addXP(r.xp); saveSS(); }
-  if(r.coins){ addCoins(r.coins); saveSS(); }
-  syncTop();
-
-  const tier = streakTier(c.streak);
-  if(r.clean){
-    sfx("win");
-    if(tier && c.streak === tier.at){ confetti(28); toast(`${tier.emoji} ${tier.blurb}`); }
-    else confetti(10);
-  }else if(r.broke && streak >= 3){
-    sfx("bad");
-    toast("Streak broken — that section did not hold together.");
-  }else if(r.xp){
-    sfx("coin");
-  }
-
-  // The banner says WHICH section and WHAT it scored, because "+14 XP" on its
-  // own teaches nothing about which piece of technique earned it.
-  if(r.label){
-    floatXP(`${r.label} · ${section.label} ${score}/100 +${r.xp} XP`);
-  }
-  renderStreakChip(c.streak);
-}
-
-/** A chip that only exists while there is a streak to show. */
-function renderStreakChip(streak){
-  const host = document.getElementById("app");
-  let el = document.getElementById("streakChip");
-  if(!streak || streak < 2){ if(el) el.remove(); return; }
-  if(!el && host){
-    el = document.createElement("div");
-    el.id = "streakChip";
-    el.className = "streak-chip";
-    host.appendChild(el);
-  }
-  if(!el) return;
-  const tier = streakTier(streak);
-  el.textContent = `${tier ? tier.emoji : "✨"} ${streak} clean`;
-  el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
+  held.xp += r.xp || 0;
+  held.coins += r.coins || 0;
+  held.streakPeak = Math.max(held.streakPeak, c.streak);
+  held.sections.push({ id: section.id, label: section.label, score, xp: r.xp || 0, coins: r.coins || 0, clean: !!r.clean });
 }
 
 /* ---------- complications ---------------------------------------------------
@@ -589,12 +585,17 @@ function vpFinish(){
     specimensAccepted: q ? q.acceptedCount : 0, specimensTotal: q ? q.total : 0,
     complicationsHandled: !!(cx && cx.missedCount === 0 && cx.worsenedCount === 0 && !cx.fainted),
   });
+  /* HELD, not paid. The lump sum is computed here, exactly as it always was,
+     and then joins everything the sections accrued in `c.held` — so the
+     encounter is still over before the learner sees a single number. It is
+     released in act 4 of the debrief. */
   if(!c.awarded){
-    addXP(payout.xp); addCoins(payout.coins); c.awarded=true; saveSS(); syncTop();
-    floatXP("+"+payout.xp+" XP");
-    if(payout.notes.length >= 2){ sfx("win"); confetti(40); } else sfx("coin");
+    const held = heldFor(c);
+    held.xp += payout.xp;
+    held.coins += payout.coins;
+    held.notes = payout.notes;
+    c.awarded = true;
   }
-  renderStreakChip(0);
   const hasPostDraw = !!ENC.p.drawEvent && ENC.p.drawEvent.when!=="mid" && !ENC.drawEventHandled;
   const sm = c.stagingMeasurements;
   // Teaching mode reports technique immediately; a scored shift holds it back
@@ -905,50 +906,211 @@ function starHTML(stars){
   for(let i=0;i<5;i++){ s+=`<span style="animation-delay:${i*90}ms">${i<stars?'⭐':'☆'}</span>`; }
   return s+'</div>';
 }
+/* =========================================================================
+   THE DEBRIEF, AS FOUR ACTS
+
+   Everything the encounter withheld arrives here, paced. The old screen put
+   stars, a percentage, a coin count and twelve tiles on the page at once —
+   after eleven in-draw banners had already given the game away — so it landed
+   as a summary of things you had been told rather than as a verdict.
+
+   Now: the patient leaves, then the lab speaks, then the numbers, then the
+   payout. Each act waits for the one before it. Clicking anywhere skips
+   ahead, because a player who has seen it fifty times should never be made to
+   sit through it, and "Next patient" is the largest control on the screen
+   because the fastest path out of a debrief should be into another draw.
+   ========================================================================= */
 function renderScore(){
-  const s=ENC.scores, cats=Object.keys(s);
-  // The Final Practical's rubric report lands here, with the encounter score,
-  // so there is exactly one place a learner reads how the whole thing went.
-  const c = ENC.collect;
-  const practical = (finalPractical() && c && c.report)
+  const c = ENC.collect || {};
+  const teaching = guided();
+
+  /* --- everything held back during the draw, settled now ------------------ */
+  const held = (c.held) || { xp:0, coins:0, sections:[], streakPeak:0 };
+  const scores = sectionScores(c);
+  SS.mastery = normaliseMastery(SS.mastery);
+  const starsGained = c.masteryApplied ? (c.masteryGained || []) : applyMastery(SS.mastery, scores);
+  c.masteryGained = starsGained;
+  c.masteryApplied = true;
+
+  const q = c.specimenQuality;
+  const ins = c.insertMeasurements;
+  const tq = c.tourniquetMeasurements;
+  const cl = c.cleaningMeasurements;
+  const cx = c.complicationMeasurements;
+  const allAccepted = !!(q && q.total > 0 && q.acceptedCount === q.total);
+  const oneStick = !!(ins && ins.inVein && !ins.reapproaches);
+  SS.bests = SS.bests || {};
+  const streak = allAccepted && oneStick ? (SS.flawlessRun = (SS.flawlessRun || 0) + 1) : (SS.flawlessRun = 0);
+  const bestsBeaten = c.bestsApplied ? (c.bestsBeaten || []) : offerBests(SS.bests, {
+    cleanDrawMs: ENC.elapsedMs,
+    entryAngleErr: ins && ins.angleDeg != null ? Math.abs(ins.angleDeg - 22) : undefined,
+    coverage: cl ? cl.coveragePct : undefined,
+    flawlessStreak: streak,
+    acceptedStreak: allAccepted ? (SS.acceptedRun = (SS.acceptedRun || 0) + (q ? q.total : 0)) : (SS.acceptedRun = 0),
+    bandSeconds: tq ? tq.secondsOn : undefined,
+  }, {
+    oneStick, allAccepted, flashed: !!(ins && ins.inVein),
+    noMissedComplications: !cx || (cx.missedCount === 0 && !cx.fainted),
+  });
+  c.bestsBeaten = bestsBeaten;
+  c.bestsApplied = true;
+
+  if(!c.paidOut){
+    addXP(held.xp); addCoins(held.coins);
+    c.paidOut = true;
+  }
+  saveSS();
+
+  const debrief = buildDebrief({
+    collect: c, patient: ENC.p, held, specimens: q,
+    bests: bestsBeaten, mastery: starsGained, elapsedMs: ENC.elapsedMs,
+  });
+
+  /* --- the practical report and the per-category tiles stay available, but
+         they are now BELOW the four acts rather than instead of them ------- */
+  const s = ENC.scores, cats = Object.keys(s);
+  const correct = cats.filter(k => s[k]).length;
+  const pct = Math.round(correct/cats.length*100);
+  const practical = (finalPractical() && c.report)
     ? `<h3 class="rep-sec rep-title">📋 Practical report</h3>${renderPracticalReport(c.report, c.replay, { progress: c.progressLine })}`
     : "";
-  const correct=cats.filter(c=>s[c]).length, pct=Math.round(correct/cats.length*100);
-  const stars = pct>=95?5:pct>=80?4:pct>=65?3:pct>=45?2:1;
-  const teaching = guided();
-  const timeStr = fmtDuration(ENC.elapsedMs);
-  panel.innerHTML=`
-    <h2>${teaching?"🎓 Lesson complete":"📊 Encounter score"}, ${ENC.p.name}</h2>
-    ${teaching?`<div class="lesson"><span class="lh">Nicely done!</span>You completed every step correctly. Here's a recap of what each step protects.</div>`:`${starHTML(stars)}
-    <div class="sub" style="text-align:center">${correct}/${cats.length} correct • ${pct}%</div>`}
-    <div class="tubechips" style="justify-content:center"><span class="pill">🪙 +${ENC.coinsEarned||0} coins</span><span class="pill">⏱️ Patient time: ${timeStr}</span>${ENC.coinBreakdown&&ENC.coinBreakdown.speed?`<span class="pill">⚡ Speed +${ENC.coinBreakdown.speed}</span>`:""}${ENC.upgradeBonus&&ENC.upgradeBonus.coins?`<span class="pill">🏠 Upgrade +${ENC.upgradeBonus.coins} 🪙</span>`:""}</div>
-    ${ENC.coinBreakdown?`<div class="detailhint" style="margin-top:-2px">Score +${ENC.coinBreakdown.score}${ENC.coinBreakdown.speed?` · Speed +${ENC.coinBreakdown.speed}`:""}${ENC.coinBreakdown.perfect?` · Perfect +${ENC.coinBreakdown.perfect}`:""}${ENC.coinBreakdown.upgrade?` · Upgrades +${ENC.coinBreakdown.upgrade}`:""} &nbsp;•&nbsp; pace: ${ENC.coinBreakdown.diff}</div>`:""}
-    <div class="detailhint">Tap any green or red score tile for the encounter details, your answer, and the quick lesson.</div>
-    <div class="scoregrid">
-      ${cats.map((c,i)=>`<button type="button" class="scorecell ${s[c]?'ok':'no'}" data-cat="${c}" style="animation-delay:${i*60}ms"><div class="lab">${FEEDBACK[c].label}</div>${s[c]?'✓ Good':'✗ Review'}<span class="more">Tap for details</span></button>`).join("")}
-    </div>
-    ${practical}
-    <div id="fbs"></div>
-    <button class="btn" id="cont">${SHIFT.index+1>=SHIFT.len?(teaching?'🎓 Finish lesson':'🏁 Finish shift'):'➡️ Next patient'}</button>
-  `;
-  // Bug fix (regression from the Phase 0 ESM migration): these buttons used to
-  // be wired via an inline onclick="showScoreDetail(...)" HTML attribute, which
-  // silently breaks under module scope (top-level module functions are not
-  // implicitly global). Wired the same way as every other button in this file.
+
+  const lab = debrief.acts[1], tech = debrief.acts[2];
+  const lastLabel = SHIFT.index+1 >= SHIFT.len;
+
+  panel.innerHTML = `
+    <div class="debrief" id="debrief">
+      <section class="db-act db-patient" data-act="0">
+        <p class="db-verdict">${debrief.acts[0].line}</p>
+      </section>
+
+      <section class="db-act db-lab" data-act="1">
+        <h3 class="db-head">The lab</h3>
+        <ul class="db-specimens">
+          ${lab.specimens.map((t,i)=>`
+            <li class="db-spec ${t.verdict}" data-i="${i}">
+              <span class="db-spec-key">${TUBES[t.key] ? TUBES[t.key].name : t.key}</span>
+              <span class="db-spec-verdict">${t.verdict === "accepted" ? "accepted" : t.verdict === "flagged" ? "flagged" : "rejected"}</span>
+              <span class="db-spec-why">${t.why || ""}</span>
+            </li>`).join("")}
+        </ul>
+        ${lab.total ? `<p class="db-lab-tally">${lab.accepted} of ${lab.total} accepted</p>` : `<p class="db-lab-tally">No specimens reached the lab.</p>`}
+      </section>
+
+      <section class="db-act db-tech" data-act="2">
+        <h3 class="db-head">Technique</h3>
+        <dl class="db-metrics">
+          ${tech.lines.map(l=>`<div class="db-metric ${l.ok ? "ok" : "off"}"><dt>${l.label}</dt><dd>${l.value}</dd></div>`).join("")}
+          <div class="db-metric ok"><dt>patient time</dt><dd>${fmtDuration(ENC.elapsedMs)}</dd></div>
+        </dl>
+        ${tech.fix ? `<p class="db-fix">${tech.fix}</p>` : `<p class="db-fix db-fix-none">Nothing to fix. That was a clean draw.</p>`}
+        ${tech.bests.length ? `<ul class="db-bests">${tech.bests.map(b=>`<li>🥇 <b>${b.label}</b> — new personal best</li>`).join("")}</ul>` : ""}
+        ${tech.mastery.length ? `<ul class="db-mastery">${tech.mastery.map(m=>`<li>⭐ <b>${m.label}</b> — ${m.stars} star${m.stars===1?"":"s"}</li>`).join("")}</ul>` : ""}
+      </section>
+
+      <section class="db-act db-rewards" data-act="3">
+        <div class="db-payout">
+          <span class="db-xp">+${held.xp} XP</span>
+          <span class="db-coins">+${held.coins} 🪙</span>
+          ${held.streakPeak >= 2 ? `<span class="db-streak">🔥 ${held.streakPeak} clean sections</span>` : ""}
+        </div>
+        ${held.notes && held.notes.length ? `<ul class="db-notes">${held.notes.map(n=>`<li>${n}</li>`).join("")}</ul>` : ""}
+        <button class="btn db-next" id="cont">${lastLabel ? (teaching ? "🎓 Finish lesson" : "🏁 Finish shift") : "▶ Next patient"}</button>
+        <button class="btn ghost db-detail-toggle" id="dbDetails">Show the full breakdown</button>
+      </section>
+
+      <div class="db-details" id="dbDetailsBody" hidden>
+        ${teaching ? "" : `<div class="sub" style="text-align:center">${correct}/${cats.length} correct • ${pct}%</div>`}
+        <div class="scoregrid">
+          ${cats.map((k,i)=>`<button type="button" class="scorecell ${s[k]?'ok':'no'}" data-cat="${k}" style="animation-delay:${i*60}ms"><div class="lab">${FEEDBACK[k].label}</div>${s[k]?'✓ Good':'✗ Review'}<span class="more">Tap for details</span></button>`).join("")}
+        </div>
+        ${practical}
+        <div id="fbs"></div>
+      </div>
+    </div>`;
+
   panel.querySelectorAll(".scorecell[data-cat]").forEach(b=>{
-    b.onclick=()=>showScoreDetail(b.dataset.cat);
+    b.onclick = ()=> showScoreDetail(b.dataset.cat);
   });
-  if(!teaching && pct===100){ confetti(50); floatXP("Perfect! ✨"); sfx("win"); }
-  else if(!teaching && pct>=80){ confetti(24); }
-  const missed=cats.filter(c=>!s[c]);
-  // If the learner walked away mid-draw or prepared badly, the staging report
-  // is the most useful tile to land on — it's the one they were never shown
-  // during a scored shift.
-  const sm = ENC.collect && ENC.collect.stagingMeasurements;
-  const openFirst = (sm && !sm.ready) ? "supplyStaging" : (missed[0]||cats[0]);
-  showScoreDetail(openFirst, true);
-  $("cont").onclick=()=>{ sfx("tap"); SHIFT.index++; removePatient(getScene()); nextPatient(); };
+  const toggle = $("dbDetails"), body = $("dbDetailsBody");
+  if(toggle && body){
+    toggle.onclick = ()=>{
+      const open = !body.hidden;
+      body.hidden = open;
+      toggle.textContent = open ? "Show the full breakdown" : "Hide the breakdown";
+      if(!open){
+        const sm = c.stagingMeasurements;
+        showScoreDetail((sm && !sm.ready) ? "supplyStaging" : (cats.find(k=>!s[k]) || cats[0]), true);
+      }
+      sfx("tap");
+    };
+  }
+  $("cont").onclick = ()=>{ sfx("tap"); SHIFT.index++; removePatient(getScene()); nextPatient(); };
+
+  playDebrief(debrief);
 }
+
+/**
+ * Runs the acts. One timer chain, cancelled and fast-forwarded by any click,
+ * so nobody is ever held hostage by an animation they have seen before.
+ */
+let debriefTimers = [];
+function playDebrief(debrief){
+  debriefTimers.forEach(clearTimeout);
+  debriefTimers = [];
+  const host = $("debrief");
+  if(!host) return;
+  const acts = [...host.querySelectorAll(".db-act")];
+  acts.forEach(a => a.classList.remove("in"));
+
+  const at = (ms, fn)=> debriefTimers.push(setTimeout(fn, ms));
+  let t = 120;
+
+  // Act 1 — the patient leaves. No numbers. Two seconds of just this.
+  at(t, ()=> acts[0] && acts[0].classList.add("in"));
+  t += debrief.acts[0].holdMs;
+
+  // Act 2 — the lab, one specimen at a time, each with its own sound.
+  at(t, ()=>{
+    if(acts[1]) acts[1].classList.add("in");
+  });
+  const specs = [...host.querySelectorAll(".db-spec")];
+  specs.forEach((el, i)=>{
+    at(t + 180 + i*debrief.acts[1].stepMs, ()=>{
+      el.classList.add("in");
+      sfx(el.classList.contains("accepted") ? "good" : el.classList.contains("flagged") ? "click" : "bad");
+    });
+  });
+  t += 180 + specs.length*debrief.acts[1].stepMs + 420;
+
+  // Act 3 — the numbers, and the records lighting up as they are beaten.
+  at(t, ()=> acts[2] && acts[2].classList.add("in"));
+  const wins = [...host.querySelectorAll(".db-bests li"), ...host.querySelectorAll(".db-mastery li")];
+  wins.forEach((el, i)=> at(t + 500 + i*420, ()=>{ el.classList.add("in"); sfx("coin"); }));
+  t += 700 + wins.length*420;
+
+  // Act 4 — everything earned, at once, loud.
+  at(t, ()=>{
+    if(acts[3]) acts[3].classList.add("in");
+    sfx("win");
+    confetti(debrief.acts[3].held.coins > 6 ? 44 : 20);
+  });
+
+  const skip = ()=>{
+    debriefTimers.forEach(clearTimeout);
+    debriefTimers = [];
+    acts.forEach(a => a.classList.add("in"));
+    specs.forEach(el => el.classList.add("in"));
+    wins.forEach(el => el.classList.add("in"));
+    host.removeEventListener("click", onClick, true);
+  };
+  const onClick = (e)=>{
+    if(e.target.closest("button")) return;   // let the real controls work
+    skip();
+  };
+  host.addEventListener("click", onClick, true);
+}
+
 function showScoreDetail(c,silent){
   if(!ENC.scores || !FEEDBACK[c]) return;
   document.querySelectorAll(".scorecell[data-cat]").forEach(b=>b.classList.toggle("active", b.dataset.cat===c));

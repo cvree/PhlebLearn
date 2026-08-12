@@ -1,0 +1,130 @@
+/* =========================================================================
+   THE DEBRIEF — four acts, paced.
+
+   Every act starts hidden and eases in when its turn comes. The pacing is
+   what makes it an event rather than a wall, so the transitions are slow
+   enough to read as deliberate (280ms) and the acts are separated by real
+   vertical space rather than by rules.
+   ========================================================================= */
+
+.debrief{ display:flex; flex-direction:column; gap:18px; }
+
+.db-act{
+  opacity:0;
+  transform:translateY(10px);
+  transition:opacity .34s ease, transform .34s cubic-bezier(.22,.9,.28,1);
+}
+.db-act.in{ opacity:1; transform:none; }
+
+/* ---------- act 1: the patient leaves ------------------------------------ */
+/* Deliberately the largest text on the screen for the two seconds it is the
+   only thing on it. No numbers anywhere near it. */
+.db-verdict{
+  font-size:1.28rem;
+  line-height:1.42;
+  font-weight:600;
+  text-align:center;
+  margin:14px 6px 10px;
+  text-wrap:balance;
+}
+
+.db-head{
+  font-size:.74rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  opacity:.6;
+  margin:0 0 8px;
+}
+
+/* ---------- act 2: the lab ------------------------------------------------ */
+.db-specimens{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.db-spec{
+  display:grid;
+  grid-template-columns:auto auto 1fr;
+  gap:10px;
+  align-items:baseline;
+  padding:9px 12px;
+  border-radius:12px;
+  background:var(--card, rgba(255,255,255,.55));
+  border-left:4px solid var(--rule, #ccc);
+  opacity:0;
+  transform:translateX(-8px);
+  transition:opacity .26s ease, transform .26s ease;
+}
+.db-spec.in{ opacity:1; transform:none; }
+.db-spec.accepted{ border-left-color:var(--good, #3f8f6d); }
+.db-spec.flagged{ border-left-color:var(--warn, #c08a2a); }
+.db-spec.rejected{ border-left-color:var(--bad, #b4483f); }
+.db-spec-key{ font-weight:700; }
+.db-spec-verdict{ font-size:.82rem; text-transform:uppercase; letter-spacing:.07em; opacity:.72; }
+.db-spec-why{ font-size:.88rem; opacity:.78; }
+.db-lab-tally{ margin:8px 2px 0; font-size:.9rem; opacity:.72; }
+
+/* ---------- act 3: technique, in real units ------------------------------- */
+.db-metrics{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+.db-metric{
+  display:flex; flex-direction:column; gap:1px;
+  padding:7px 12px; border-radius:11px;
+  background:var(--card, rgba(255,255,255,.55));
+  min-width:92px;
+}
+.db-metric dt{ font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; opacity:.6; }
+.db-metric dd{ margin:0; font-size:1.02rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.db-metric.off dd{ color:var(--bad, #b4483f); }
+.db-metric.ok dd{ color:var(--good, #3f8f6d); }
+
+/* One line, not a list. A learner given seven corrections fixes none. */
+.db-fix{
+  margin:6px 0 0;
+  padding:11px 14px;
+  border-radius:12px;
+  background:var(--warnbg, rgba(200,150,40,.13));
+  font-size:.95rem;
+  line-height:1.45;
+}
+.db-fix-none{ background:var(--goodbg, rgba(63,143,109,.13)); }
+
+.db-bests, .db-mastery{ list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:5px; }
+.db-bests li, .db-mastery li{
+  opacity:0; transform:scale(.94);
+  transition:opacity .3s ease, transform .3s cubic-bezier(.2,1.5,.4,1);
+  padding:7px 12px; border-radius:11px;
+  background:linear-gradient(100deg, rgba(212,175,55,.22), rgba(212,175,55,.07));
+  font-size:.94rem;
+}
+.db-mastery li{ background:linear-gradient(100deg, rgba(120,90,200,.20), rgba(120,90,200,.06)); }
+.db-bests li.in, .db-mastery li.in{ opacity:1; transform:none; }
+
+/* ---------- act 4: everything earned, at once ----------------------------- */
+.db-payout{
+  display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
+  margin:4px 0 10px;
+}
+.db-payout span{
+  font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums;
+  padding:6px 16px; border-radius:14px;
+  background:var(--card, rgba(255,255,255,.6));
+}
+.db-xp{ color:var(--accent, #6c4ad6); }
+.db-coins{ color:#b8860b; }
+.db-streak{ font-size:1rem !important; align-self:center; opacity:.85; }
+.db-notes{ list-style:none; margin:0 0 12px; padding:0; display:flex; flex-direction:column; gap:4px;
+  font-size:.9rem; opacity:.8; text-align:center; }
+
+/* The largest control on the screen, on purpose: the fastest path out of a
+   debrief should be into another draw. */
+.db-next{
+  font-size:1.18rem !important;
+  padding:16px 20px !important;
+  width:100%;
+}
+.db-detail-toggle{
+  margin-top:8px;
+  font-size:.88rem !important;
+  opacity:.72;
+}
+.db-details{ margin-top:6px; }
+
+@media (prefers-reduced-motion: reduce){
+  .db-act, .db-spec, .db-bests li, .db-mastery li{ transition:none; opacity:1; transform:none; }
+}

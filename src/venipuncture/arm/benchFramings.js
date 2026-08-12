@@ -61,11 +61,16 @@ export const FRAMINGS = {
      camera eases back out to `collect` the moment blood is flowing, which is
      where their exhale is meant to be seen. */
   stick: {
-    look: [-0.012, ARM_Y + 0.012, 0.008],
+    look: [-0.020, ARM_Y + 0.010, 0.008],
     frame: [
-      [-0.088, ARM_Y, 0.004], [0.052, ARM_Y, 0.004],
-      [-0.01, ARM_Y, 0.052], [-0.01, ARM_Y, -0.034],
-      [-0.01, ARM_Y + 0.038, 0],
+      /* Wide enough that the fossa's crease, the marked site and the whole
+         length of the needle are all readable at once. Pushed in tighter than
+         this (the first attempt) the frame filled with undifferentiated skin
+         and the player lost every landmark they had just spent a minute
+         finding. */
+      [-0.125, ARM_Y, 0.004], [0.075, ARM_Y, 0.004],
+      [-0.02, ARM_Y, 0.070], [-0.02, ARM_Y, -0.046],
+      [-0.02, ARM_Y + 0.046, 0],
     ],
   },
 

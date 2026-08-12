@@ -40,6 +40,9 @@ let _audioUnlocked=false;
 export function unlockAudio(){
   if(_audioUnlocked) return; _audioUnlocked=true;
   try{ if(actx && actx.state==="suspended" && actx.resume) actx.resume(); }catch(e){}
+  // The bench's procedural layer has its own context and needs the same
+  // gesture. Imported lazily so the menu does not pay for the synth graph.
+  import("./procedural.js").then(m=>m.resumeProcedural()).catch(()=>{});
   initMusic();
   if(musicOn && (state==="idle"||state==="summary")) playLobby();
 }

@@ -47,6 +47,16 @@ export function createInsertState(o){
     withdrawnBeforeFlash: false,
     flashAt: null,
     reapproaches: 0,
+    /**
+     * Partial withdrawals with a change of angle, WITHOUT leaving the skin.
+     * Distinct from `reapproaches`, which counts coming all the way out and
+     * starting again — clinically these are different acts with different
+     * costs, and conflating them was part of why a missed stick used to be
+     * effectively terminal.
+     */
+    redirects: 0,
+    /** Redirecting past the limit: probing, and a real error. */
+    probed: false,
 
     startedAt: opt.now == null ? Date.now() : opt.now,
 
@@ -140,6 +150,36 @@ export function advance(state, deltaDepthM){
     state.reapproaches += 1;
     recordEvent(state, "withdrawnFully", null);
   }
+  return state;
+}
+
+/**
+ * How many times a needle may be redirected before further attempts stop
+ * being a redirect and start being probing.
+ *
+ * Two is what practice guidance allows: adjust, adjust, then come out. The
+ * limit is the point — an unlimited redirect would make a missed stick free,
+ * and free is not what it is.
+ */
+export const MAX_REDIRECTS = 2;
+
+/**
+ * A redirect: re-aim without leaving the skin.
+ *
+ * Past MAX_REDIRECTS the angle change is refused and the attempt is recorded
+ * as probing, because that is what it is. The caller decides what probing
+ * costs; this only records that it happened.
+ */
+export function redirect(state, newAngleDeg){
+  if(state.entryX == null || state.flashAt) return state;
+  if(state.redirects >= MAX_REDIRECTS){
+    state.probed = true;
+    recordEvent(state, "probed", { angle: state.angleDeg });
+    return state;
+  }
+  state.redirects += 1;
+  state.angleDeg = Math.max(0, Math.min(60, newAngleDeg || 0));
+  recordEvent(state, "redirect", { angle: state.angleDeg, n: state.redirects });
   return state;
 }
 

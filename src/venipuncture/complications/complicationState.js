@@ -277,6 +277,13 @@ export function tickComplicationState(state, dtS, snapshot, now){
     if(id === COMPLICATION.SYNCOPE && waited >= SYNCOPE_FAINT_AFTER_S && !rec.respondedAt){
       state.fainted = true;
     }
+    /* OBVIATED. Some complications stop being true on their own: a dry stick
+       ends the moment blood flashes back, whether or not the learner ever
+       answered the prompt about it. Leaving it up made the alert contradict
+       the world — the panel said "flash confirmed" while an overlay in front
+       of it still asked what to do about there being no flash. */
+    if(!rec.respondedAt && isObviated(id, snap)){ obviate(state, id, t); continue; }
+
     // Unanswered past twice its window, the moment to act on it has gone.
     if(!rec.respondedAt && waited >= def.noticeWindowS*2) miss(state, id, t);
   }
@@ -285,6 +292,39 @@ export function tickComplicationState(state, dtS, snapshot, now){
   cond.bruise = Math.max(cond.bruise, Math.min(1, cond.hematomaMl/HEMATOMA_LARGE_ML));
   cond.swelling = Math.max(cond.swelling, Math.min(1, cond.hematomaMl/(HEMATOMA_LARGE_ML*1.4)));
   state.distress = Math.min(3, state.distress + (state.order.length ? 0.05*dt : 0));
+  return state;
+}
+
+/**
+ * Has this complication stopped being true by itself?
+ *
+ * Deliberately a short list. Most complications do NOT go away on their own —
+ * a hematoma does not un-form because you looked away — and treating them as
+ * if they did would let a learner wait out anything. These are the ones whose
+ * defining condition is a live fact about the draw rather than damage already
+ * done.
+ */
+function isObviated(id, snap){
+  if(id === COMPLICATION.DRY_STICK) return !!snap.flashed || !snap.inSkin;
+  if(id === COMPLICATION.VEIN_COLLAPSE) return snap.flowing === true;
+  return false;
+}
+
+/**
+ * Closes a complication that resolved itself. NOT a miss: nothing was missed,
+ * because by the time the learner could have acted there was nothing to act
+ * on. It is recorded, so the debrief can still say it happened.
+ */
+export function obviate(state, id, now){
+  const rec = state.active[id];
+  if(!rec) return state;
+  rec.resolvedAt = now == null ? Date.now() : now;
+  rec.obviated = true;
+  state.history.push(rec);
+  delete state.active[id];
+  state.order = state.order.filter(x => x !== id);
+  state.resolved.push(id);
+  recordEvent(state, "obviated", { id });
   return state;
 }
 
