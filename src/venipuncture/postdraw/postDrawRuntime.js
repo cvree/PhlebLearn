@@ -24,7 +24,8 @@
    decides correctness itself.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import { skinTick, tubeChink, wince, breath } from "../../audio/procedural.js";
+import { tapHaptic, seatHaptic, winceHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { HAND_X, WRIST_X } from "../arm/armAnatomy.js";
 import { ARM_Y } from "../arm/armMesh.js";
@@ -329,7 +330,7 @@ export function postDrawPointerDown(e, canvasEl){
     try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
     ctx.down = true;
     ctx.drag = Object.assign({ kind, downX: e.clientX, downY: e.clientY }, extra || {});
-    sfx("tap");
+    tapHaptic();
     return true;
   };
 
@@ -391,7 +392,7 @@ export function postDrawPointerMove(e, canvasEl){
     const want = lifted > FLEX_PX;
     if(want !== s.armFlexed){
       flexArm(s, want);
-      sfx(want ? "click" : "tap");
+      if(want) tubeChink(); else tapHaptic();
       syncObjects();
       notify();
     }
@@ -439,7 +440,7 @@ export function postDrawPointerUp(e, canvasEl){
     if(wasPressing){
       ctx.padLifted = true;
       checkSite(s);
-      sfx(s.bleedingAtCheck ? "bad" : "good");
+      if(s.bleedingAtCheck){ wince(); winceHaptic(); } else { breath(0.1, true); seatHaptic(); }
     }else{
       releasePressure(s);
     }
@@ -458,7 +459,7 @@ export function postDrawPointerUp(e, canvasEl){
         // the pad slides off if it is dressed while the gauze is lifted clear
         shifted: ctx.padLifted && Math.abs(ctx.padX - ctx.siteX) > PAD_ON_SITE_M,
       });
-      sfx("good");
+      seatHaptic();
     }
     syncObjects();
     notify();

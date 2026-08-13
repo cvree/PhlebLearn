@@ -15,7 +15,10 @@
    coupling the composition root needs.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import { tubeRackClick, tubeChink, sharpsDrop, wince } from "../../audio/procedural.js";
+import { seatHaptic, tapHaptic, winceHaptic } from "../../bench/haptics.js";
+import { nudgeWobble, impactPulse, MASS } from "../../bench/motion.js";
+import { assistLevel } from "../../bench/assist.js";
 import { preloadModels } from "../../rendering/modelRegistry.js";
 import { registerSupplyModels, SUPPLY_MODEL_IDS } from "./supplyModels.js";
 import { buildStagingScene } from "./stagingScene.js";
@@ -27,8 +30,30 @@ import { measureObstruction, viewportAspect } from "../viewport.js";
 
 const TAP_PX = 7;              // pointer travel below this is a tap, not a drag
 const LIFT = 0.045;            // how high a held object floats above the surface
-const RACK_SNAP = 0.024;       // metres — deliberately small: no long-range magnet
-const INSPECT_ROTATION = 2.0;  // radians of accumulated turn before a label counts as read
+/**
+ * How far a tube can be released from a rack well and still land in it.
+ *
+ * This used to be 0.024 m, commented "deliberately small: no long-range
+ * magnet", which meant racking six tubes was an exercise in careful mouse
+ * work. The magnet is the point. Racking a tube should be pleasant enough to
+ * do for its own sake, and the clinical decision — which tube, in what order —
+ * is completely unaffected by how easy it is to physically put it down.
+ */
+const RACK_SNAP_BASE = 0.030;
+/** Assist scales it 2x to 4x. Even at zero assist it is above the old value. */
+function rackSnap(){ return RACK_SNAP_BASE*(2.0 + assistLevel()*2.0); }
+
+/**
+ * Radians of accumulated turn before a label counts as read.
+ *
+ * Was 2.0 — a wrist-exercise quota that measured nothing clinical. What the
+ * step is actually testing is whether the learner LOOKED: is it in date, is it
+ * the right gauge, is the seal intact. So bringing an item up to the camera
+ * reveals it, and a small turn still does too for anyone who prefers it.
+ */
+const INSPECT_ROTATION = 0.55;
+/** Seconds an item has to be held up to the camera before the label is legible. */
+const INSPECT_DWELL_S = 0.6;
 const DOUBLE_TAP_MS = 300;     // window for "double-tap the item I'm holding to stage it"
 
 let ctx = null;                // the single live staging session
@@ -111,8 +136,35 @@ export function renderStaging(renderer, dt){
     }
   }
   tickTweens(dt||0.016);
+  tickInspect(dt||0.016);
   renderer.render(ctx.view.scene, ctx.view.camera);
   return true;
+}
+
+/**
+ * LIFT AND READ.
+ *
+ * Holding an item up to the camera steadies it and enlarges it, and after a
+ * beat the label is legible. That beat is the whole mechanic: the DECISION —
+ * in date? right gauge? seal intact? — is the skill, and the wrist motion
+ * never was. The turn gesture still works for anyone who reaches for it, at a
+ * quarter of the quota it used to demand.
+ */
+function tickInspect(dt){
+  const insp = ctx.inspect;
+  if(!insp || insp.revealed) return;
+  insp.dwell += dt;
+  // it settles as it is held: a held object that keeps drifting reads as
+  // unsteady hands, and unsteady hands are not what this step is about
+  const m = insp.mesh;
+  m.rotation.x *= 0.94;
+  if(insp.dwell >= INSPECT_DWELL_S){
+    insp.revealed = true;
+    inspectItem(ctx.state, insp.id);
+    tubeChink();
+    if(ctx.onInspect) ctx.onInspect(m.userData.def, true);
+    notify();
+  }
 }
 
 function tickTweens(dt){
@@ -203,13 +255,15 @@ function enterInspect(mesh){
     id: def.id,
     home: { x:mesh.position.x, y:mesh.position.y, z:mesh.position.z },
     rotAccum: 0,
+    /** seconds held up to the camera — LOOKING is what the step tests */
+    dwell: 0,
     revealed: ctx.state.items[def.id].inspected,
   };
   mesh.userData.savedRot = { x:mesh.rotation.x, y:mesh.rotation.y, z:mesh.rotation.z };
   tweenTo(mesh, { x:target.x, y:target.y, z:target.z }, 0.24);
   ctx.view.hideHeldShadow();
   ctx.view.hideGhost();
-  sfx("tap");
+  tapHaptic();
   if(ctx.onInspect) ctx.onInspect(def, ctx.inspect.revealed);
 }
 
@@ -263,7 +317,7 @@ export function stagingPointerDown(e, canvasEl){
   ctx.view.setHover(id);
   if(canvasEl.style) canvasEl.style.cursor = "grabbing";
   try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
-  sfx("tap");
+  tapHaptic();
   return true;
 }
 
@@ -291,7 +345,7 @@ function beginTrayDrag(e, canvasEl){
   };
   if(canvasEl.style) canvasEl.style.cursor = "grabbing";
   try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
-  sfx("tap");
+  tapHaptic();
   return true;
 }
 
@@ -322,7 +376,7 @@ function endTrayDrag(){
   });
   ctx.state.trayOffset = { x:applied.x, z:applied.z };
   recordEvent(ctx.state, "moveTray", { x:applied.x, z:applied.z });
-  sfx("click");
+  tubeChink();
   notify();
 }
 
@@ -343,7 +397,7 @@ export function stagingPointerMove(e, canvasEl){
     if(!ctx.inspect.revealed && ctx.inspect.rotAccum >= INSPECT_ROTATION){
       ctx.inspect.revealed = true;
       inspectItem(ctx.state, ctx.inspect.id);
-      sfx("click");
+      tubeChink();
       if(ctx.onInspect) ctx.onInspect(m.userData.def, true);
       notify();
     }
@@ -405,7 +459,7 @@ export function stagingPointerUp(e, canvasEl){
       const id = ctx.inspect.id;
       exitInspect();
       stageItemTo(id, ZONE.TRAY);
-      sfx("good");
+      tubeRackClick();
       return true;
     }
     ctx.inspect.lastTapAt = now;
@@ -449,8 +503,7 @@ function snapTarget(id, x, z){
   const slot = rackSlotAt(ctx.layout, x, z, n);
   if(slot==null) return null;
   const p = rackSlotPosition(ctx.layout, slot, n);
-  const reach = ctx.assisted ? RACK_SNAP*2.2 : RACK_SNAP;
-  if(Math.hypot(x-p.x, z-p.z) > reach) return null;
+  if(Math.hypot(x-p.x, z-p.z) > rackSnap()) return null;
   return { x:p.x, z:p.z, slot };
 }
 
@@ -459,13 +512,25 @@ function commitDrop(d){
   const x = mesh.position.x, z = mesh.position.z;
   const def = ctx.catalog.find(it=>it.id===d.id);
 
-  // off the counter: it falls, and it is contaminated. Nothing snaps back.
+  /* OFF THE COUNTER. It is contaminated — that is clinically true and the
+     game says so — but it does NOT disappear. An object that leaves the world
+     can leave a player unable to finish a draw, which is not a difficulty
+     setting, it is a dead end. So it arcs back to the nearest free spot on the
+     counter and settles there, marked, reachable, and unusable until replaced. */
   const bounds = ctx.layout.counter;
   if(x<bounds.minX || x>bounds.maxX || z<bounds.minZ || z>bounds.maxZ){
-    placeItem(ctx.state, d.id, ZONE.FLOOR, { pos:{x,z} });
+    const back = {
+      x: Math.max(bounds.minX + 0.02, Math.min(bounds.maxX - 0.02, x)),
+      z: Math.max(bounds.minZ + 0.02, Math.min(bounds.maxZ - 0.02, z)),
+    };
+    const settled = settleInTray(d.id, back.x, back.z);
+    placeItem(ctx.state, d.id, ZONE.FLOOR, { pos: settled });
     markContaminated(ctx.state, d.id, "dropped on the floor");
-    tweenTo(mesh, { x, y:-0.30, z }, 0.32);
-    sfx("bad");
+    // a higher, slower arc than a normal placement, so the recovery reads as
+    // deliberate rather than as a glitch
+    tweenTo(mesh, { x: settled.x, y: ctx.view.COUNTER_Y, z: settled.z }, 0.42);
+    sharpsDrop();
+    winceHaptic();
     notify();
     return;
   }
@@ -474,7 +539,13 @@ function commitDrop(d){
   if(snap){
     placeItem(ctx.state, d.id, ZONE.RACK, { slot:snap.slot, pos:{x:snap.x, z:snap.z}, crossedField:false });
     tweenTo(mesh, { x:snap.x, y:0.018, z:snap.z }, 0.18);
-    sfx("click");
+    /* The whole reward of the step, in three lines: a glass-on-plastic click,
+       a small wobble in the rack it landed in, and a squash on the tube
+       itself. Racking six tubes should be genuinely pleasant. */
+    tubeRackClick();
+    seatHaptic();
+    impactPulse(mesh, 0.8);
+    if(ctx.view.rack) nudgeWobble(ctx.view.rack, 0.7);
     notify();
     return;
   }
@@ -490,7 +561,9 @@ function commitDrop(d){
 
   placeItem(ctx.state, d.id, zone, { pos:settled, crossedField:crossed });
   tweenTo(mesh, { x:settled.x, y:ctx.view.COUNTER_Y, z:settled.z }, 0.16);
-  sfx(zone===ZONE.TRAY || zone===ZONE.REACH ? "good" : "tap");
+  tubeChink();
+  impactPulse(mesh, 0.5);
+  tapHaptic();
   notify();
 }
 
@@ -562,6 +635,6 @@ export function returnItemToShelf(id){
   placeItem(ctx.state, id, ZONE.SHELF, { pos:home });
   ctx.view.refreshFromState(ctx.state);
   recordEvent(ctx.state, "return", { id });
-  sfx("tap");
+  tapHaptic();
   return notify();
 }

@@ -20,7 +20,8 @@
    the threading stopped.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import { tubeChink, safetyClack, wince, strapDrag } from "../../audio/procedural.js";
+import { tapHaptic, clackHaptic, winceHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
 import { FIELD_RADIUS, dryness, secondsDrying } from "../cleaning/cleaningRules.js";
@@ -478,7 +479,7 @@ export function assemblyPointerDown(e, canvasEl){
     }
     if(s.capOn && onCap(p)){
       ctx.grab = { kind: "pullCap", from: p.clone(), z0: p.z };
-      sfx("tap");
+      tapHaptic();
       return true;
     }
     if(onHolder(p)){
@@ -493,7 +494,7 @@ export function assemblyPointerDown(e, canvasEl){
 
   // assemble
   if(!s.pouchOpen){
-    if(withinPouchSeam(p)){ ctx.grab = { kind: "peel", last: p.clone() }; sfx("tap"); }
+    if(withinPouchSeam(p)){ ctx.grab = { kind: "peel", last: p.clone() }; strapDrag(); }
     else ctx.grab = null;
     return true;
   }
@@ -515,7 +516,7 @@ export function assemblyPointerDown(e, canvasEl){
     };
     ctx.grab = { kind: "carry", offset };
     ctx.headingFrom = p.clone();
-    sfx(grip === "sheath" ? "tap" : "bad");
+    if(grip === "sheath") tapHaptic(); else { wince(); winceHaptic(); }
     syncObjects();
     notify();
     return true;
@@ -557,7 +558,7 @@ export function assemblyPointerMove(e, canvasEl){
       engage(s, misalign > 180 ? 360 - misalign : misalign);
       ctx.grab = { kind: "thread" };
       ctx.lastAngle = screenAngleAboutHub(e, canvasEl);
-      sfx(s.crossThreaded ? "bad" : "click");
+      if(s.crossThreaded){ wince(); winceHaptic(); } else tubeChink();
     }
     syncObjects(); notify();
     return true;
@@ -571,14 +572,15 @@ export function assemblyPointerMove(e, canvasEl){
       while(d < -Math.PI) d += 2*Math.PI;
       const before = s.turns;
       turn(s, d/(2*Math.PI));
-      if(Math.floor(s.turns*2) !== Math.floor(before*2)) sfx("click");
+      // one click per half turn: the thread you can hear is the thread you can feel
+      if(Math.floor(s.turns*2) !== Math.floor(before*2)){ tubeChink(); tapHaptic(); }
       // unscrewed right off: the only way back from a cross-thread
       if(s.crossThreaded && s.turns <= 0 && before > 0){
         backOut(s);
         ctx.grab = { kind: "carry" };
         ctx.carry = { pos: hubMouth().clone().setX(hubMouth().x - 0.02), yaw: 0 };
         ctx.headingFrom = p.clone();
-        sfx("tap");
+        tapHaptic();
       }
     }
     ctx.lastAngle = a;
@@ -593,7 +595,7 @@ export function assemblyPointerMove(e, canvasEl){
     g.from.copy(p);
     if(!s.capOn && !ctx.cap){
       detachCap(p);
-      sfx(s.needleDamaged ? "bad" : "good");
+      if(s.needleDamaged){ wince(); winceHaptic(); } else { safetyClack(); clackHaptic(); }
     }
     syncObjects(); notify();
     return true;
@@ -682,20 +684,20 @@ function settleCap(p){
   const tip = new THREE.Vector3(ctx.needle.group.position.x + NEEDLE_POINT_DX, ctx.needle.group.position.y, ctx.needle.group.position.z);
   if(p.distanceTo(tip) < 0.014){
     recap(s);
-    sfx("bad");
+    wince(); winceHaptic();
   }else if(Math.hypot(p.x - ctx.site.x, p.z - ctx.site.z) < FIELD_RADIUS + 0.012){
     placeCap(s, CAP_PLACE.SITE);
     if(ctx.onSiteRetouched) ctx.onSiteRetouched();
-    sfx("bad");
+    wince(); winceHaptic();
   }else if(Math.abs(p.x) > 0.62 || p.z < -0.24 || p.z > 0.36){
     placeCap(s, CAP_PLACE.FLOOR);
-    sfx("bad");
+    wince(); winceHaptic();
   }else if(Math.abs(p.x) <= PAD_HALF_X && Math.abs(p.z - PAD_Z) <= PAD_HALF_Z){
     placeCap(s, CAP_PLACE.TRAY);
-    sfx("tap");
+    tapHaptic();
   }else{
     placeCap(s, CAP_PLACE.BENCH);
-    sfx("tap");
+    tapHaptic();
   }
   if(ctx.cap){
     ctx.cap.pos.set(p.x, BENCH_Y + 0.005, p.z);
@@ -721,7 +723,7 @@ export function renderAssembly(renderer, dt){
   const now = performance.now();
   if(ctx.down && ctx.grab && ctx.grab.kind === "holder" && ctx.holdAt
      && now - ctx.holdAt > INSPECT_HOLD_MS && !ctx.state.capOn){
-    if(!ctx.state.bevelInspected){ inspectBevel(ctx.state); sfx("click"); notify(); }
+    if(!ctx.state.bevelInspected){ inspectBevel(ctx.state); tubeChink(); notify(); }
     // re-armed every frame the hand stays put, so it lasts exactly as long as
     // the learner keeps looking
     ctx.inspectUntil = now + 300;

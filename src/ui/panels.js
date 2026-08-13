@@ -14,7 +14,7 @@ import { shuffle, pick, arraysEqual } from "../utils.js";
 import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, ALL_CATCHES } from "../config.js";
 import {
   SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
-  MODE, MODES, MODE_NAMES, guided, finalPractical, reveal,
+  MODE, MODES, MODE_NAMES, guided, finalPractical, benchMode, reveal,
 } from "../game/gameState.js";
 import { summaryLine, recordAttempt, recordFor, weakestCategories } from "../game/modeProgress.js";
 import { sectionForStep, endsSection, sectionMeasurements, resetFromSection } from "../venipuncture/sections.js";
@@ -45,7 +45,7 @@ import { complicationSummaryHTML } from "../venipuncture/complications/complicat
 import { assessSpecimens, applySpecimenOutcome } from "../venipuncture/specimen/specimenQuality.js";
 import { fbCard } from "./coachLayer.js";
 import { buildDebrief, sectionScores } from "../game/debrief.js";
-import { normaliseMastery, applyDraw as applyMastery } from "../game/mastery.js";
+import { normaliseMastery, applyDraw as applyMastery, weakestTrack, TRACKS } from "../game/mastery.js";
 import { offerBests } from "../game/personalBests.js";
 
 /* ---------- top bar + panel entrance -------------------------------------- */
@@ -110,13 +110,23 @@ function renderStep(){
 // Shift length per mode: Learn is a short guided walk, Practice is long
 // enough to repeat what went badly, the Final Practical is one assessed
 // attempt — an examiner does not give you five goes at it.
-const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PRACTICE]:4, [MODES.FINAL]:1 };
+const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PRACTICE]:4, [MODES.FINAL]:1, [MODES.BENCH]:1 };
+
+/** The beats a Bench session can jump straight to. */
+const BENCH_BEATS = [
+  { id: "tourniquet", label: "Band", step: "tourniquet" },
+  { id: "palpation",  label: "Palpate", step: "palpate" },
+  { id: "cleaning",   label: "Clean", step: "clean" },
+  { id: "equipment",  label: "Assemble", step: "assemble" },
+  { id: "insert",     label: "Stick", step: "insert" },
+  { id: "collection", label: "Collect", step: "collect" },
+];
 
 function renderIdle(){
   const line = m => summaryLine(SS.modeProgress, m);
   panel.innerHTML=`
     <h2>🩺 Clock in</h2>
-    <p class="sub">Three ways to work. <b>Learn</b> talks you through every step. <b>Practice</b> stays quiet until the end of each section, then lets you replay it. The <b>Final Practical</b> says nothing at all until the report.</p>
+    <p class="sub">Four ways to work. <b>Learn</b> talks you through every step. <b>Practice</b> stays quiet until the end of each section, then lets you replay it. The <b>Final Practical</b> says nothing at all until the report. <b>The Bench</b> is not a shift — it is one arm, unlimited supplies, nothing scored, and a reset button.</p>
     <div class="tubechips">
       <span class="pill">⭐ XP ${SS.xp}</span>
       <span class="pill">🪙 ${SS.coins}</span>
@@ -131,12 +141,29 @@ function renderIdle(){
     <div class="mode-note">${line(MODES.PRACTICE)}</div>
     <button class="btn cta-pulse starborder" id="modeFinal">📋 Final Practical (1 patient, full rubric report)</button>
     <div class="mode-note">${line(MODES.FINAL)}</div>
+    <button class="btn alt" id="modeBench">🔧 The Bench (rehearse one gesture, nothing scored)</button>
+    <div class="mode-note">${masteryLine()}</div>
     ${SS.weak.length?`<div class="hint">Weak topics queued for Learn Mode: ${SS.weak.length}</div>`:""}
   `;
   blurText(panel.querySelector("h2"));
   $("modeLearn").onclick=()=>{ sfx("win"); startShift(MODES.LEARN); };
   $("modePractice").onclick=()=>{ sfx("win"); startShift(MODES.PRACTICE); };
   $("modeFinal").onclick=()=>{ sfx("win"); startShift(MODES.FINAL); };
+  $("modeBench").onclick=()=>{ sfx("win"); startShift(MODES.BENCH); };
+}
+
+/**
+ * What the learner has actually demonstrated, as opposed to how long they
+ * have played. Sits under the Bench because the Bench is how you move it.
+ */
+function masteryLine(){
+  const m = normaliseMastery(SS.mastery);
+  const worst = weakestTrack(m);
+  const stars = TRACKS.map(t => `${t.label} ${"★".repeat(m[t.id].stars)}${"☆".repeat(5 - m[t.id].stars)}`);
+  const head = worst && worst.rec.stars < 5
+    ? `Weakest right now: <b>${worst.track.label}</b>.`
+    : "Every technique at five stars.";
+  return `${head} <span class="mastery-strip">${stars.join(" · ")}</span>`;
 }
 /* The kit the learner owns, shown on the clock-in screen because it changes
    what the next draw will be — a device choice, veins they can see, tubes a
@@ -314,9 +341,11 @@ function renderCollect(){
     <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%</span></div>
     ${lesson}
     <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
-    <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`;
+    ${benchMode() ? benchControlsHTML(section) : ""}
+    <button class="btn ghost vp-leave" id="vpLeave">${benchMode() ? "Leave the bench" : "Leave this draw"}</button>`;
   const stage=$("vpStage");
   wireLeaveDraw();
+  if(benchMode()) wireBenchControls(c);
   renderCurrentStep(c, stage, {
     rerender: renderCollect,
     onComplete: vpFinish,
@@ -454,6 +483,10 @@ function heldFor(c){
 }
 
 function rewardStep(c, finishedId, nextId){
+  // The Bench pays nothing and grades nothing. That is not a limitation, it
+  // is the mode: a rehearsal room where a bad attempt costs you nothing but
+  // the six seconds it takes to press "Again".
+  if(benchMode()) return;
   const held = heldFor(c);
   held.xp += STEP_XP;
 
@@ -472,6 +505,54 @@ function rewardStep(c, finishedId, nextId){
   held.coins += r.coins || 0;
   held.streakPeak = Math.max(held.streakPeak, c.streak);
   held.sections.push({ id: section.id, label: section.label, score, xp: r.xp || 0, coins: r.coins || 0, clean: !!r.clean });
+}
+
+/* =========================================================================
+   THE BENCH'S OWN CONTROLS
+
+   Two of them, and they are the whole mode: jump to any beat, and start this
+   one again. Mastery needs cheap repetition, and before this every practice
+   stick cost a four-minute patient — so the gesture a learner was worst at
+   was the one they practised least, which is exactly backwards.
+
+   `resetFromSection` already existed for Practice mode's replay, and it does
+   the right thing here for the right reason: it clears the section's sessions
+   and measurements and LEAVES THE ARM ALONE, so you are rehearsing on the
+   same vein you just missed rather than on a freshly rolled one.
+   ========================================================================= */
+function benchControlsHTML(section){
+  return `<div class="bench-bar">
+    <span class="bench-lab">Bench</span>
+    ${BENCH_BEATS.map(b => `<button type="button" class="bench-jump${section && section.id===b.id ? " on" : ""}" data-beat="${b.id}">${b.label}</button>`).join("")}
+    <button type="button" class="bench-reset" id="benchReset">↻ Again</button>
+  </div>`;
+}
+
+function wireBenchControls(c){
+  const jump = (sectionId)=>{
+    const at = resetFromSection(c, sectionId);
+    if(at < 0) return;
+    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+    c.step = at;
+    // Nothing is scored on the bench, so nothing carries: a run that went
+    // badly must not follow you into the next rehearsal of it.
+    c.held = null; c.streak = 0; c.sectionsDone = 0; c.cleanSections = 0;
+    tapHapticSafe();
+    renderCollect();
+  };
+  panel.querySelectorAll(".bench-jump").forEach(b=>{
+    b.onclick = ()=>{ sfx("tap"); jump(b.dataset.beat); };
+  });
+  const reset = $("benchReset");
+  if(reset) reset.onclick = ()=>{
+    sfx("tap");
+    const here = sectionForStep(c.steps[c.step]);
+    if(here) jump(here.id);
+  };
+}
+
+function tapHapticSafe(){
+  try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_){}
 }
 
 /* ---------- complications ---------------------------------------------------
@@ -565,6 +646,19 @@ function recapChips(c){
 
 function vpFinish(){
   const c=ENC.collect;
+  /* The Bench has no end. Finishing a draw there loops straight back to the
+     first beat with the same arm, because "one more go" is the entire mode
+     and a results screen in the middle of it would be a wall across it. */
+  if(benchMode()){
+    const at = resetFromSection(c, "tourniquet");
+    if(at >= 0){
+      if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+      c.step = at;
+      c.held = null; c.streak = 0; c.sectionsDone = 0; c.cleanSections = 0;
+      c.awarded = false; c.specimenQuality = null;
+      return renderCollect();
+    }
+  }
   // The draw is over: close the complication watch and let the laboratory
   // look at what came out of it. Both are idempotent — vpFinish() is
   // reachable more than once.

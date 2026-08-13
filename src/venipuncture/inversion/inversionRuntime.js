@@ -27,7 +27,8 @@
    decides correctness itself.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import { tubeChink, tubeRackClick, wince } from "../../audio/procedural.js";
+import { tapHaptic, seatHaptic, winceHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { TUBES } from "../../config.js";
 import { evaluateInversion, inversionsFor, mustNotMix } from "./inversionRules.js";
@@ -282,7 +283,7 @@ export function inversionPointerDown(e, canvasEl){
     ctx.down = true;
     ctx.lastT = nowMs();
     ctx.drag = Object.assign({ kind, downX: e.clientX, downY: e.clientY }, extra || {});
-    sfx("tap");
+    tapHaptic();
     return true;
   };
 
@@ -331,7 +332,7 @@ export function inversionPointerMove(e, canvasEl){
       // and even then, seed rather than accumulate
       seedTilt(s, tiltFromPointer(e, rect));
       d.lastTilt = tiltFromPointer(e, rect);
-      sfx("click");
+      tubeRackClick();
     }
     syncObjects();
     return true;
@@ -347,8 +348,10 @@ export function inversionPointerMove(e, canvasEl){
     d.lastTilt = tilt;
     const after = current(s);
     if(after){
-      if(after.inversions > wasN) sfx("good");
-      else if(after.rockCount > wasRocks) sfx("click");
+      // a full end-over-end turn is a soft roll of fluid; a rock is the
+      // shake that ruins the sample, and it should sound wrong
+      if(after.inversions > wasN){ tubeChink(); seatHaptic(); }
+      else if(after.rockCount > wasRocks){ wince(); winceHaptic(); }
     }
     syncObjects();
     notify();
@@ -377,7 +380,7 @@ export function inversionPointerUp(e, canvasEl){
     if(slot && screenDistTo(new THREE.Vector3(slot.x, slot.y + TUBE_LEN*0.6, slot.z), e, rect) <= GRAB_PX*1.6){
       rack(s);
       ctx.carryPos = null;
-      sfx("click");
+      tubeRackClick();
     }
   }
   syncObjects();

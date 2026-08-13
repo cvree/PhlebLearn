@@ -42,7 +42,10 @@
    the pointer went down nearest, and it is the whole reason the needle moves.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import {
+  stopperPop, vacuumVoice, tubeRackClick, tubeChink, duckRoom,
+} from "../../audio/procedural.js";
+import { seatHaptic, tapHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor } from "../arm/armAnatomy.js";
 import { TUBES } from "../../config.js";
@@ -143,6 +146,7 @@ export async function startCollection(opts){
 
 export function stopCollection(){
   if(!ctx) return;
+  if(ctx.vacuum) ctx.vacuum.stop();
   ctx.view.dispose();
   ctx = null;
 }
@@ -470,7 +474,8 @@ export function collectionPointerDown(e, canvasEl){
     // in that same gesture needs a basis to solve against.
     ctx.seatBasis = buildSeatBasis(canvasEl);
     syncObjects();
-    sfx("tap");
+    tubeChink();
+    tapHaptic();
     notify();
     return true;
   }
@@ -483,7 +488,7 @@ export function collectionPointerDown(e, canvasEl){
   const r = solveSeat(ctx.seatBasis, e.clientX, e.clientY);
   ctx.lastAxial = r.axialM;
   ctx.gestureAxial = 0;
-  sfx("tap");
+  tapHaptic();
   notify();
   return true;
 }
@@ -513,7 +518,7 @@ export function collectionPointerMove(e, canvasEl){
       ctx.seatBasis = buildSeatBasis(canvasEl);
       ctx.lastAxial = solveSeat(ctx.seatBasis, e.clientX, e.clientY).axialM;
       ctx.gestureAxial = 0;
-      sfx("click");
+      tubeChink();
     }
     syncObjects();
     notify();
@@ -529,7 +534,20 @@ export function collectionPointerMove(e, canvasEl){
   const wasPierced = before ? before.pierced : false;
   seat(ctx.state, dAxial, r.lateralM, ctx.state.grip);
   const after = current(ctx.state);
-  if(after && after.pierced && !wasPierced) sfx(after.deadOnAir ? "bad" : "good");
+  if(after && after.pierced && !wasPierced){
+    /* THE POP. Resistance, then a wet give — deliberately the same profile as
+       the needle's own skin pop, because it is the same event: a stopper being
+       pierced by a bevel. Then the vacuum takes over and its DECAY is the fill
+       gauge; there is no bar and no timer, and when the hiss dies the flow has
+       stopped and the player knows it without being told. */
+    stopperPop();
+    seatHaptic();
+    if(!after.deadOnAir){
+      if(!ctx.vacuum) ctx.vacuum = vacuumVoice();
+      ctx.vacuum.set(1);
+      duckRoom(0.2, 0.5);
+    }
+  }
 
   // Pulled clear of the mouth entirely — the tube is off. Judged on travel
   // WITHIN this gesture, never on where the pointer happens to be: a tube not
@@ -538,7 +556,10 @@ export function collectionPointerMove(e, canvasEl){
   if(after && ctx.state.seatDepth <= 0 && ctx.gestureAxial < -0.004){
     removeTube(ctx.state, ctx.state.grip);
     ctx.mode = "idle";
-    sfx("click");
+    if(ctx.vacuum){ ctx.vacuum.stop(); ctx.vacuum = null; }
+    // a small twist and a click, then the full tube goes back in the rack
+    tubeRackClick();
+    seatHaptic();
   }
   syncObjects();
   notify();
@@ -603,6 +624,17 @@ export function renderCollection(renderer, dt){
   if(after && after.drawnMl !== drawnBefore){
     syncObjects();
     notify();
+  }
+  /* The hiss tracks how much vacuum is LEFT, so it starts strong and tails
+     away as the tube fills. That decay is the player's cue to change tubes —
+     the one piece of feedback in this step that has to be audible, because
+     watching a meniscus climb a wall is not something a screen does well. */
+  if(ctx.vacuum){
+    if(after && after.pierced && !after.removedAt && after.volumeMl){
+      ctx.vacuum.set(Math.max(0, 1 - after.drawnMl/after.volumeMl));
+    }else{
+      ctx.vacuum.stop(); ctx.vacuum = null;
+    }
   }
 
   ctx.view.tick(dt || 0.016);

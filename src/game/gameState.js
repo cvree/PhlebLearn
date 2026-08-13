@@ -55,13 +55,22 @@ export function setState(s){ state = s; }
    The legacy strings "teach" and "play" still map in, because the ?e2e=1
    seam and saved links pass them.
    ========================================================================= */
-export const MODES = { LEARN:"learn", PRACTICE:"practice", FINAL:"final" };
+/**
+ * BENCH is the fourth mode and it is not a difficulty setting.
+ *
+ * Mastery needs cheap repetition, and until now every practice stick cost a
+ * four-minute patient — which is why nobody ever practised the one gesture
+ * they were bad at. The Bench is one arm, infinite supplies, no scoring and
+ * an instant reset, and it is the single highest-value addition for
+ * replayability in the whole redesign.
+ */
+export const MODES = { LEARN:"learn", PRACTICE:"practice", FINAL:"final", BENCH:"bench" };
 
 const LEGACY_MODES = { teach:MODES.LEARN, play:MODES.FINAL };
 
 export function normaliseMode(m){
   if(LEGACY_MODES[m]) return LEGACY_MODES[m];
-  return (m===MODES.LEARN || m===MODES.PRACTICE || m===MODES.FINAL) ? m : MODES.FINAL;
+  return (m===MODES.LEARN || m===MODES.PRACTICE || m===MODES.FINAL || m===MODES.BENCH) ? m : MODES.FINAL;
 }
 
 export const MODE_REVEAL = {
@@ -80,10 +89,18 @@ export const MODE_REVEAL = {
     instruction:false, hints:false, verdicts:false, liveNumbers:true,
     gateContinue:false, sectionFeedback:false, repeatSections:false, highlights:false,
   },
+  // Nothing is withheld and nothing is graded. It is a rehearsal room: the
+  // numbers are live so you can see what your hands are doing, the coach is
+  // quiet so you are not being talked at, and nothing blocks anything.
+  [MODES.BENCH]: {
+    instruction:false, hints:true, verdicts:true, liveNumbers:true,
+    gateContinue:false, sectionFeedback:false, repeatSections:true, highlights:true,
+  },
 };
 
 export const MODE_NAMES = {
-  [MODES.LEARN]:"Learn", [MODES.PRACTICE]:"Practice", [MODES.FINAL]:"Final Practical",
+  [MODES.LEARN]:"Learn", [MODES.PRACTICE]:"Practice",
+  [MODES.FINAL]:"Final Practical", [MODES.BENCH]:"The Bench",
 };
 
 export let MODE = MODES.FINAL;
@@ -91,6 +108,8 @@ export function setMode(m){ MODE = normaliseMode(m); }
 export function guided(){ return MODE===MODES.LEARN; }
 export function practiceMode(){ return MODE===MODES.PRACTICE; }
 export function finalPractical(){ return MODE===MODES.FINAL; }
+/** The rehearsal room: no scoring, no gating, instant reset. */
+export function benchMode(){ return MODE===MODES.BENCH; }
 /** The descriptor above for the current mode. Never mutate the result. */
 export function reveal(){ return MODE_REVEAL[MODE] || MODE_REVEAL[MODES.FINAL]; }
 

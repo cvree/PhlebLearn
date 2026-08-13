@@ -128,3 +128,36 @@
 @media (prefers-reduced-motion: reduce){
   .db-act, .db-spec, .db-bests li, .db-mastery li{ transition:none; opacity:1; transform:none; }
 }
+
+/* =========================================================================
+   THE BENCH BAR
+
+   Two controls, always in the same place, never in the way of the 3D work
+   area. Deliberately plain: this is a rehearsal room, not a results screen,
+   and anything decorative here would be pretending the mode has stakes.
+   ========================================================================= */
+.bench-bar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin:10px 0 4px; padding:8px 10px;
+  border-radius:12px;
+  background:var(--sunk, rgba(0,0,0,.05));
+}
+.bench-lab{
+  font-size:.66rem; letter-spacing:.14em; text-transform:uppercase;
+  opacity:.55; margin-right:4px;
+}
+.bench-jump, .bench-reset{
+  font:inherit; font-size:.82rem; font-weight:600;
+  padding:6px 11px; border-radius:9px; cursor:pointer;
+  border:1px solid var(--rule, rgba(0,0,0,.14));
+  background:var(--card, rgba(255,255,255,.7));
+  color:inherit;
+}
+.bench-jump:hover, .bench-reset:hover{ filter:brightness(1.06); }
+.bench-jump.on{
+  background:var(--accent, #6c4ad6); color:#fff; border-color:transparent;
+}
+.bench-reset{ margin-left:auto; background:var(--accent, #6c4ad6); color:#fff; border-color:transparent; }
+
+/* the mastery strip under the Bench button on the clock-in screen */
+.mastery-strip{ display:block; margin-top:3px; font-size:.78rem; opacity:.7; letter-spacing:.01em; }

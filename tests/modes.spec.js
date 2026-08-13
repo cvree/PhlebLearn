@@ -27,12 +27,29 @@ import { MEASUREMENT_SOURCES, CATEGORIES } from "../src/venipuncture/rubric/poli
    THE MODES THEMSELVES
    ------------------------------------------------------------------------- */
 
-test("there are exactly three modes and each has a reveal descriptor", () => {
-  assert.deepEqual(Object.values(MODES).sort(), ["final", "learn", "practice"]);
+/**
+ * The three ASSESSED modes, which is the set every claim below is about.
+ * The Bench is deliberately not one of them: it is a rehearsal room, it
+ * grades nothing and pays nothing, and holding it to the assessed modes'
+ * rules would be asserting something the mode is not for.
+ */
+const ASSESSED = [MODES.LEARN, MODES.PRACTICE, MODES.FINAL];
+
+test("there are three assessed modes plus the bench, each with a descriptor", () => {
+  assert.deepEqual(Object.values(MODES).sort(), ["bench", "final", "learn", "practice"]);
   for(const m of Object.values(MODES)){
     assert.ok(MODE_REVEAL[m], `${m} has no reveal descriptor`);
     assert.ok(MODE_NAMES[m], `${m} has no display name`);
   }
+});
+
+test("the bench is a rehearsal room: hints on, nothing gated, replay allowed", () => {
+  const b = MODE_REVEAL[MODES.BENCH];
+  assert.equal(b.gateContinue, false, "nothing on the bench may block anything");
+  assert.equal(b.repeatSections, true, "starting again is the entire mode");
+  assert.equal(b.sectionFeedback, false, "the bench scores nothing, so it reports nothing");
+  assert.equal(b.instruction, false, "it is rehearsal, not a lesson");
+  assert.equal(b.liveNumbers, true, "you have to be able to see what your hands did");
 });
 
 test("the legacy mode names still map in, and anything unknown is the strictest", () => {
@@ -53,21 +70,30 @@ test("the Final Practical reveals nothing: no coaching, no hints, no verdicts", 
   assert.equal(f.highlights, false);
 });
 
-test("Learn is the only mode that instructs, gates or highlights", () => {
-  for(const m of Object.values(MODES)){
+test("Learn is the only ASSESSED mode that instructs, gates or highlights", () => {
+  for(const m of ASSESSED){
     const r = MODE_REVEAL[m];
     const isLearn = m === MODES.LEARN;
     assert.equal(r.instruction, isLearn, `${m}.instruction`);
     assert.equal(r.gateContinue, isLearn, `${m}.gateContinue`);
     assert.equal(r.highlights, isLearn, `${m}.highlights`);
   }
+  // and nothing anywhere may gate except Learn, bench included
+  for(const m of Object.values(MODES)){
+    if(m !== MODES.LEARN) assert.equal(MODE_REVEAL[m].gateContinue, false, `${m}.gateContinue`);
+  }
 });
 
-test("Practice is the only mode that gives section feedback or replays a section", () => {
-  for(const m of Object.values(MODES)){
+test("Practice is the only ASSESSED mode that reports a section or replays one", () => {
+  for(const m of ASSESSED){
     const isPractice = m === MODES.PRACTICE;
     assert.equal(MODE_REVEAL[m].sectionFeedback, isPractice, `${m}.sectionFeedback`);
     assert.equal(MODE_REVEAL[m].repeatSections, isPractice, `${m}.repeatSections`);
+  }
+  // No mode at all reports a section score except Practice — including the
+  // bench, which reports nothing because it grades nothing.
+  for(const m of Object.values(MODES)){
+    if(m !== MODES.PRACTICE) assert.equal(MODE_REVEAL[m].sectionFeedback, false, `${m}.sectionFeedback`);
   }
 });
 

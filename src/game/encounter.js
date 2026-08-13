@@ -2,6 +2,7 @@
 import { TUBES, TESTS, TEST_NAMES, EVENTS, REQ_ISSUES, DRAW_EVENTS, SKIN_TONES, HAIR_NATURAL,
   HAIR_BOLD, HAIR_SENIOR, HAIR_STYLES, FABRIC, SHIRTS, MOODS, FIRST, LAST } from "../config.js";
 import { pad, randInt, pick, shuffle } from "../utils.js";
+import { pickArchetype, applyArchetype } from "./archetypes.js";
 import { difficultyLevel } from "./saveSystem.js";
 
 export function makeAppearance(ageCat){
@@ -135,6 +136,13 @@ export function makeSiteScenario(dl){
 export function drawArmFor(p){
   const usable = a=>a && (a.sev==="clear" || a.sev==="tricky");
   const arms = p && p.site && p.site.arms;
+  /* A patient with a contraindicated side is drawn on the OTHER one, and that
+     is a genuinely different physical draw rather than a note on a chart: the
+     limb's whole vein pattern mirrors (see mirrorForArm), so the approach
+     vector, the anchor and the site all move. Which side is off limits is
+     never printed on the requisition — the patient tells you, if you ask. */
+  const forced = p && p.forcedArmSide;
+  if(forced) return { side: forced, keys: (arms && arms[forced] && arms[forced].key !== "clear") ? [arms[forced].key] : [] };
   if(!arms) return { side:"right", keys:[] };
   // prefer a clear arm, then a merely tricky one, then whatever is left
   const order = ["right","left"];
@@ -211,6 +219,20 @@ export function makePatient(){
     adhesiveAllergy: Math.random() < 0.10,
     faintHistory: Math.random() < 0.18,
   };
-  return {first,last,decoyLast,name:first+" "+last,dob:pad(mo,2)+"/"+pad(da,2)+"/"+yr,id,age,ageCat,history,
+  const p = {first,last,decoyLast,name:first+" "+last,dob:pad(mo,2)+"/"+pad(da,2)+"/"+yr,id,age,ageCat,history,
     mood:pick(MOODS),orders,reqSet,handling,event,eventWhen,reqIssue,provider,drawEvent,site:(Math.random() < (0.28+dl*0.05) ? makeSiteScenario(dl) : null),appearance:makeAppearance(ageCat),shirt:pick(SHIRTS)};
+
+  /* THE ARCHETYPE. Everything above this line varies a patient NUMERICALLY —
+     deeper veins, more tubes, a flawed requisition — and produces ten draws
+     that feel like one draw done ten times. An archetype changes what you
+     physically DO: what you can see, where you can go, whether the arm in
+     front of you is even usable. It writes only into fields the rest of the
+     game already reads, so it never becomes a branch anyone has to remember.
+     See game/archetypes.js. */
+  applyArchetype(p, pickArchetype(dl, lastArchetype));
+  lastArchetype = p.archetype;
+  return p;
 }
+
+/** So two patients in a row are never the same person twice. */
+let lastArchetype = null;

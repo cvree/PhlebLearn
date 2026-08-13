@@ -29,7 +29,10 @@
    never decides correctness itself.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import {
+  strapSnap, safetyClack, sharpsDrop, skinTick, wince, tubeChink,
+} from "../../audio/procedural.js";
+import { clackHaptic, tapHaptic, seatHaptic, winceHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SHOULDER_X, HAND_X } from "../arm/armAnatomy.js";
 import { ARM_Y } from "../arm/armMesh.js";
@@ -565,7 +568,7 @@ export function withdrawalPointerDown(e, canvasEl){
 
   const start = (extra)=>{
     ctx.drag = Object.assign({ kind: hit.kind, downX: e.clientX, downY: e.clientY }, extra || {});
-    sfx("tap");
+    skinTick();
     return true;
   };
 
@@ -657,7 +660,7 @@ export function withdrawalPointerMove(e, canvasEl){
     const wasIn = s.withdrawnAt == null;
     sampleWithdraw(s, dAlong, r.sideM, dtS, { tubeOn: tubeOnHolder(), tourniquetOn: tourniquetOn() });
     if(wasIn && s.withdrawnAt != null){
-      sfx("good");
+      seatHaptic();
       ctx.drag = null;
       ctx.down = false;
     }
@@ -673,7 +676,7 @@ export function withdrawalPointerMove(e, canvasEl){
     const wasLocked = s.safetyLockedAt != null;
     slideSafety(s, dAlong/SHIELD_TRAVEL_M, d.surface ? { surface: true } : null);
     if(!wasLocked && s.safetyLockedAt != null){
-      sfx("good");
+      seatHaptic();
       ctx.drag = null;
       ctx.down = false;
     }
@@ -692,7 +695,7 @@ export function withdrawalPointerMove(e, canvasEl){
       if(atBench && s.safetyLockedAt == null){
         const wasLocked = s.safetyLockedAt != null;
         slideSafety(s, Math.max(0, (e.clientY - d.lastY))*0.0009, { surface: true });
-        if(!wasLocked && s.safetyLockedAt != null) sfx("click");
+        if(!wasLocked && s.safetyLockedAt != null){ safetyClack(); clackHaptic(); }
       }
       d.lastY = e.clientY;
     }
@@ -753,7 +756,7 @@ export function withdrawalPointerUp(e, canvasEl){
         Math.max(0.012, ctx.gauzeCarry.z)
       );
       placeGauze(s, { offsetM: offset, pressing: false });
-      sfx("click");
+      tubeChink();
     }else{
       // let go somewhere on the bench: it rests there, not ready
       ctx.gauzePlacedWorld = new THREE.Vector3(ctx.gauzeCarry.x, BENCH_Y + 0.0035, Math.max(0.09, ctx.gauzeCarry.z));
@@ -779,16 +782,16 @@ export function withdrawalPointerUp(e, canvasEl){
     const dTrash = dropped.distanceTo(trashWorld());
     if(dBin <= BIN_CAPTURE_R){
       disposeUnit(s, { target: "sharps", fully: true, crossedPatient: d.crossed });
-      sfx("good");
+      seatHaptic();
     }else if(dTrash <= TRASH_CAPTURE_R){
       disposeUnit(s, { target: "trash" });
       ctx.unitParked = new THREE.Vector3(TRASH_SPOT.x + 0.05, BENCH_Y + 0.008, TRASH_SPOT.z);
-      sfx("bad");
+      wince(); winceHaptic();
     }else{
       // let go anywhere else: the sharp is now resting there
       disposeUnit(s, { target: "bench" });
       ctx.unitParked = new THREE.Vector3(dropped.x, BENCH_Y + 0.008, Math.max(0.06, dropped.z));
-      sfx("click");
+      tubeChink();
     }
     syncObjects();
     notify();
@@ -826,7 +829,7 @@ function doRelease(){
   ctx.down = false;
   applyBandToArm();
   refreshStrap();
-  sfx("good");
+  seatHaptic();
 }
 
 /* ---------- per-frame ---------------------------------------------------------------------- */

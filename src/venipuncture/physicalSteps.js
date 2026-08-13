@@ -332,6 +332,15 @@ export function ensureArmSession(c){
     mirrorForArm(rawVessels, c.arm.armSide),
     { build: c.arm.build, scenarioKeys: c.arm.scenarioKeys, vigour: c.arm.vigour }
   );
+  /* THE ARCHETYPE'S OWN OVERRIDES, applied last so they win.
+     Every field here is one the rest of the game already reads — a dehydrated
+     patient is a lower `vigour`, a child is a smaller `build` — so an
+     archetype never becomes a special case anybody has to remember. */
+  if(p.armOverrides){
+    if(p.armOverrides.vigour != null) c.arm.vigour = Math.min(1.25, c.arm.vigour*p.armOverrides.vigour);
+    if(p.armOverrides.build != null) c.arm.build = p.armOverrides.build;
+    if(p.armOverrides.bleedFactor != null) c.bleedFactor = p.armOverrides.bleedFactor;
+  }
   c.equipment = equipmentInEffect();
   return c.arm;
 }

@@ -13,7 +13,8 @@
    contact) is friction; resting the pad on the skin is not.
    ========================================================================= */
 import * as THREE from "three";
-import { sfx } from "../../audio/audioManager.js";
+import { scrubVoice, wince, tubeChink } from "../../audio/procedural.js";
+import { tapHaptic, winceHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
 import {
@@ -64,6 +65,7 @@ export async function startCleaning(opts){
 export function stopCleaning(){
   if(!ctx) return;
   if(ctx.decal) ctx.decal.dispose();
+  if(ctx.scrub) ctx.scrub.stop();
   ctx.view.dispose();
   ctx = null;
 }
@@ -148,11 +150,30 @@ function redrawDecal(){
 }
 
 /** How wet the field still looks. */
+/**
+ * Wet, then drying.
+ *
+ * The decal used to do one thing: fade out linearly over thirty seconds. That
+ * is a progress bar wearing a costume. Alcohol on skin is GLOSSY and it goes
+ * on darker than the skin around it; as it evaporates it loses the gloss
+ * first and the colour last, and it dries from the edges inward. Making the
+ * drying wait WATCHABLE is what turns it from dead time into a thing the
+ * player is doing — and it is during that wait that the needle gets
+ * assembled, so it needs to be legible from the corner of the eye.
+ */
 function updateWetness(){
   if(!ctx.decal) return;
   const secs = secondsDrying(ctx.state);
-  // fades as the alcohol evaporates, which is the learner's cue to wait
-  ctx.decal.mesh.material.opacity = 0.62*(1 - Math.min(1, secs/30)*0.72);
+  const wet = 1 - Math.min(1, secs/30);
+  const m = ctx.decal.mesh.material;
+  m.opacity = 0.24 + wet*0.46;
+  // the sheen: a specular lift while it is still liquid
+  if(m.roughness !== undefined) m.roughness = 0.28 + (1 - wet)*0.62;
+  // skin darkens wet and lightens dry
+  if(m.color) m.color.setRGB(0.62 + (1 - wet)*0.30, 0.66 + (1 - wet)*0.28, 0.72 + (1 - wet)*0.24);
+  // and it pulls in from the edges rather than fading uniformly
+  const shrink = 1 - (1 - wet)*0.10;
+  ctx.decal.mesh.scale.set(shrink, shrink, 1);
 }
 
 /* ---------- the swab ----------------------------------------------------------- */
@@ -204,8 +225,17 @@ export function cleaningPointerDown(e, canvasEl){
   // Touching the site again once it is clean undoes it — including with the
   // swab, if the learner has already let it dry.
   const r = evaluateCleaning(ctx.state);
-  if(r.ready) { markRetouched(ctx.state); sfx("bad"); }
-  else sfx("tap");
+  if(r.ready){
+    // Touching a prepped field again is a real mistake and it should SOUND
+    // like one: the patient reacts, not a buzzer.
+    markRetouched(ctx.state);
+    wince();
+    winceHaptic();
+    if(ctx.view.body) ctx.view.body.flinch(0.3);
+  }else{
+    tapHaptic();
+  }
+  if(!ctx.scrub) ctx.scrub = scrubVoice();
   notify();
   return true;
 }
@@ -241,6 +271,18 @@ export function cleaningPointerMove(e, canvasEl){
     }
   }
   recordStroke(ctx.state, dx, dz, moved, rNow - rWas, friction);
+
+  /* The granular scrub. Pitch and density track how fast the pad is moving,
+     and the timbre opens up as the alcohol goes on and closes down again as it
+     dries — five minutes of work for an outsized payoff, because a swab that
+     makes no sound reads as a cursor being dragged over a picture. */
+  if(ctx.scrub && ctx.state.swabOpen){
+    ctx.scrub.set({
+      speed: Math.min(1, moved/0.004),
+      pressure: 0.55 + friction*0.45,
+      wet: 1 - Math.min(1, secondsDrying(ctx.state)/26),
+    });
+  }
 
   ctx.last = { x: s.x, theta: s.theta, z };
   redrawDecal();
@@ -280,6 +322,7 @@ export function renderCleaning(renderer, dt){
     ctx.lastAspect = aspect;
   }
   updateWetness();
+  if(ctx.scrub && !ctx.down) ctx.scrub.set({ speed: 0, pressure: 0, wet: 0 });
   // the drying clock is the only thing that moves on its own
   if(ctx.frame % 15 === 0 && ctx.state.strokes && !ctx.down) notify();
   ctx.view.tick(dt || 0.016);
@@ -293,7 +336,7 @@ export function openSwabPack(){
   if(!ctx) return null;
   openSwab(ctx.state);
   if(ctx.swab) ctx.swab.group.visible = true;
-  sfx("click");
+  tubeChink();
   return notify();
 }
 
