@@ -51,10 +51,20 @@ const dry = (page, s)=>page.evaluate(v=>window.__phlebTest.fastForwardDrying(v),
 async function scrubSpiral(page, frac, turns){
   const f = frac == null ? 1 : frac;
   const R = 0.025*f;
+  /* Twenty-eight samples, not fifty-five.
+     Every sample is a round trip through the driver AND a frame the page has
+     to get through before it acknowledges the next one, and on a runner with
+     no software-rasterised GPU that is a third of a second each — fifty-five
+     of them cost more than the whole test budget. Twenty-eight still traces
+     five clean turns, and now that the camera pushes in on the prep field
+     (see scrubFraming) each step is about five screen pixels of radius, which
+     is well clear of the pixel quantisation that made the direction reading
+     noise at the old framing. */
+  const N = 28;
   const pts = [];
-  for(let i = 0; i <= 55; i++){
-    const a = (i/55)*Math.PI*2*(turns || 5);
-    const r = (i/55)*R;
+  for(let i = 0; i <= N; i++){
+    const a = (i/N)*Math.PI*2*(turns || 5);
+    const r = (i/N)*R;
     pts.push([Math.cos(a)*r, Math.sin(a)*r]);
   }
   const screen = await page.evaluate(async list=>{
@@ -65,6 +75,11 @@ async function scrubSpiral(page, frac, turns){
 
   await page.mouse.move(screen[0].x, screen[0].y);
   await page.mouse.down();
+  /* One call per sample, deliberately. `mouse.move(..., {steps})` interpolates
+     in a STRAIGHT LINE, and a straight line between two points five samples
+     apart on a spiral is a chord across the arc — it cut the corners off every
+     outer turn and took coverage from 92% to 59%. The traffic is cut by
+     sending fewer samples instead (see above), not by faking the path. */
   for(const p of screen) await page.mouse.move(p.x, p.y);
   await page.mouse.up();
   await page.waitForTimeout(150);
@@ -132,7 +147,9 @@ test("scrubbing only the middle leaves the field short and is blocked", async ({
 });
 
 test("the coverage readout tracks the scrubbing", async ({ page })=>{
-  test.setTimeout(60000);   // two full pointer-driven scrubs
+  // Two full pointer-driven scrubs. This used to raise the timeout to 60s;
+  // the config's 90s is now the longer of the two, so overriding it here only
+  // made this the one test in the file with LESS budget than its neighbours.
   await openCleaning(page, "teach");
   await page.locator("#clnOpen").click();
   await scrubSpiral(page, 0.5);

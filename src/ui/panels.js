@@ -1316,6 +1316,9 @@ function endShift(){
   go("summary");
 }
 function renderSummary(){
+  // endShift() never changes the mode, so this is still the shift that just
+  // finished — which is the one "Same again" has to reproduce.
+  const lastMode = MODE;
   const avg=Math.round(SHIFT.ratings.reduce((a,b)=>a+b,0)/(SHIFT.ratings.length||1));
   const stars = avg>=95?5:avg>=80?4:avg>=65?3:avg>=45?2:1;
   const newBadges=SS.badges.map(b=>BADGE_NAMES[b]||b);
@@ -1340,9 +1343,31 @@ function renderSummary(){
       <span class="sub">Avg per-draw TAT, bedside collection to dispatch: ${avgDrawTAT}</span></div>`}
     <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):", "}</div>
     ${SHIFT.missed&&SHIFT.missed.length?`<div class="req"><b>📚 Queued for Learn Mode (${SHIFT.missed.length})</b><br><span class="sub">These are the steps you missed this shift, now lined up for review: ${SHIFT.missed.join(", ")}</span></div>`:""}
-    <button class="btn" id="again">🔁 Clock in again</button>
-    <div class="hint">Designed to merge into the main Phleb Learn app later.</div>
+    ${sameAgainHTML(lastMode)}
+    <button class="btn alt" id="again">🚪 Back to clock-in</button>
   `;
+  /* The fastest path out of a finished shift is into another one. "Same
+     again" keeps the mode AND the loadout, so a player who has just found a
+     combination they like never has to reassemble it — and the challenge
+     chips are re-armed from the save, not from a stale copy. */
+  const same = $("sameAgain");
+  if(same) same.onclick = ()=>{ sfx("win"); startShift(lastMode); };
   $("again").onclick=()=>{ sfx("win"); go("idle"); };
   confetti(70); sfx("win");
+}
+
+/** The one-click repeat, named after what it will actually give you. */
+function sameAgainHTML(mode){
+  const label = mode === MODES.FINAL ? "📋 Another practical"
+    : mode === MODES.BENCH ? "🔧 Back to the bench"
+    : mode === MODES.LEARN ? "🎓 Another guided shift"
+    : "🔁 Another shift";
+  const on = chosenChallenges();
+  const note = on.length && mode !== MODES.BENCH
+    ? `<div class="mode-note">Same loadout: ${on.map(id=>{
+        const c = CHALLENGES.find(x=>x.id===id);
+        return c ? c.label : id;
+      }).join(" · ")}</div>`
+    : "";
+  return `<button class="btn cta-pulse starborder" id="sameAgain">${label}</button>${note}`;
 }

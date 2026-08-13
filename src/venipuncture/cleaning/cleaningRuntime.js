@@ -262,17 +262,32 @@ export function cleaningPointerMove(e, canvasEl){
   // Friction is how much the pad is being WORKED, not how long it rests.
   const friction = Math.min(1, moved/FRICTION_FULL);
 
-  // Paint the whole contact patch, not a single point — the pad has width.
-  // Gated on the pad being open: recordStroke already refuses to count a
-  // sealed one, but painting happens here, so without this the skin would
-  // come up clean under a pad still in its wrapper.
+  /* Paint the whole SWEPT PATH, not a dot at the current sample.
+     Gated on the pad being open: recordStroke already refuses to count a
+     sealed one, but painting happens here, so without this the skin would
+     come up clean under a pad still in its wrapper.
+
+     Stamping only where the pointer happened to be sampled cleaned the skin
+     in dots. A 12 mm pad moved 26 mm between two samples — which is what a
+     fast sweep across the outside of a spiral genuinely is — left a bare gap
+     between them, so scrubbing quickly came up dirtier than scrubbing slowly
+     over exactly the same skin. A swab dragged across an arm cleans the line
+     it travelled, and the number of pointer samples the browser happened to
+     deliver is not a clinical variable. */
   if(ctx.state.swabOpen && friction >= 0.18){
     const step = (2*FIELD_RADIUS)/GRID;
-    for(let ox = -SWAB_RADIUS; ox <= SWAB_RADIUS; ox += step){
-      for(let oz = -SWAB_RADIUS; oz <= SWAB_RADIUS; oz += step){
-        if(Math.hypot(ox, oz) > SWAB_RADIUS) continue;
-        const c = cellFor(dx + ox, dz + oz);
-        if(c != null) ctx.state.painted.add(c);
+    const dx0 = ctx.last.x - ctx.site.x, dz0 = ctx.last.z - ctx.site.z;
+    // one stamp per half-pad along the sweep, so consecutive stamps overlap
+    const stamps = Math.min(64, Math.max(1, Math.ceil(moved/(SWAB_RADIUS*0.9))));
+    for(let k = 1; k <= stamps; k++){
+      const t = k/stamps;
+      const cx = dx0 + (dx - dx0)*t, cz = dz0 + (dz - dz0)*t;
+      for(let ox = -SWAB_RADIUS; ox <= SWAB_RADIUS; ox += step){
+        for(let oz = -SWAB_RADIUS; oz <= SWAB_RADIUS; oz += step){
+          if(Math.hypot(ox, oz) > SWAB_RADIUS) continue;
+          const c = cellFor(cx + ox, cz + oz);
+          if(c != null) ctx.state.painted.add(c);
+        }
       }
     }
   }
