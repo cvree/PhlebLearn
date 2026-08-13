@@ -65,12 +65,52 @@ import { tapHaptic, setHaptic } from "../../bench/haptics.js";
 /**
  * Radians swept round the limb that count as a stroke ACROSS the arm.
  *
- * The old threshold was 1.75 radians and had to be survived without ever
- * exceeding a lift limit; this is 1.5 with nothing to survive, and the visible
- * face of the arm is about 2.9 radians wide, so a real stroke clears it
- * comfortably and a wiggle near the top does not.
+ * MEASURED, not reasoned about, and the reasoning it replaced was wrong. The
+ * old threshold was 1.75 radians and had to be survived without ever exceeding
+ * a lift limit; the first draft of this rewrite dropped it to 1.5 on the
+ * argument that "the visible face of the arm is about 2.9 radians wide, so a
+ * real stroke clears it comfortably". The arc is that wide in the limb's own
+ * coordinates. It is not that wide as far as this gesture can tell.
+ *
+ * A pointer sweep driven edge to edge — from θ = +1.45 to θ = −1.45, the full
+ * width of the visible skin — accumulates about **1.12 radians** of measured
+ * turn, three times running. The rest is lost to foreshortening: this camera
+ * looks 55° off the limb's axis, so the outer thirds of the arc project into
+ * very few pixels, and near the silhouette pointerToLimbSurface saturates
+ * rather than reporting angles it cannot actually resolve. A threshold of 1.5
+ * therefore asked for more turn than the widest possible stroke can deliver,
+ * and the band could not be routed by dragging it at all.
+ *
+ * 0.95 is roughly five sixths of what a full stroke gives, so an ordinary
+ * confident sweep clears it with margin while a wiggle near the top — which
+ * lives inside ±0.3 and is what this threshold exists to reject — does not.
  */
-const WRAP_STROKE = 1.5;
+const WRAP_STROKE = 0.95;
+/**
+ * Radians either side of the limb's top within which the ALONG-ARM reading is
+ * trustworthy enough to grade with.
+ *
+ * Not the same question as "can the pointer be resolved at all" — it can, all
+ * the way to the silhouette. This is "is the x it returns worth grading a
+ * learner on", and past about a radian off the top it is not: the arm is
+ * nearly edge-on there, so a centimetre along it covers a couple of pixels and
+ * the solve's own conditioning, not the hand, decides the answer.
+ */
+const TRUSTED_ARC = 0.9;
+/**
+ * How near the top of the limb the stroke has to pass for the band to be
+ * considered to have gone round it rather than across one side.
+ *
+ * Generous — a fifth of a radian is about a centimetre of skin on this arm —
+ * because the player's intent is unmistakable long before their accuracy is.
+ */
+const TOP_WINDOW = 0.38;
+/**
+ * And how far past that crossing the stroke has to continue before the band
+ * commits, so the wrap lands when the gesture FINISHES rather than the instant
+ * it qualifies. Also what lets the whole stroke's along-arm drift be measured.
+ */
+const PAST_TOP = 0.30;
 /**
  * How far clear of the arm the hand has to get for the band to count as having
  * been LAID OVER the top rather than passed under.
@@ -586,7 +626,7 @@ function moveRoute(ax, surface, inside){
     d.onLimb = true;
     d.thetaPrev = theta;
     d.bandX = clampBandX(x);
-    d.minX = d.maxX = x;
+    d.minX = d.maxX = Math.abs(theta) <= TRUSTED_ARC ? x : null;
     d.samples = 1;
     d.crossLift = null;
     strapDrag();
@@ -600,8 +640,23 @@ function moveRoute(ax, surface, inside){
     d.net += ctx.view.angleDelta(d.thetaPrev, theta);
     d.thetaPrev = theta;
 
-    d.minX = Math.min(d.minX, x);
-    d.maxX = Math.max(d.maxX, x);
+    /* SKEW IS ONLY MEASURED WHERE X CAN BE TRUSTED.
+       `skew` is the spread of the along-arm reading over the stroke, and it
+       decides whether the band went on square or spiralled. But the along-arm
+       reading is not equally good all the way round: this camera looks 55° off
+       the limb's axis, so near the silhouette a whole centimetre of arm
+       projects into a couple of pixels and pointerToLimbSurface's x wanders.
+       Measured — a pointer sweep driven edge to edge at a CONSTANT x came back
+       with 34 mm of spread, three runs running, which is past SKEW_LIMIT: a
+       perfectly square stroke was being graded as a spiral, and the error was
+       the projection's rather than the player's.
+       Inside TRUSTED_ARC the solve is well conditioned, so that is the only
+       part of the stroke this reads from. It is the same reasoning the
+       magnetic seating below already uses to pick the band's position. */
+    if(Math.abs(theta) <= TRUSTED_ARC){
+      d.minX = d.minX == null ? x : Math.min(d.minX, x);
+      d.maxX = d.maxX == null ? x : Math.max(d.maxX, x);
+    }
     /* MAGNETIC SEATING: the band lands where the stroke crossed the TOP of the
        limb — the sample with the smallest angle — which is both the most
        accurate along-arm reading available and the most honest answer to
@@ -624,8 +679,35 @@ function moveRoute(ax, surface, inside){
   );
   refreshStrap();
 
-  if(d.travel >= WRAP_STROKE) commitWrap(d);
+  if(strokeComplete(d, onSkin ? theta : null)) commitWrap(d);
   return true;
+}
+
+/**
+ * Has the stroke actually gone ACROSS the arm?
+ *
+ * Distance alone is not the question, and using it alone was a real bug: a
+ * sweep starting near one silhouette reached WRAP_STROKE while it was still on
+ * that side of the limb, so the band committed a third of the way through the
+ * gesture and seated itself wherever the counter happened to trip. Measured —
+ * an 18-sample sweep from θ=+1.45 to −1.45 committed at sample 6, with the
+ * "top crossing" recorded at θ=0.48, which is not the top, and with two thirds
+ * of the hand's along-arm drift never seen at all. A deliberately spiralled
+ * stroke came out graded square.
+ *
+ * So the stroke is complete when all three are true:
+ *   it has swept far enough                       (WRAP_STROKE)
+ *   it genuinely passed over the top of the limb  (TOP_WINDOW)
+ *   and it is on its way down the far side        (PAST_TOP)
+ *
+ * The band then lands where it crossed the top, which is both the best
+ * along-arm reading available and the honest answer to "where did you put it".
+ */
+function strokeComplete(d, theta){
+  if(d.travel < WRAP_STROKE) return false;
+  if(d.crossLift == null || d.crossLift > TOP_WINDOW) return false;
+  if(theta == null) return true;          // carried clear: nothing more to see
+  return Math.abs(theta) > d.crossLift + PAST_TOP;
 }
 
 /**
@@ -705,6 +787,12 @@ export function tourniquetPointerUp(e, canvasEl){
   const s = ctx.state;
 
   if(d.kind === "route"){
+    /* Letting go at the END of a stroke that already went round the arm is a
+       finished gesture, not an abandoned one — a hand that has swept the band
+       across and over the top opens on the far side, it does not carry on
+       turning. Without this, a stroke that stopped exactly at the far
+       silhouette dropped the strap on the floor after doing everything right. */
+    if(strokeComplete(d, null)){ commitWrap(d); return true; }
     // Let go part-way across and the strap simply drops back to the bench.
     // Nothing has happened to the patient and nothing is scored.
     ctx.geom.heldPoint = null;

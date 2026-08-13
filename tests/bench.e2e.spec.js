@@ -15,6 +15,7 @@
    are invisible in a screenshot, so they are asserted here.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { settleBench } from "./benchHelpers.js";
 
 /** Every bench mode, in the order a draw meets them. */
 const MODES = ["tourniquet", "palpate", "clean", "assemble", "insert"];
@@ -22,6 +23,27 @@ const MODES = ["tourniquet", "palpate", "clean", "assemble", "insert"];
 async function boot(page){
   await page.goto("/?e2e=1");
   await page.waitForFunction(() => !!window.__phlebTest, null, { timeout: 20000 });
+}
+
+/**
+ * Opens a bench step and waits for the camera to stop moving.
+ *
+ * Every gesture below projects a point out of the scene and drives the pointer
+ * at it. The camera eases onto each step's framing rather than cutting, so a
+ * point read too early is a point the strap has left by the time the pointer
+ * arrives — and the grab silently misses. See tests/benchHelpers.js.
+ */
+async function openStep(page, step, tubes, mode){
+  await page.evaluate(a => window.__phlebTest.gotoProcedureStep(a[0], a[1], a[2]),
+    [step, tubes || ["lightblue"], mode || "learn"]);
+  if(step === "tourniquet"){
+    // The strap's loose layout is computed on the runtime's first frame, and
+    // the bench's camera can already be settled from the step before — so
+    // "the camera has stopped" does not imply "there is a strap to grab yet".
+    await page.waitForFunction(
+      async () => !!(await window.__phlebTest.screenPointOnStrap(0)), null, { timeout: 20000 });
+  }
+  await settleBench(page);
 }
 
 test("one encounter builds ONE bench, however many steps it passes through", async ({ page }) => {
@@ -52,8 +74,7 @@ test("one encounter builds ONE bench, however many steps it passes through", asy
 
 test("the band stays tied: the strap survives every mode after it", async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__phlebTest.gotoProcedureStep("tourniquet", ["lightblue"], "learn"));
-  await page.waitForTimeout(900);
+  await openStep(page, "tourniquet");
   await page.evaluate(() => window.__phlebTest.tourniquetSnapshot());
 
   const afterTourniquet = await page.evaluate(() => window.__phlebTest.benchStats());
@@ -101,8 +122,7 @@ test("no score of any kind is shown between the patient sitting down and the deb
 
 test("the tourniquet can be grabbed anywhere along its length", async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__phlebTest.gotoProcedureStep("tourniquet", ["lightblue"], "learn"));
-  await page.waitForTimeout(900);
+  await openStep(page, "tourniquet");
 
   // The old code accepted only the two tips. Every point along it now works,
   // and where you grabbed decides which END is free, never whether you can.
@@ -122,8 +142,7 @@ test("the tourniquet can be grabbed anywhere along its length", async ({ page })
 
 test("one natural stroke across the arm produces a correctly wrapped band", async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__phlebTest.gotoProcedureStep("tourniquet", ["lightblue"], "learn"));
-  await page.waitForTimeout(900);
+  await openStep(page, "tourniquet");
 
   const mid = await page.evaluate(() => window.__phlebTest.screenPointOnStrap(0.5));
   const band = await page.evaluate(() =>
@@ -150,8 +169,7 @@ test("one natural stroke across the arm produces a correctly wrapped band", asyn
 
 test("palpation reports sensation while the finger is MOVING, with no hold timer", async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__phlebTest.gotoProcedureStep("palpate", ["lightblue"], "learn"));
-  await page.waitForTimeout(1100);
+  await openStep(page, "palpate");
 
   const from = await page.evaluate(() => window.__phlebTest.screenPointOverVessel("cephalic"));
   const to = await page.evaluate(() => window.__phlebTest.screenPointOverVessel("median-cubital"));

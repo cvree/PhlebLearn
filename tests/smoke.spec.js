@@ -80,7 +80,15 @@ test("reading the requisition leads into the draw, not into two tube-tapping scr
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
-  await expect(page.getByRole("heading", { name: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
+  /* The patient arrives and the requisition lesson comes up with them, on one
+     screen. This used to look for a HEADING named "Check the requisition" and
+     had been failing quietly since the encounter was streamlined: the patient
+     greeting is the heading now, and the requisition lesson is the teaching
+     box beneath it. The claim the test is making is unchanged — reading the
+     requisition is the first thing that happens — so it now asserts against
+     the two things that are actually on the screen. */
+  await expect(page.getByRole("heading", { name: /Patient 1 of/i })).toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".lesson", { hasText: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
 
   // advance the guide's dialogue beats to the option list
   for(let i=0;i<4;i++){
