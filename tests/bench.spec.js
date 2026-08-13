@@ -133,7 +133,8 @@ test("switching hands rebuilds, because the mirror is baked into the root", () =
 });
 
 test("benchStats reports what is open, for the acceptance test to read", () => {
-  assert.deepEqual(bench.benchStats(), { open: false, key: null, mode: null, leases: 0, props: [] });
+  assert.deepEqual(bench.benchStats(),
+    { open: false, key: null, mode: null, leases: 0, props: [], settled: false });
   const v = bench.leaseBenchView({ mode: "cleaning", arm: ARM });
   v.benchProp("decal", () => ({ group: new Node("decal") }));
   const s = bench.benchStats();
@@ -141,4 +142,9 @@ test("benchStats reports what is open, for the acceptance test to read", () => {
   assert.equal(s.mode, "cleaning");
   assert.equal(s.leases, 1);
   assert.deepEqual(s.props, ["decal"]);
+  /* `settled` is the camera's own answer to "have you finished easing?", and
+     it exists purely so an acceptance test can wait on the MOVE rather than on
+     a clock before projecting a screen point. The stub view here has no rig,
+     so all this asserts is that the field is reported at all. */
+  assert.equal("settled" in s, true);
 });

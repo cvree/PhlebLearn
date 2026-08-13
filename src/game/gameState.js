@@ -11,6 +11,7 @@
    that keeps this from turning back into ad-hoc globals.
    ========================================================================= */
 import { KEY } from "../config.js";
+import { challengeSetup } from "./activeChallenges.js";
 
 export function defaultSS(){
   return {xp:0,coins:0,earned:0,badges:[],mastery:{},weak:[],shifts:0,bestRating:0,reduceMotion:false,music:true,musicVol:0.55,ownedUpgrades:[],placements:{},wallPlace:{},rotations:{},wallRot:{},stickers:{},stickerClaimed:{},dark:false,
@@ -111,7 +112,22 @@ export function finalPractical(){ return MODE===MODES.FINAL; }
 /** The rehearsal room: no scoring, no gating, instant reset. */
 export function benchMode(){ return MODE===MODES.BENCH; }
 /** The descriptor above for the current mode. Never mutate the result. */
-export function reveal(){ return MODE_REVEAL[MODE] || MODE_REVEAL[MODES.FINAL]; }
+/**
+ * What the learner is told while they work.
+ *
+ * The "No coach" challenge closes the four telling channels on top of
+ * whatever the mode already allows — it can only ever take things away, never
+ * hand Learn Mode's instructions to a Final Practical. `gateContinue` goes
+ * with them: a gate that refuses to advance until the step is right IS an
+ * instruction, just one delivered as a locked button.
+ */
+export function reveal(){
+  const base = MODE_REVEAL[MODE] || MODE_REVEAL[MODES.FINAL];
+  if(!challengeSetup().silence) return base;
+  return Object.assign({}, base, {
+    instruction:false, hints:false, verdicts:false, gateContinue:false, highlights:false,
+  });
+}
 
 export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true};
 export function setShift(next){ SHIFT = next; }

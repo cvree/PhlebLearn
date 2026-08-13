@@ -42,12 +42,8 @@ export default defineConfig({
     command: `npm run preview -- --port ${PORT} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    /* Every test here drives a live WebGL context, and a runner with no GPU
-     falls back to a software rasteriser that renders this scene at about 3
-     frames a second — measured, and identical before and after the redesign,
-     so it is a property of the machine rather than of the app. A gesture made
-     of forty pointer samples is genuinely slow there, and 30 seconds was
-     timing out on the runner rather than on anything the app did. */
-  timeout: 90000,
+    /* `npm run preview` builds first, and a cold build on a small runner takes
+       longer than Playwright's 60-second default allows. */
+    timeout: 120000,
   },
 });

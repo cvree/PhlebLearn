@@ -718,6 +718,21 @@ export function buildArmScene(o){
     setSiteVisible, tick, dispose,
     /** the current framing name, for modes that want to avoid redundant asks */
     get framing(){ return rig.framing; },
+    /**
+     * Whether the camera has finished easing onto the framing it was last
+     * given. Nothing in the game reads this — it exists so an acceptance test
+     * can wait on the MOVE being over rather than on a clock before it
+     * projects a screen point and drives a gesture at it. A point projected
+     * mid-ease is a point the object has left by the time the pointer arrives,
+     * and on a runner rendering at three frames a second that window is a
+     * second and a half wide.
+     */
+    get cameraSettled(){
+      return rig.settled
+        && rig.have.look.distanceTo(rig.want.look) < 0.0008
+        && Math.abs(rig.have.dist - rig.want.dist) < 0.0015
+        && Math.abs(rig.have.fov - rig.want.fov) < 0.05;
+    },
     ARM_Y,
   };
 }

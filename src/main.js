@@ -849,14 +849,15 @@ function installTestSeam(){
       const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
       const ctx = getAssemblyContext();
       if(!ctx) return null;
-      const THREE = await import("three");
       const canvas = document.querySelector("canvas");
       const rect = canvas.getBoundingClientRect();
-      return list.map(([x, z])=>{
-        const v = new THREE.Vector3(x, ctx.benchY + 0.006, z);
-        v.project(ctx.view.camera);
-        return { x: rect.left + (v.x*0.5+0.5)*rect.width, y: rect.top + (-v.y*0.5+0.5)*rect.height };
-      });
+      /* projectLocal, NOT camera.project: bench coordinates are ROOT-LOCAL,
+         and the root is mirrored for a left-handed layout. Projecting straight
+         through the camera skipped that mirror, so on a left-armed patient
+         every bench point this returned was reflected across the arm — the
+         drags landed on empty bench and nothing was ever grabbed. */
+      return list.map(([x, z])=>
+        projectLocal(ctx.view, new THREE.Vector3(x, ctx.benchY + 0.006, z), rect));
     },
     /**
      * Where the holder's hub is ON SCREEN. Threading is measured as the
@@ -868,12 +869,11 @@ function installTestSeam(){
       const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
       const ctx = getAssemblyContext();
       if(!ctx) return null;
-      const THREE = await import("three");
-      const v = new THREE.Vector3(ctx.anchors.hub.x, ctx.anchors.hub.y, ctx.anchors.hub.z);
-      v.project(ctx.view.camera);
       const canvas = document.querySelector("canvas");
       const rect = canvas.getBoundingClientRect();
-      return { x: rect.left + (v.x*0.5+0.5)*rect.width, y: rect.top + (-v.y*0.5+0.5)*rect.height };
+      // root-LOCAL, so it goes through the same mirror the pointer solve does
+      return projectLocal(ctx.view,
+        new THREE.Vector3(ctx.anchors.hub.x, ctx.anchors.hub.y, ctx.anchors.hub.z), rect);
     },
     /** The anchor, the stick, and the arm's own verdict on both. */
     async insertSnapshot(){

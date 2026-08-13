@@ -47,6 +47,8 @@ import { fbCard } from "./coachLayer.js";
 import { buildDebrief, sectionScores } from "../game/debrief.js";
 import { normaliseMastery, applyDraw as applyMastery, weakestTrack, TRACKS } from "../game/mastery.js";
 import { offerBests } from "../game/personalBests.js";
+import { CHALLENGES, scoreChallenges } from "../game/challenges.js";
+import { armChallenges, disarmChallenges, armedChallengeIds } from "../game/activeChallenges.js";
 
 /* ---------- top bar + panel entrance -------------------------------------- */
 /**
@@ -144,12 +146,70 @@ function renderIdle(){
     <button class="btn alt" id="modeBench">🔧 The Bench (rehearse one gesture, nothing scored)</button>
     <div class="mode-note">${masteryLine()}</div>
     ${SS.weak.length?`<div class="hint">Weak topics queued for Learn Mode: ${SS.weak.length}</div>`:""}
+    ${challengePickerHTML()}
   `;
   blurText(panel.querySelector("h2"));
   $("modeLearn").onclick=()=>{ sfx("win"); startShift(MODES.LEARN); };
   $("modePractice").onclick=()=>{ sfx("win"); startShift(MODES.PRACTICE); };
   $("modeFinal").onclick=()=>{ sfx("win"); startShift(MODES.FINAL); };
   $("modeBench").onclick=()=>{ sfx("win"); startShift(MODES.BENCH); };
+  wireChallengePicker();
+}
+
+/* ---------- technique challenges ---------------------------------------------
+   The replay axis. Every entry takes something away — the coach, the
+   magnetism, the hand you are used to — so the same clinical model produces a
+   different game, and a run with two of them on is worth more than either
+   alone. See game/challenges.js for why none of them can make a draw easier.
+
+   Deliberately on the clock-in screen and nowhere else: the loadout is chosen
+   before the shift, not adjusted mid-draw when it is losing. */
+
+/** Chosen challenges, kept on the save so a loadout survives a reload. */
+function chosenChallenges(){
+  if(!Array.isArray(SS.challenges)) SS.challenges = [];
+  const ids = new Set(CHALLENGES.map(c => c.id));
+  SS.challenges = SS.challenges.filter(id => ids.has(id));
+  return SS.challenges;
+}
+
+function challengePickerHTML(){
+  const on = new Set(chosenChallenges());
+  const chips = CHALLENGES.map(c => `
+    <button class="chal-chip${on.has(c.id) ? " on" : ""}" data-chal="${c.id}"
+            aria-pressed="${on.has(c.id)}" title="${c.blurb}">
+      ${c.label} <span class="chal-mult">×${c.bonus.toFixed(2)}</span>
+    </button>`).join("");
+  const mult = [...on].reduce((m, id) => m*(CHALLENGES.find(c => c.id===id) || {bonus:1}).bonus, 1);
+  return `
+    <details class="challenges" id="chalBox"${on.size ? " open" : ""}>
+      <summary>⚡ Make it harder ${on.size ? `<b>· ${on.size} on · ×${mult.toFixed(2)}</b>` : ""}</summary>
+      <p class="sub">Every one of these takes something away. Nothing here makes a draw
+         easier, so a challenge run is always worth more — and stacking them multiplies.</p>
+      <div class="chal-chips">${chips}</div>
+    </details>`;
+}
+
+function wireChallengePicker(){
+  panel.querySelectorAll("[data-chal]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const id = btn.dataset.chal;
+      const list = chosenChallenges();
+      const i = list.indexOf(id);
+      if(i >= 0) list.splice(i, 1); else list.push(id);
+      saveSS();
+      sfx("click");
+      // re-render just this block, so the multiplier in the summary keeps up
+      const box = $("chalBox");
+      const wasOpen = box ? box.open : true;
+      if(box){
+        box.outerHTML = challengePickerHTML();
+        const fresh = $("chalBox");
+        if(fresh) fresh.open = wasOpen;
+        wireChallengePicker();
+      }
+    };
+  });
 }
 
 /**
@@ -179,6 +239,10 @@ function equipmentPills(){
 }
 
 function startShift(mode){
+  /* The loadout goes live BEFORE the first patient is rolled: "Deep vein"
+     changes the arm the roll produces, and "Wrong hand" changes the bench it
+     is laid out on. The Bench is a rehearsal room and never carries them. */
+  armChallenges(mode === MODES.BENCH ? [] : chosenChallenges());
   setMode(mode);
   setShift({len:SHIFT_LEN[MODE]||1,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[]});
   nextPatient();
@@ -1049,7 +1113,18 @@ function renderScore(){
   c.bestsBeaten = bestsBeaten;
   c.bestsApplied = true;
 
+  /* --- what the challenges came to --------------------------------------
+     Scored here rather than inside rewards.js: the payout arithmetic is a
+     protected part of the clinical model and stays exactly as it was. A
+     challenge multiplies what that arithmetic produced, and only when the
+     draw actually satisfied it — a "One stick" run that took three is worth
+     the ordinary amount, not a penalty and not a bonus. */
+  const chal = c.challengeResult || scoreChallenges(armedChallengeIds(), c);
+  c.challengeResult = chal;
   if(!c.paidOut){
+    const m = chal.multiplier;
+    held.xp = Math.round(held.xp*m);
+    held.coins = Math.round(held.coins*m);
     addXP(held.xp); addCoins(held.coins);
     c.paidOut = true;
   }
@@ -1107,7 +1182,12 @@ function renderScore(){
           <span class="db-xp">+${held.xp} XP</span>
           <span class="db-coins">+${held.coins} 🪙</span>
           ${held.streakPeak >= 2 ? `<span class="db-streak">🔥 ${held.streakPeak} clean sections</span>` : ""}
+          ${chal.multiplier > 1 ? `<span class="db-chal-mult">×${chal.multiplier.toFixed(2)} challenge</span>` : ""}
         </div>
+        ${chal.met.length || chal.missed.length ? `<ul class="db-challenges">
+          ${chal.met.map(ch=>`<li class="met">⚡ <b>${ch.label}</b> — held</li>`).join("")}
+          ${chal.missed.map(ch=>`<li class="missed">⚡ <b>${ch.label}</b> — not this time</li>`).join("")}
+        </ul>` : ""}
         ${held.notes && held.notes.length ? `<ul class="db-notes">${held.notes.map(n=>`<li>${n}</li>`).join("")}</ul>` : ""}
         <button class="btn db-next" id="cont">${lastLabel ? (teaching ? "🎓 Finish lesson" : "🏁 Finish shift") : "▶ Next patient"}</button>
         <button class="btn ghost db-detail-toggle" id="dbDetails">Show the full breakdown</button>
@@ -1230,6 +1310,8 @@ function endShift(){
     if(avg>SS.bestRating)SS.bestRating=avg;
   }
   saveSS();
+  // the loadout does not outlive the shift it was chosen for
+  disarmChallenges();
   removePatient(getScene());
   go("summary");
 }

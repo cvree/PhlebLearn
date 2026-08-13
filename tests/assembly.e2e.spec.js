@@ -9,11 +9,18 @@
    next step opens.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { settleBench } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
   /THREE\.WebGLShadowMap: PCFSoftShadowMap has been deprecated/,
   /GL Driver Message/,
+  /* Properties of the MACHINE, not of the app: a sandboxed runner behind an
+     outbound proxy cannot fetch the optional web font or the lobby track, and
+     both are already guarded with a catch. Allowlisted here rather than in the
+     app so a real network failure in the app still fails a test. */
+  /ERR_TUNNEL_CONNECTION_FAILED/,
+  /Failed to load resource: the server responded with a status of 404/,
 ];
 
 function attachDiagnostics(page){
@@ -35,6 +42,7 @@ async function open(page, step, mode){
   await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1]), [step, mode||"teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.benchAnchors()), null, { timeout:10000 });
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.assemblySnapshot());

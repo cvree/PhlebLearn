@@ -14,6 +14,7 @@ import { LAST } from "../config.js";
 import { pick } from "../utils.js";
 import { SS, saveSS, guided, reveal } from "../game/gameState.js";
 import { difficultyLevel } from "../game/saveSystem.js";
+import { challengeSetup } from "../game/activeChallenges.js";
 import {
   vigourBonus, tubeVolumeScale, hasVeinFinder, canChooseProcedure, equipmentInEffect,
 } from "../game/progression.js";
@@ -173,7 +174,20 @@ import {
 
 const ZONE_BY_NAME = { tray:ZONE.TRAY, rack:ZONE.RACK, reach:ZONE.REACH, across:ZONE.ACROSS, counter:ZONE.COUNTER };
 
-function handednessOf(){ return SS.handedness===HAND.LEFT ? HAND.LEFT : HAND.RIGHT; }
+/**
+ * Which hand the learner works with — and therefore which way round the whole
+ * bench is laid out.
+ *
+ * The "Wrong hand" challenge mirrors it. That is not a cosmetic flip: every
+ * reach, every snap radius and every gesture the player has built muscle
+ * memory for arrives from the other side, which is exactly why it is worth
+ * a bonus and exactly why it never makes a draw easier.
+ */
+function handednessOf(){
+  const mine = SS.handedness===HAND.LEFT ? HAND.LEFT : HAND.RIGHT;
+  if(!challengeSetup().mirrorHandedness) return mine;
+  return mine===HAND.LEFT ? HAND.RIGHT : HAND.LEFT;
+}
 
 /**
  * Practice mode's "limited hint": a standing reminder of what this step is

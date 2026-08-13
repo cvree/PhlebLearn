@@ -161,3 +161,51 @@
 
 /* the mastery strip under the Bench button on the clock-in screen */
 .mastery-strip{ display:block; margin-top:3px; font-size:.78rem; opacity:.7; letter-spacing:.01em; }
+
+/* =========================================================================
+   THE CHALLENGE PICKER
+
+   Sits under the four mode buttons on the clock-in screen, folded away until
+   something is on. Chips rather than checkboxes: a loadout is a thing you
+   assemble at a glance, and the multiplier has to be readable while you do
+   it — that number is the whole reason to take one.
+   ========================================================================= */
+.challenges{
+  margin-top:12px; padding:8px 10px;
+  border-radius:12px;
+  background:var(--sunk, rgba(0,0,0,.05));
+}
+.challenges > summary{
+  cursor:pointer; font-weight:700; font-size:.9rem;
+  list-style:none; user-select:none;
+}
+.challenges > summary::-webkit-details-marker{ display:none; }
+.challenges > summary::before{ content:"▸ "; opacity:.5; }
+.challenges[open] > summary::before{ content:"▾ "; }
+.challenges .sub{ margin:6px 0 8px; font-size:.78rem; }
+
+.chal-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.chal-chip{
+  font:inherit; font-size:.8rem; font-weight:600;
+  padding:6px 10px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--rule, rgba(0,0,0,.14));
+  background:var(--card, rgba(255,255,255,.7));
+  color:inherit;
+  transition:background .12s ease, color .12s ease, border-color .12s ease;
+}
+.chal-chip:hover{ filter:brightness(1.06); }
+.chal-chip.on{
+  background:var(--accent, #6c4ad6); color:#fff; border-color:transparent;
+}
+/* The price of admission, always visible on the chip rather than in a
+   tooltip: choosing a challenge is a trade and both halves belong together. */
+.chal-mult{ opacity:.62; font-weight:700; margin-left:3px; }
+.chal-chip.on .chal-mult{ opacity:.85; }
+
+/* --- and what they came to, in act four of the debrief ------------------ */
+.db-chal-mult{
+  font-weight:800; color:var(--accent, #6c4ad6);
+}
+.db-challenges{ list-style:none; margin:8px 0 0; padding:0; font-size:.86rem; }
+.db-challenges li{ margin:2px 0; }
+.db-challenges li.missed{ opacity:.5; }

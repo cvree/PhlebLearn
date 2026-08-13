@@ -383,6 +383,81 @@ export function vacuumVoice(){
   };
 }
 
+/* ---------- pressure -------------------------------------------------------- */
+
+/**
+ * Leaning on a gauze pad, held.
+ *
+ * The last thing you do to a patient is the one act in this game that is a
+ * FORCE rather than a movement, and a screen cannot push back. What it can do
+ * is tell you, continuously, that you are pushing — so this is deliberately
+ * not a sound effect but a load: a low body that thickens under the hand, with
+ * the patient's own pulse thudding through the pad on top of it.
+ *
+ * `inBand` is the readout that matters. Too light and the voice is thin and
+ * unresolved; in the therapeutic band it fills out and sits still; too hard
+ * and a rasp comes up over it, which is the patient's discomfort arriving
+ * before their face shows it. A learner should be able to find the right
+ * pressure with their eyes shut.
+ */
+export function pressureVoice(){
+  if(!enabled() || !ctx()) return Object.assign(silentVoice(), { pulse(){} });
+  const a = ctx();
+  // the body of the tissue under the pad
+  const osc = a.createOscillator();
+  osc.type = "triangle";
+  osc.frequency.value = 58;
+  const bodyGain = gain(0.0001, frontBus);
+  osc.connect(bodyGain); osc.start();
+  // gauze fibres under a thumb: broadband, and only present when leaned on
+  const src = noiseSource(true);
+  const lp = filt("lowpass", 500, 0.8);
+  const weaveGain = gain(0.0001, frontBus);
+  src.connect(lp); lp.connect(weaveGain); src.start();
+  // and the rasp that means too hard
+  const rasp = filt("bandpass", 1700, 2.2);
+  const raspGain = gain(0.0001, frontBus);
+  src.connect(rasp); rasp.connect(raspGain);
+
+  let dead = false;
+  return {
+    /**
+     * @param {object} o
+     *   force   0..1 how hard the pad is being pressed
+     *   inBand  0..1 how close that is to the therapeutic pressure
+     *   over    0..1 how far past comfortable it has gone
+     */
+    set(o){
+      if(dead) return;
+      const t = a.currentTime;
+      const f = Math.max(0, Math.min(1, o.force || 0));
+      const band = Math.max(0, Math.min(1, o.inBand || 0));
+      const over = Math.max(0, Math.min(1, o.over || 0));
+      // pitch RISES with load, the way a loaded structure does
+      osc.frequency.setTargetAtTime(52 + f*30, t, 0.10);
+      // but it only fills out once the pressure is doing something
+      bodyGain.gain.setTargetAtTime(0.0002 + f*(0.020 + band*0.050), t, 0.08);
+      lp.frequency.setTargetAtTime(380 + f*520, t, 0.10);
+      weaveGain.gain.setTargetAtTime(0.0002 + f*0.016, t, 0.08);
+      raspGain.gain.setTargetAtTime(0.0002 + over*0.045, t, 0.08);
+    },
+    /** One heartbeat felt through the pad. Called in time with the pulse. */
+    pulse(strength){
+      if(dead) return;
+      tone({ freq: 54, to: 34, wave: "sine", peak: 0.05 + 0.10*(strength || 0), dur: 0.20, attack: 0.010 });
+    },
+    stop(){
+      if(dead) return; dead = true;
+      const t = a.currentTime;
+      bodyGain.gain.setTargetAtTime(0.0001, t, 0.06);
+      weaveGain.gain.setTargetAtTime(0.0001, t, 0.06);
+      raspGain.gain.setTargetAtTime(0.0001, t, 0.06);
+      try{ osc.stop(t + 0.4); }catch(_){}
+      try{ src.stop(t + 0.4); }catch(_){}
+    },
+  };
+}
+
 /* ---------- sharps ---------------------------------------------------------- */
 
 /** The safety device: a hard, definitive plastic clack. Unmistakable. */

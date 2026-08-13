@@ -4,6 +4,7 @@
 import { UPGRADES, ROOM_LEVELS, UPGRADE_TAG, STICKERS, STICKER_MILESTONES, STICKER_COINS } from "../config.js";
 import { SS, saveSS } from "./gameState.js";
 import { addCoins } from "./saveSystem.js";
+import { challengeSetup } from "./activeChallenges.js";
 
 export function normalizeUpgrades(){
   if(!Array.isArray(SS.ownedUpgrades)) SS.ownedUpgrades=[];
@@ -11,6 +12,9 @@ export function normalizeUpgrades(){
 }
 export function hasUpgrade(id){
   if(id==="stickerbook") return true;
+  // "No transilluminator" leaves an owned vein finder in the drawer for the
+  // shift. It can only ever remove kit — a challenge never lends you any.
+  if(id==="veinFinder" && challengeSetup().veinFinder === false) return false;
   normalizeUpgrades();
   return SS.ownedUpgrades.includes(id);
 }

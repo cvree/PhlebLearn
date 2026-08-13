@@ -37,10 +37,10 @@ export const FRAMINGS = {
     ],
   },
 
-  /* Cleaning and assembly. The site stays in shot while the tray comes into
-     the bottom of the frame, because assembling a needle during the alcohol's
-     thirty-second dry is correct technique and the game should let you watch
-     both at once. */
+  /* Assembly, and the alcohol's thirty-second dry. The site stays in shot
+     while the tray comes into the bottom of the frame, because assembling a
+     needle during that dry is correct technique and the game should let you
+     watch both at once. */
   prep: {
     look: [-0.022, ARM_Y, 0.040],
     frame: [
@@ -110,6 +110,40 @@ export const FRAMINGS = {
 };
 
 export const DEFAULT_FRAMING = FRAMINGS.access;
+
+/**
+ * The scrub, framed on the field the learner is actually working — which is
+ * 5 cm across and sits wherever they marked the vein, so unlike every framing
+ * above it cannot be a constant.
+ *
+ * WHY THIS EXISTS. Cleaning shared `prep` at first, and `prep` has to hold the
+ * patient's face, so the prep field came out about 85 screen pixels across. A
+ * five-turn spiral over 85 pixels advances less than a pixel per sample: the
+ * grader could not tell outward from inward, and neither could the hand. The
+ * work is millimetre work and the camera has to admit it.
+ *
+ * The concession is the same one `stick` makes and it is made for the same
+ * reason — a face and a 5 cm patch of skin do not share a frame. It lasts only
+ * as long as the pad is on the arm: cleaningRuntime eases back out to `prep`
+ * the moment the scrubbing stops, which is exactly when the thirty-second dry
+ * begins and there is something else to look at again.
+ *
+ * @param {{x:number, z:number}} site  the puncture point, limb-local metres
+ */
+export function scrubFraming(site){
+  const x = (site && site.x) || 0;
+  const z = (site && site.z) || 0;
+  return {
+    look: [x, ARM_Y + 0.006, z + 0.010],
+    frame: [
+      /* A field's width of skin either side of it, so "start here and work
+         out" has somewhere to work out TO that is still on screen. */
+      [x - 0.072, ARM_Y, z], [x + 0.072, ARM_Y, z],
+      [x, ARM_Y, z + 0.062], [x, ARM_Y, z - 0.044],
+      [x, ARM_Y + 0.040, z],
+    ],
+  };
+}
 
 /** Which framing a bench mode belongs in. One place, so no mode guesses. */
 export const FRAMING_FOR_MODE = {

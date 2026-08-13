@@ -34,6 +34,7 @@
                  monitor — exactly backwards.
    ========================================================================= */
 import { SS } from "../game/gameState.js";
+import { challengeSetup } from "../game/activeChallenges.js";
 
 /** The reference viewport the base radii below were tuned against. */
 const REF_MIN_EDGE = 720;
@@ -46,6 +47,10 @@ const REF_MIN_EDGE = 720;
  * full assist is honestly labelled rather than silently equivalent.
  */
 export function assistLevel(){
+  // A "No magnetism" challenge overrides the preference for that shift, and
+  // only ever downward — challenges.js guarantees nothing here can raise it.
+  const forced = challengeSetup().assist;
+  if(typeof forced === "number") return Math.max(0, Math.min(1, forced));
   if(typeof SS.assist === "number") return Math.max(0, Math.min(1, SS.assist));
   // migrate the old boolean: it meant "a bit more help", not "all of it"
   return SS.assistedSnapping ? 0.75 : 0.45;

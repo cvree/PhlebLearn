@@ -26,6 +26,12 @@ const ALLOWLISTED_WARNINGS = [
   // is built to run without them. On a machine with no outbound network those
   // requests fail and the app carries on, which is the designed behaviour.
   /Failed to load resource/,
+  /* Properties of the MACHINE, not of the app: a sandboxed runner behind an
+     outbound proxy cannot fetch the optional web font or the lobby track, and
+     both are already guarded with a catch. Allowlisted here rather than in the
+     app so a real network failure in the app still fails a test. */
+  /ERR_TUNNEL_CONNECTION_FAILED/,
+  /Failed to load resource: the server responded with a status of 404/,
 ];
 
 // These walk a whole encounter — the draw, the labelling and the patient's

@@ -199,6 +199,12 @@ export function closeBench(){
 
 /** Diagnostics for the test seam: how many times has a scene been built? */
 export function benchStats(){
-  return bench ? { open: true, key: bench.key, mode: bench.mode, leases: bench.leases.size, props: [...bench.props.keys()] }
-               : { open: false, key: null, mode: null, leases: 0, props: [] };
+  return bench
+    ? {
+        open: true, key: bench.key, mode: bench.mode,
+        leases: bench.leases.size, props: [...bench.props.keys()],
+        /** has the camera finished easing? see armScene's cameraSettled */
+        settled: !!bench.view.cameraSettled,
+      }
+    : { open: false, key: null, mode: null, leases: 0, props: [], settled: false };
 }

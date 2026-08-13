@@ -24,8 +24,8 @@
    decides correctness itself.
    ========================================================================= */
 import * as THREE from "three";
-import { skinTick, tubeChink, wince, breath } from "../../audio/procedural.js";
-import { tapHaptic, seatHaptic, winceHaptic } from "../../bench/haptics.js";
+import { skinTick, tubeChink, wince, breath, exhale, pressureVoice } from "../../audio/procedural.js";
+import { tapHaptic, seatHaptic, winceHaptic, contactHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { HAND_X, WRIST_X } from "../arm/armAnatomy.js";
 import { ARM_Y } from "../arm/armMesh.js";
@@ -105,8 +105,16 @@ export async function startPostDraw(opts){
     active: true,
     frame: 0,
     lastAspect: 0,
+    /* The hold, as something felt. See holdFeel() below. */
+    voice: null,
+    beatPhase: 0,
+    throb: 0,
+    winced: false,
+    /** latched, so the clot holding announces itself exactly once */
+    haemostasis: (state.clotProgress || 0) >= 1,
   };
 
+  if(view.body) view.body.setWatching(true);
   view.setSiteVisible(false);
   syncObjects();
   notify();
@@ -115,6 +123,7 @@ export async function startPostDraw(opts){
 
 export function stopPostDraw(){
   if(!ctx) return;
+  if(ctx.voice){ ctx.voice.stop(); ctx.voice = null; }
   ctx.view.dispose();
   ctx = null;
 }
@@ -205,8 +214,10 @@ function syncObjects(){
 
   const top = skinTop(ctx.padX, ctx.siteZ);
   // the pad sinks INTO the tissue as it is pressed — the visible consequence
-  // of the force, so the learner can see how hard they are leaning on it
-  const sink = 0.0075*s.force;
+  // of the force, so the learner can see how hard they are leaning on it — and
+  // lifts a little on each heartbeat, because a pad on an occluded vessel
+  // genuinely moves
+  const sink = 0.0075*s.force - 0.0011*ctx.throb*s.force;
   ctx.gauze.group.position.set(top.x, top.y + 0.004 + flexOffsetY() - sink, top.z);
   ctx.gauze.group.visible = !ctx.padLifted;
   // soaks through in proportion to what has actually leaked
@@ -231,6 +242,85 @@ function syncObjects(){
   }else{
     ctx.bandage.group.position.set(BANDAGE_SPOT.x, BENCH_Y + 0.0022, BANDAGE_SPOT.z);
     ctx.bandage.group.visible = true;
+  }
+}
+
+/* ---------- the hold, as something FELT ------------------------------------------------
+   Thirty seconds of holding still is the least promising interaction in the
+   whole procedure, and it is also the last thing that happens to the patient —
+   so if it reads as a wait, the encounter ends on a wait.
+
+   Nothing here judges anything. It reports, continuously and on four channels
+   at once, what the state already knows: how hard, whether that is enough, and
+   whether it has gone past comfortable. Between them a learner can find the
+   therapeutic band without looking at a readout, which is the point — on a
+   real arm there is no readout.
+
+     sound    a load that thickens in the band and rasps past it
+     touch    the patient's own pulse, thudding through the pad
+     the pad  sinks, and throbs on each beat
+     the face tightens over the band, and lets go when the clot holds
+*/
+
+/**
+ * Beats per second. The same rate armMesh pulses the brachial artery at
+ * (`sin(clock*7.6)`, so 7.6/2π ≈ 1.21 Hz ≈ 73 bpm) and the same rate palpation
+ * finds under the fingers — one patient, one heart.
+ */
+const PULSE_HZ = 7.6/(Math.PI*2);
+
+/** How the current force sits against the band this site actually wants. */
+function forceReading(){
+  const band = forceBandFor(ctx.state.siteKind);
+  const f = ctx.state.force;
+  const inBand = f < band.min ? 0
+    : f <= band.discomfort ? 1 - Math.min(1, Math.abs(f - band.ideal)/Math.max(0.01, band.discomfort - band.ideal))
+    : 0;
+  const over = f <= band.discomfort ? 0 : Math.min(1, (f - band.discomfort)/0.12);
+  return { force: f, inBand, over };
+}
+
+/** Drives every feel channel from the state. Called every frame, pressing or not. */
+function holdFeel(dt){
+  const s = ctx.state;
+  const pressing = ctx.down && ctx.drag && ctx.drag.kind === "press" && s.force > 0.02;
+  const r = forceReading();
+
+  if(pressing && !ctx.voice) ctx.voice = pressureVoice();
+  if(!pressing && ctx.voice){ ctx.voice.stop(); ctx.voice = null; ctx.winced = false; }
+  if(ctx.voice) ctx.voice.set(r);
+
+  // The pulse. Felt harder the harder the pad is pressed, because that is what
+  // occluding an artery's worth of tissue against your own thumb is like.
+  ctx.throb = Math.max(0, ctx.throb - dt*4.5);
+  if(pressing){
+    ctx.beatPhase += dt*PULSE_HZ;
+    if(ctx.beatPhase >= 1){
+      ctx.beatPhase -= 1;
+      ctx.throb = 1;
+      if(ctx.voice) ctx.voice.pulse(r.force);
+      contactHaptic();
+    }
+  }else{
+    ctx.beatPhase = 0;
+  }
+
+  if(!ctx.view.body) return;
+  if(pressing){
+    // Leaning too hard shows on their face BEFORE it costs anything, so the
+    // learner can back off — a punishment they never saw coming teaches
+    // nothing.
+    ctx.view.body.setTension(Math.min(1, 0.18 + r.over*0.82));
+    if(r.over > 0.55 && !ctx.winced){
+      ctx.winced = true;
+      ctx.view.body.flinch(0.30);
+      wince(); winceHaptic();
+    }
+    if(r.over < 0.30) ctx.winced = false;
+  }else if(s.clotProgress >= 1){
+    ctx.view.body.setTension(0);
+  }else{
+    ctx.view.body.setTension(0.12);
   }
 }
 
@@ -513,6 +603,19 @@ export function renderPostDraw(renderer, dt){
     }
   }
 
+  /* The clot holding is the moment this step is FOR, and it used to arrive as
+     a number quietly reaching 1. It gets the same treatment as the flashback
+     does: the patient lets go of a breath, the pad settles, and the hand can
+     come off. Fired once, from the crossing rather than from a check. */
+  if(!ctx.haemostasis && s.clotProgress >= 1){
+    ctx.haemostasis = true;
+    exhale();
+    seatHaptic();
+    if(ctx.view.body){ ctx.view.body.relieve(); ctx.view.body.setTension(0); }
+    ctx.view.kickCamera(0.0009, 0.2, -1);
+  }
+
+  holdFeel(dt || 0.016);
   ctx.view.tick(dt || 0.016);
   renderer.render(ctx.view.scene, ctx.view.camera);
   return true;

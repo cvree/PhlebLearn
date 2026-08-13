@@ -3,6 +3,7 @@ import { TUBES, TESTS, TEST_NAMES, EVENTS, REQ_ISSUES, DRAW_EVENTS, SKIN_TONES, 
   HAIR_BOLD, HAIR_SENIOR, HAIR_STYLES, FABRIC, SHIRTS, MOODS, FIRST, LAST } from "../config.js";
 import { pad, randInt, pick, shuffle } from "../utils.js";
 import { pickArchetype, applyArchetype } from "./archetypes.js";
+import { challengeSetup } from "./activeChallenges.js";
 import { difficultyLevel } from "./saveSystem.js";
 
 export function makeAppearance(ageCat){
@@ -231,6 +232,16 @@ export function makePatient(){
      See game/archetypes.js. */
   applyArchetype(p, pickArchetype(dl, lastArchetype));
   lastArchetype = p.archetype;
+
+  /* And last, the challenges the player opted into. Applied AFTER the
+     archetype so a "Deep vein" run is deep whichever patient turned up, and
+     folded into the same site.keys the archetype writes so nothing downstream
+     needs to know a challenge exists. */
+  const extra = challengeSetup().extraKeys;
+  if(extra && extra.length){
+    p.site = p.site || { keys: [], label: "Challenge" };
+    p.site.keys = [...new Set([...(p.site.keys || []), ...extra])];
+  }
   return p;
 }
 

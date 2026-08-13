@@ -220,6 +220,30 @@ cutting between steps. Handedness is a Z mirror on the scene root and nothing
 downstream knows about it — see `tests/handedness.spec.js` for why solving the
 2×2 rather than assuming its sign is what makes that safe.
 
+Two consequences of an easing camera that took real debugging to find, both
+now load-bearing:
+
+- **A screen point projected mid-ease is a point the object has left by the
+  time the pointer gets there.** `view.cameraSettled` answers "have you
+  finished moving?" and `tests/benchHelpers.js` waits on it. Nothing in the
+  game reads it; it exists so an acceptance test can wait on the move rather
+  than on a clock.
+- **A camera that eases under a hand that is already down drags that hand
+  across the skin,** because the skin point under the pointer is re-solved
+  against the live camera every frame. Any framing change has to be finished
+  before a gesture starts and must not restart between strokes — see the
+  two-framing rule in `cleaning/cleaningRuntime.js`.
+
+Framings are a point SET, not a bounding box, so a framing can say something
+meaningful ("keep the hand in shot, because a band that is too tight announces
+itself as a pale hand"). Two of them deliberately drop the patient's face:
+`stick`, because a 4 mm vein and a face do not share a frame, and `scrub`,
+because the prep field is 5 cm across and at `prep`'s distance it came out
+85 pixels wide — a five-turn spiral over 85 pixels advances less than a pixel
+per sample, and neither the grader nor the hand could tell outward from
+inward. Both push-ins ease straight back out the moment the millimetre work
+is over.
+
 ## When the learner is paid — and when they are told
 
 `game/rewards.js` is unchanged: every step ticks, every finished section pays
@@ -236,6 +260,43 @@ lands — with "Next patient" as the largest control on the screen.
 star costs three CONSECUTIVE draws at its threshold, and a bad draw resets the
 run. `tests/mastery.spec.js` spends fifty mediocre draws proving that grinding
 buys nothing.
+
+## Technique challenges: the replay axis
+
+`game/challenges.js` is pure data plus one pure evaluator. A challenge is an
+opt-in per-draw modifier that changes what "doing it well" means, so the same
+clinical model produces a different game. Two invariants make the bonus
+honest, and `tests/challenges.spec.js` asserts both directly:
+
+1. **A challenge never makes a draw easier.** Every entry removes help or
+   narrows a window. Assist may only go down; the vein finder may only be
+   taken away; scenario keys only make an arm harder. A modifier that widened
+   something would turn the system into a cheat menu with a multiplier on it.
+2. **A challenge is checked against measurements the draw already produces.**
+   A challenge that needed a new number would be a new mechanic wearing a
+   modifier's clothes, and the two would drift apart.
+
+`game/activeChallenges.js` is the one mutable cell saying which of them is
+live. The five systems a challenge can re-aim each read that one place:
+
+| system | reads it in | what changes |
+| --- | --- | --- |
+| assistance | `bench/assist.js` | `assistLevel()` floors at the forced value |
+| the coach | `game/gameState.js` | `reveal()` closes the telling channels |
+| the kit | `game/progression.js` | `hasUpgrade("veinFinder")` returns false |
+| the patient roll | `game/encounter.js` | extra keys fold into `site.keys` |
+| handedness | `venipuncture/physicalSteps.js` | the whole bench mirrors |
+
+Armed in `startShift()` **before** the first patient is rolled — "Deep vein"
+changes the arm the roll produces — and disarmed in `endShift()`, so a
+challenge can never leak into a draw nobody opted into. The Bench never
+carries them: it is a rehearsal room, not a run.
+
+The multiplier is applied at the debrief's payout, not inside `rewards.js`.
+The payout arithmetic is part of the protected clinical model and is untouched;
+a challenge multiplies what that arithmetic produced, and only when the draw
+actually satisfied it. A missed challenge costs nothing — it simply does not
+pay.
 
 ## Two layers that belong to the DRAW, not to any step
 

@@ -17,6 +17,7 @@ import { scrubVoice, wince, tubeChink } from "../../audio/procedural.js";
 import { tapHaptic, winceHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
+import { scrubFraming } from "../arm/benchFramings.js";
 import {
   FIELD_RADIUS, GRID, evaluateCleaning, cellFor, secondsDrying,
 } from "./cleaningRules.js";
@@ -53,6 +54,11 @@ export async function startCleaning(opts){
     active: true,
     frame: 0,
     lastAspect: 0,
+    /** which of the two framings is live — see renderCleaning */
+    beat: null,
+    liftedAt: 0,
+    /** the pointer touched the state; the decal and the coach owe a frame */
+    dirty: false,
   };
 
   if(o.tourniquet) applyBandToArm(o.tourniquet);
@@ -285,8 +291,14 @@ export function cleaningPointerMove(e, canvasEl){
   }
 
   ctx.last = { x: s.x, theta: s.theta, z };
-  redrawDecal();
-  notify();
+  /* Repainting the decal and re-rendering the coach are FRAME work, not
+     POINTER work. A fast scrub delivers pointer samples faster than the
+     display can show them, and doing a 128×128 canvas redraw, a texture
+     upload and a panel re-render on each one meant the swab lagged the hand
+     on exactly the gesture where lag is most obvious. Marked dirty here and
+     done once in renderCleaning; the state itself is already up to date, so
+     nothing that reads the rules sees anything stale. */
+  ctx.dirty = true;
   return true;
 }
 
@@ -294,6 +306,9 @@ export function cleaningPointerUp(e, canvasEl){
   if(!isCleaningActive()) return false;
   try{ canvasEl.releasePointerCapture(e.pointerId); }catch(_){}
   ctx.down = false;
+  // the hand coming off is a decision, so it lands immediately
+  ctx.dirty = false;
+  redrawDecal();
   notify();
   return true;
 }
@@ -317,9 +332,33 @@ export function renderCleaning(renderer, dt){
   if(!ctx) return false;
   const aspect = viewportAspect(renderer);
   ctx.frame++;
-  if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){
-    ctx.view.fitCamera(aspect, measureObstruction(renderer));
+  /* Two framings. Scrubbing is millimetre work and gets pushed right in (see
+     scrubFraming); once the pad is off and staying off, the camera eases back
+     out to `prep`, where the patient and the tray are — which is the beat
+     where the needle gets assembled during the alcohol's dry. armScene never
+     cuts, so this reads as the operator leaning in and sitting up again.
+
+     The push-in is live from the FIRST frame rather than triggered by the hand
+     going down, and it is held for a moment between strokes. The skin position
+     under the pointer is solved against the live camera, so a camera easing
+     while a hand is on the arm would drag the pad across the skin on its own:
+     the move has to be finished before any scrubbing starts, and must not
+     start again between one stroke and the next. */
+  if(ctx.down) ctx.liftedAt = 0;
+  else if(!ctx.liftedAt) ctx.liftedAt = ctx.frame;
+  const settling = ctx.liftedAt && (ctx.frame - ctx.liftedAt) < 45;
+  const want = (ctx.down || settling || !ctx.state.strokes) ? "scrub" : "prep";
+  if(want !== ctx.beat || Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){
+    ctx.beat = want;
+    ctx.view.fitCamera(aspect, measureObstruction(renderer),
+      want === "scrub" ? scrubFraming(ctx.site) : "prep");
     ctx.lastAspect = aspect;
+  }
+  // everything the pointer marked dirty since the last frame, once
+  if(ctx.dirty){
+    ctx.dirty = false;
+    redrawDecal();
+    notify();
   }
   updateWetness();
   if(ctx.scrub && !ctx.down) ctx.scrub.set({ speed: 0, pressure: 0, wet: 0 });

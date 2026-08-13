@@ -19,6 +19,12 @@ const ALLOWLISTED_WARNINGS = [
   // makes those loads fail, and the app carrying on without them is the
   // designed behaviour rather than a defect.
   /Failed to load resource/,
+  /* Properties of the MACHINE, not of the app: a sandboxed runner behind an
+     outbound proxy cannot fetch the optional web font or the lobby track, and
+     both are already guarded with a catch. Allowlisted here rather than in the
+     app so a real network failure in the app still fails a test. */
+  /ERR_TUNNEL_CONNECTION_FAILED/,
+  /Failed to load resource: the server responded with a status of 404/,
 ];
 
 function attachDiagnostics(page){

@@ -26,6 +26,41 @@ WebGL context, and two headless Chromium instances competing for the same
 software renderer make screenshots and bounding-box reads fail intermittently —
 a GPU-contention artifact, not app behaviour.
 
+**The per-test timeout is 90 seconds, and that is about the runner, not the
+app.** A machine with no GPU falls back to a software rasteriser that draws the
+bench scene at about **3 frames a second** — measured, and identical before and
+after the redesign, so it is a property of the machine. A gesture made of forty
+pointer samples is genuinely slow there.
+
+Two consequences worth knowing when writing a browser test:
+
+- **Never wait on the wall clock for something the SCENE accumulates.** The
+  render delta is clamped per frame so a stalled tab cannot make the simulation
+  jump, which means at 3 fps the scene runs at a fraction of real time. Wait for
+  the QUANTITY instead — `tests/palpation.e2e.spec.js`'s `pressOverUntil()` is
+  the pattern.
+- **Read the sample that met the condition, not a fresh one afterwards.** The
+  poll and the read are separate round trips, and at these frame rates they are
+  far apart.
+
+Anything genuinely time-based in the game — the tourniquet's seconds, the
+alcohol's drying, palpation's dwell — is on the wall clock for exactly this
+reason, and a frame-rate-dependent one would be a bug.
+
+## The redesign's own acceptance tests
+
+Five files exist specifically to hold the redesign's structural claims, because
+each of them is a regression that would be invisible in a screenshot:
+
+| File | The claim it holds |
+|---|---|
+| `tests/bench.spec.js` | One encounter builds ONE scene. Asserts the lease protocol against a stub scene graph — a mode releasing its lease rather than disposing the bench, and a bench prop outliving the mode that made it. Needs `--experimental-test-module-mocks`, which `npm test` passes. |
+| `tests/bench.e2e.spec.js` | The same claim in a real browser, plus: the band is still on the arm five modes later, no score of any kind appears between the patient sitting down and the debrief, the strap can be grabbed anywhere along its length, and one stroke wraps it. |
+| `tests/handedness.spec.js` | A mirror inverts the determinant, and SOLVING the 2×2 recovers the same angle where ASSUMING its sign would silently invert the wrap for every left-handed learner. It demonstrates the wrong version failing, so the test cannot pass vacuously. |
+| `tests/mastery.spec.js` | Mastery cannot be ground. Spends fifty mediocre draws proving they buy nothing, and asserts that a bad draw RESETS a run rather than merely failing to advance it. |
+| `tests/archetypes.spec.js` | Every patient archetype changes something the physical simulation reads, rather than being a costume. |
+| `tests/debrief.spec.js` | Act one of the debrief contains no digits, and every technique reading carries a real unit. |
+
 ## Unit tests (`tests/procedure.spec.js`)
 
 Runs directly against `src/venipuncture/clinicalRules.js` and
