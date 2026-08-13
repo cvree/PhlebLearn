@@ -13,9 +13,13 @@ layers listed **below** it:
 ```
 config.js, utils.js, dom.js, fx.js   (leaves — zero internal imports)
         │
-game/  (gameState, saveSystem, progression, encounter, scoring, dialogue)
+game/  (gameState, saveSystem, progression, encounter, scoring, dialogue,
+        archetypes, mastery, personalBests, challenges, debrief)
         │
-audio/  (audioManager — depends only on game/gameState)
+audio/  (audioManager, procedural — depend only on game/gameState)
+        │
+bench/  (benchSession, assist, motion, haptics — the feel layer; depends on
+        game/ + rendering/ + venipuncture/arm only)
         │
 rendering/  (scene, renderer, lighting, camera, materials, assetLoader, modelRegistry)
         │
@@ -164,6 +168,74 @@ and rack rectangles together, clamped to the counter and pushed clear of the
 patient's arm. Items are not children of the tray mesh (their world positions
 stay authoritative), so a tray drag moves the group and every staged item, and
 the drop commits one offset to the layout, the state, and each item's position.
+
+## The bench: one scene for the whole encounter
+
+`bench/benchSession.js` is the keystone of the redesign. Nine runtimes used to
+call `buildArmScene()` on entry and `view.dispose()` on exit, so the patient's
+arm was destroyed and rebuilt between every step — which is why the game felt
+like a checklist: architecturally it was one.
+
+There is now **one scene per encounter**. Steps became MODES that lease it:
+
+```js
+const view = leaseBenchView({ mode: "tourniquet", arm });
+...
+view.dispose();     // releases the LEASE, not the bench
+```
+
+A lease owns its own `root` group, so anything a mode adds is cleaned up when
+that mode ends and nothing else is. Anything that must **outlive** the mode
+that created it registers as a bench prop instead:
+
+```js
+const strap = view.benchProp("strap", () => buildStrap(...));
+```
+
+which is built at most once per encounter and handed back to every later mode
+that asks. That single mechanism is what makes the band you tied stay tied: it
+is the same object, still on the same arm, in the state the last mode left it
+in. `ui/panels.js`'s `nextPatient()` is the only caller of `closeBench()`.
+
+`tests/bench.spec.js` asserts the lease protocol against a stub scene;
+`tests/bench.e2e.spec.js` asserts it in a real browser, walking one encounter
+through five modes and checking the scene is never rebuilt.
+
+## The feel layer
+
+Four modules, all of which exist because the redesign treats game feel as a
+feature rather than as polish:
+
+| Module | Responsibility |
+|---|---|
+| `bench/assist.js` | ONE magnetism layer every interaction routes through. Screen-space radii (the old ones were in metres, so assistance was quietly weaker on a phone), predictive targeting from pointer velocity, sticky engagement, graduated pull. Its rule: *magnetism helps you hit what you meant; it never decides what you meant.* |
+| `bench/motion.js` | Authored motion and weight. There is **no dynamic rigid-body simulation anywhere in this game and there must never be one** — pick up, carry, release, settle and bounce are all authored curves, so tunnelling, jitter, drift and unreachable props are structurally impossible rather than tuned against. |
+| `audio/procedural.js` | Diegetic sound, synthesised. Continuous parametric voices (the palpation "give", the tourniquet's elastic, the vacuum's decay, the scrub) that are fed by what the simulation already knows, so the sound and the model cannot drift apart. Two buses: `room` ducks, `front` never does. |
+| `bench/haptics.js` | Short structured `navigator.vibrate` patterns, respecting reduced motion. |
+
+The camera lives in `venipuncture/arm/armScene.js` and its beat framings in
+`venipuncture/arm/benchFramings.js`. `fitCamera()` no longer moves the camera:
+it sets a target and `tick()` eases toward it, which is what lets the game stop
+cutting between steps. Handedness is a Z mirror on the scene root and nothing
+downstream knows about it — see `tests/handedness.spec.js` for why solving the
+2×2 rather than assuming its sign is what makes that safe.
+
+## When the learner is paid — and when they are told
+
+`game/rewards.js` is unchanged: every step ticks, every finished section pays
+according to its own 0–100 measurement, a streak of clean sections multiplies
+the section bonus. What changed is **when it is shown**.
+
+Nothing at all is shown during the draw. `rewardStep()` accrues into
+`c.held`; the end-of-draw lump sum joins it; even the top bar shows `—` instead
+of XP and coins. It is all released in `game/debrief.js`'s four acts — the
+patient leaves, the lab speaks, the numbers arrive in real units, the payout
+lands — with "Next patient" as the largest control on the screen.
+
+`game/mastery.js` is the parallel axis that measures skill rather than time: a
+star costs three CONSECUTIVE draws at its threshold, and a bad draw resets the
+run. `tests/mastery.spec.js` spends fifty mediocre draws proving that grinding
+buys nothing.
 
 ## Two layers that belong to the DRAW, not to any step
 

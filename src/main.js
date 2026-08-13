@@ -376,6 +376,29 @@ function installTestSeam(){
       return true;
     },
     /**
+     * Moves to another step WITHIN the current encounter.
+     *
+     * Distinct from gotoProcedureStep, which rolls a fresh patient — and that
+     * difference is the whole point here. The acceptance criterion the brief
+     * cares about is that one ENCOUNTER builds one bench, so a test of it has
+     * to be able to walk the steps without replacing the patient underneath
+     * itself, which would rebuild the bench for a perfectly correct reason and
+     * look exactly like the bug.
+     */
+    async jumpToStep(stepId){
+      const { ENC } = await import("./game/gameState.js");
+      const { go } = await import("./ui/panels.js");
+      const c = ENC && ENC.collect;
+      if(!c) return false;
+      const idx = c.steps.indexOf(stepId);
+      if(idx < 0) return false;
+      // let the current mode tear its own lease down first
+      if(ENC._collectCleanup){ try{ ENC._collectCleanup(); }catch(_){} ENC._collectCleanup = null; }
+      c.step = idx;
+      go("collect");
+      return true;
+    },
+    /**
      * Pins the patient's clinical history. The history is rolled at random
      * per patient, which is right for play and wrong for a test that has to
      * assert what an allergy does — this is the same reason the seam already
@@ -540,6 +563,18 @@ function installTestSeam(){
       const r = document.querySelector("canvas").getBoundingClientRect();
       return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height };
     },
+    /**
+     * Applies a band with a chosen route, for exercising the rules that the
+     * redesigned GESTURE can no longer produce. A stroke across the arm always
+     * threads the band now — the seated camera cannot see height above the
+     * limb, so it cannot honestly tell a drape from a thread — but
+     * `wrappedOver` is still a real clinical error, still blocks, and is still
+     * reachable from the accessible controls. This is that path.
+     */
+    async applyBandOver(){
+      const rt = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      return !!rt.applyBandProgrammatically({ bandX: 0.089, wrap: "over", skew: 0, tension: 0.55 });
+    },
     /** The tourniquet's state and the arm's response, as the rules see them. */
     async tourniquetSnapshot(){
       const { ENC } = await import("./game/gameState.js");
@@ -561,6 +596,7 @@ function installTestSeam(){
         blocking: r.blocking.map(i=>i.code),
         issues: r.issues.map(i=>i.code),
         armDistension: ctx ? ctx.view.arm.distension : null,
+        gesture: ctx ? (await import("./venipuncture/tourniquet/tourniquetRuntime.js")).currentGesture() : null,
       };
     },
     /**
@@ -639,6 +675,19 @@ function installTestSeam(){
       const rect = canvas.getBoundingClientRect();
       return list.map(([x, theta, r])=> projectLocal(ctx.view, ctx.view.limbToWorld(x, theta, r), rect));
     },
+    /**
+     * Cylindrical limb points → screen pixels, through whichever bench mode is
+     * live. screenPointsOnLimb goes through the tourniquet's own context and
+     * therefore answers null everywhere else; this one asks the bench, which
+     * every mode is now leasing anyway.
+     */
+    async screenPointsOnBenchLimb(list){
+      const { peekBench } = await import("./bench/benchSession.js");
+      const view = peekBench();
+      if(!view) return null;
+      const rect = document.querySelector("canvas").getBoundingClientRect();
+      return list.map(([x, theta, r])=> projectLocal(view, view.limbToWorld(x, theta, r), rect));
+    },
     async screenPointOnLimb(x, theta, r){
       const { getTourniquetContext } = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
       const ctx = getTourniquetContext();
@@ -679,6 +728,9 @@ function installTestSeam(){
         touching: t ? t.vesselId : null,
         arteryProximity: t ? t.arteryProximity : 0,
         markable: t ? t.markable : false,
+        down: t ? t.down : false,
+        dwell: t ? t.dwell : 0,
+        sweptM: t ? t.sweptM : 0,
         finger: ctx && ctx.finderPos ? { x:ctx.finderPos.x, z:ctx.finderPos.z, theta:ctx.finderPos.theta } : null,
       };
     },

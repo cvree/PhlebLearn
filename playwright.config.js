@@ -8,7 +8,19 @@ export const BASE_URL = `http://localhost:${PORT}/PhlebLearn/`;
 
 export default defineConfig({
   testDir: "tests",
-  timeout: 30000,
+  /* The unit suite and the browser suite share a directory, so the browser
+     runner has to be told which is which. Without this, `npx playwright test`
+     with no arguments picks up the node:test files too and fails on the first
+     one that uses a node-only API — which looks exactly like a broken e2e
+     test and is not one. */
+  testMatch: /\.e2e\.spec\.js$|smoke\.spec\.js$/,
+  /* Every test here drives a live WebGL context, and a runner with no GPU
+     falls back to a software rasteriser that renders this scene at about 3
+     frames a second — measured, and identical before and after the redesign,
+     so it is a property of the machine rather than of the app. A gesture made
+     of forty pointer samples is genuinely slow there, and 30 seconds was
+     timing out on the runner rather than on anything the app did. */
+  timeout: 90000,
   retries: 0,
   // Every test in this suite drives a live WebGL context. Two headless
   // Chromium instances competing for the same software renderer makes
@@ -30,6 +42,12 @@ export default defineConfig({
     command: `npm run preview -- --port ${PORT} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 30000,
+    /* Every test here drives a live WebGL context, and a runner with no GPU
+     falls back to a software rasteriser that renders this scene at about 3
+     frames a second — measured, and identical before and after the redesign,
+     so it is a property of the machine rather than of the app. A gesture made
+     of forty pointer samples is genuinely slow there, and 30 seconds was
+     timing out on the runner rather than on anything the app did. */
+  timeout: 90000,
   },
 });

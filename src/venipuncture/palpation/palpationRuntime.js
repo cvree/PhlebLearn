@@ -54,8 +54,21 @@ import { tapHaptic, seatHaptic } from "../../bench/haptics.js";
 const TOUCH_PRESS = 0.30;
 /** Seconds of dwell from a resting touch to bearing right down. */
 const PRESS_RAMP = 0.75;
-/** How much sweeping speed (metres of skin per second) lightens the touch. */
-const SWEEP_LIGHTEN = 5.5;
+/**
+ * How much a sweep UNDOES dwell, in seconds of dwell per metre of skin
+ * travelled.
+ *
+ * Sweeping used to only offset the pressure target, which the dwell ramp then
+ * out-climbed within a frame or two — so moving never actually lightened the
+ * touch, which is half of what makes pressure an axis rather than a timer.
+ * Taking it out of the dwell itself means a real sweep genuinely comes off the
+ * arm's deep structures and settling back down genuinely bears in again. Thirty
+ * millimetres of travel undoes about a second, so anything above a slow drag
+ * (roughly 33 mm/s) holds the touch light for as long as it keeps moving —
+ * which is the point. If you are moving, you are searching; if you have
+ * stopped, you are bearing down.
+ */
+const DWELL_PER_METRE = 30;
 /** Floor a fast sweep holds: enough to feel superficial veins clearly. */
 const SWEEP_FLOOR = 0.22;
 
@@ -68,6 +81,10 @@ const SWEEP_FLOOR = 0.22;
  * it never changes which vessel the finger is on.
  */
 function reachBonus(){ return 0.0018 + assistLevel()*0.0032; }
+
+function nowMs(){
+  return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+}
 
 let ctx = null;
 
@@ -102,6 +119,9 @@ export async function startPalpation(opts){
     lastAspect: 0,
     pulsePhase: 0,
     lastBeat: 0,
+    downAt: 0,
+    lastTickAt: 0,
+    offArm: false,
     voice: null,
     /** how near the artery is, for the heartbeat's volume */
     arteryProximity: 0,
@@ -257,6 +277,9 @@ export function palpationPointerDown(e, canvasEl){
   // A real touch, immediately. There is sensation on this very frame.
   ctx.press = TOUCH_PRESS;
   ctx.dwell = 0;
+  ctx.offArm = false;
+  ctx.downAt = nowMs();
+  ctx.lastTickAt = nowMs();
   ctx.sweep = 0;
   placeFinger(s);
   if(!ctx.voice) ctx.voice = feelVoice();
@@ -267,7 +290,15 @@ export function palpationPointerDown(e, canvasEl){
 export function palpationPointerMove(e, canvasEl){
   if(!isPalpationActive()) return false;
   const s = readSkin(e, canvasEl);
-  if(!s) return true;
+  /* THE POINTER HAS LEFT THE ARM. The hand comes off with it: it does not
+     freeze where it last was while the pressure quietly keeps building, which
+     is what used to happen and which made a sweep that ran off the edge of the
+     limb bear down harder than one that stayed on it. */
+  if(!s){
+    ctx.offArm = true;
+    return true;
+  }
+  ctx.offArm = false;
   if(ctx.finderPos){
     // consumed and cleared by tickFeel, so speed is measured per FRAME rather
     // than per pointer event — a rate sampled between two raw events is mostly
@@ -339,21 +370,35 @@ function tickFeel(dt){
   ctx.pulsePhase += dt*7.6;
 
   /* PRESSURE. Dwell bears down; sweeping lightens. Neither is a gate — the
-     finger is reporting on every one of these frames either way. */
-  const sweepSpeed = ctx.sweep/Math.max(dt, 0.001);
+     finger is reporting on every one of these frames either way.
+
+     Dwell is WALL-CLOCK, not the render delta. "How long has the finger been
+     there" is a question about the player, not about the simulation, and the
+     render delta is deliberately clamped per frame so a stalled tab cannot
+     make the scene jump. On a machine running at 3 fps that clamp made the
+     pressure axis climb at a fifth of real speed — the mechanic silently got
+     worse the weaker your hardware was, which is exactly backwards. */
+  const swept = ctx.sweep;
+  ctx.sweptLast = swept;
+  const sweepSpeed = swept/Math.max(dt, 0.001);
   ctx.sweep = 0;
-  if(ctx.down){
-    ctx.dwell += dt;
-    const lighten = Math.min(1, sweepSpeed*SWEEP_LIGHTEN);
+  const nowT = nowMs();
+  const realDt = ctx.lastTickAt ? Math.min(0.5, (nowT - ctx.lastTickAt)/1000) : 0;
+  ctx.lastTickAt = nowT;
+  if(ctx.down && !ctx.offArm){
+    // Wall-clock, not the render delta — see the note above — and reduced by
+    // however far the pad actually travelled, so a sweep is a lighter touch
+    // and settling is a deeper one.
+    ctx.dwell = Math.max(0, ctx.dwell + realDt - swept*DWELL_PER_METRE);
     const target = Math.max(SWEEP_FLOOR,
-      Math.min(1, TOUCH_PRESS + (ctx.dwell/PRESS_RAMP)*0.85 - lighten*0.62));
+      Math.min(1, TOUCH_PRESS + (ctx.dwell/PRESS_RAMP)*0.85));
     ctx.press += (target - ctx.press)*(1 - Math.exp(-dt/0.25));
   }else{
     ctx.dwell = 0;
     ctx.press = Math.max(0, ctx.press - dt*4.5);
   }
 
-  if(!ctx.finderPos){
+  if(ctx.offArm || !ctx.finderPos){
     ctx.found = { feel: FEEL.NOTHING, vessel: null };
     ctx.halo.group.visible = false;
     return;
@@ -586,6 +631,10 @@ export function currentTouch(){
     lastVesselId: ctx.lastFound ? ctx.lastFound.vessel.id : null,
     /** how near the artery is, whether or not it has been identified */
     arteryProximity: ctx.arteryProximity,
+    /** seconds of settled dwell, net of how far the pad has swept */
+    dwell: ctx.dwell,
+    /** metres of skin travelled since the last frame */
+    sweptM: ctx.sweptLast || 0,
   };
 }
 

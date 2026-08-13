@@ -364,12 +364,32 @@ export function buildArmScene(o){
 
   /**
    * The pointer relative to the arm's axis LINE on screen — the one reading
-   * about a limb that carries no ambiguity at all.
+   * about a limb that carries NO cross-section assumption at all.
    *
    * @returns {{x, p, rProj, pMax}}
+   *   x      metres along the arm, from the ray crossing axis height. COARSE:
+   *          see the warning below.
    *   p      signed perpendicular offset in pixels, +ve on the NEAR side
-   *   pMax   the limb's SILHOUETTE half-width along that same perpendicular,
-   *          so |p|/pMax ≤ 1 means the hand is against the arm.
+   *   pMax   the limb's silhouette half-width along that same perpendicular,
+   *          so |p|/pMax is how far the hand is from the arm's outline — at
+   *          most about 0.82 anywhere on the skin, and more than 1 only when
+   *          it is genuinely held clear of the limb.
+   *
+   * This is the reading the wrap is built on, and it is deliberately NOT the
+   * exact 2x2 solve. That solve has to be told which cross-section it is
+   * working in, and it silently folds any error in that choice into `rho` —
+   * which is fine when the caller knows where along the arm it is, and wrong
+   * for a hand sweeping freely across the limb. Everything here is a plain 2D
+   * screen measurement against the projected axis line, so there is nothing to
+   * be wrong about.
+   *
+   * WARNING ON `x`. The ray is crossed at the limb's AXIS height, but a hand
+   * is up on the SURFACE, so the ray carries on and crosses that plane further
+   * along the arm — about 4 cm further, with the camera looking down the limb.
+   * Anything that needs a real along-arm position must use
+   * pointerToLimbSurface, which searches for the cross-section that actually
+   * puts the point on the skin. `x` here is only good enough for choosing
+   * which cross-section to measure the silhouette against.
    */
   function pointerToAxis(screen, rect, axisX, radius){
     const ax = axisX == null ? SITE.x : axisX;
@@ -414,6 +434,34 @@ export function buildArmScene(o){
     const ray = localRay(screen, rect);
     _levelPlane.setComponents(0, 1, 0, -(y || 0));
     return ray.intersectPlane(_levelPlane, new THREE.Vector3());
+  }
+
+  /**
+   * Is the pointer inside the ARM'S OWN OUTLINE on screen?
+   *
+   * An exact question with an exact answer — the ray either meets the skin
+   * mesh or it does not — and the only honest depth cue a single camera has
+   * once it is looking along the limb rather than across it. A hand dragging a
+   * strap against the arm is inside the outline for the whole stroke; a hand
+   * carrying one clear of the arm leaves it, most obviously out at the sides
+   * where the limb's silhouette ends and the drape does not.
+   *
+   * @returns {{hit:boolean, point:THREE.Vector3|null, distance:number}}
+   */
+  const _skinCaster = new THREE.Raycaster();
+  const _skinHits = [];
+  function pointerHitsSkin(screen, rect){
+    _ndc.set(
+      ((screen.x - rect.left)/rect.width)*2 - 1,
+      -((screen.y - rect.top)/rect.height)*2 + 1
+    );
+    _skinCaster.setFromCamera(_ndc, camera);
+    _skinHits.length = 0;
+    _skinCaster.intersectObject(arm.limb, false, _skinHits);
+    if(!_skinHits.length) return { hit: false, point: null, distance: Infinity };
+    const h = _skinHits[0];
+    // back into limb-local metres, which is what every gesture works in
+    return { hit: true, point: h.point.clone().applyMatrix4(_worldToLocal), distance: h.distance };
   }
 
   /** The inverse, for placing things the learner has not grabbed. */
@@ -664,7 +712,8 @@ export function buildArmScene(o){
   return {
     scene, camera, root, arm, body,
     handedness: leftHanded ? "left" : "right",
-    pointerToLimb, pointerToLimbSurface, pointerToAxis, pointerToPlane, angleDelta, limbToWorld, toScreen,
+    pointerToLimb, pointerToLimbSurface, pointerToAxis, pointerToPlane, pointerHitsSkin,
+    angleDelta, limbToWorld, toScreen,
     fitCamera, frameBeat, setLean, setSway, kickCamera,
     setSiteVisible, tick, dispose,
     /** the current framing name, for modes that want to avoid redundant asks */

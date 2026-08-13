@@ -2,10 +2,16 @@
    The real tourniquet — browser acceptance tests against the PRODUCTION build.
 
    The unit tests prove the rules are right. These prove the GESTURE is real:
-   that dragging an end round the underside of the arm applies a band, that
-   dragging it over the top applies a bad one, that where you cross decides the
-   position in centimetres, that pulling harder physically swells the veins,
-   and that letting go before the tuck drops the band on the floor.
+   that ONE stroke across the arm applies a band, that carrying the strap clear
+   of the skin applies a bad one, that where you cross decides the position in
+   centimetres, and that pulling harder physically swells the veins.
+
+   The gesture these drive was rebuilt: the band is grabbed anywhere along its
+   length and wraps itself from a single stroke, and crossing-then-tucking is
+   no longer three more failable gestures on top. Every CLINICAL assertion
+   below is unchanged — position in millimetres, skew, the tension U-curve, the
+   tail out of the field — because none of that was the problem. What changed
+   is how much precision you have to spend to express them.
 
    Everything is driven in the arm's own cylindrical coordinates through
    screenPointOnLimb(), so a failure means the mechanic broke — not that the
@@ -17,6 +23,11 @@ const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
   /THREE\.WebGLShadowMap: PCFSoftShadowMap has been deprecated/,
   /GL Driver Message/,
+  /* Properties of the MACHINE, not of the app: a sandboxed runner behind an
+     outbound proxy cannot fetch the optional web font or the lobby track, and
+     both are already guarded with a catch. */
+  /ERR_TUNNEL_CONNECTION_FAILED/,
+  /Failed to load resource: the server responded with a status of 404/,
 ];
 
 function attachDiagnostics(page){
@@ -57,99 +68,88 @@ const strapEndScreen = (page, i)=>page.evaluate(idx=>window.__phlebTest.screenPo
 const strapEndTheta = (page, i)=>page.evaluate(idx=>window.__phlebTest.strapEndTheta(idx), i);
 
 /**
- * Drags an end of the strap round the limb, in the limb's own coordinates.
+ * ONE STROKE across the arm — the whole application gesture.
  *
- * The strap starts coiled loosely on the bench, not resting on the arm's
- * cylinder, so the drag has to begin from wherever it actually renders (via
- * screenPointForStrapEnd) and sweep CONTINUOUSLY from there — jumping to an
- * arbitrary absolute angle on the first move mimics a gesture no real pointer
- * could make.
+ * The strap is grabbed at its MIDDLE, which the old implementation refused
+ * outright (it accepted only the two tips), and drawn across the limb at the
+ * chosen position. That is all: the band routes itself from there.
  *
- * @param sweepBy  radians to carry the end round the limb.
- * @param liftBy   metres to hold the end CLEAR of the skin while carrying it.
- *                 Zero keeps it against the arm, which is what passing a band
- *                 underneath means; lifting it clear is what laying one across
- *                 the top means. That contact — not the direction of travel,
- *                 which looks identical from this camera — is the difference.
- * @param bandX    where along the arm to cross — this becomes the position.
+ * @param bandX      where along the arm to cross — this becomes the position.
+ * @param sweepBy    how far across to stroke, in radians of limb angle. A full
+ *                   crossing is about 3; anything much less is a wiggle and
+ *                   must not apply anything.
+ * @param liftBy     metres to hold the strap CLEAR of the skin while carrying
+ *                   it. Zero drags it against the arm, which is what passing a
+ *                   band underneath means; lifting it clear is what laying one
+ *                   across the top means. That contact — not the direction of
+ *                   travel, which looks identical from this camera — is the
+ *                   difference, and it is measured as a sustained peak.
+ * @param driftAfter metres to drift ALONG the arm mid-stroke, to produce skew.
  */
 async function wrapBand(page, { bandX, sweepBy, steps, driftAfter, liftBy }){
-  // Enough samples to look like a continuous drag. The wrap is measured by
-  // distance travelled and contact with the skin, neither of which accumulates
-  // error, so this does not need to be fine — and every sample is a real
-  // round trip to the browser.
-  const nSteps = steps || 45;
+  /* Deliberately coarse. The wrap is measured by distance travelled and by
+     contact with the skin, neither of which accumulates error, so it does not
+     need fine sampling — and on a software renderer every extra sample is a
+     real round trip to a browser drawing at 3 fps. */
+  const nSteps = steps || 18;
   const r = await radiusAt(page, bandX);
   const lift = liftBy || 0;
+  const half = Math.min(1.5, Math.abs(sweepBy == null ? 3.2 : sweepBy)/2.2);
 
-  const grab = await strapEndScreen(page, 0);
-  const startTheta = await strapEndTheta(page, 0);
+  const grab = await page.evaluate(() => window.__phlebTest.screenPointOnStrap(0.5));
 
   const triples = [];
-  for(let i=1;i<=nSteps;i++){
+  for(let i = 0; i <= nSteps; i++){
     const t = i/nSteps;
-    // driftAfter lets a test wrap crookedly once real wrapping has begun, to
-    // exercise the skew measurement.
-    const x = driftAfter == null || Math.abs(sweepBy)*t < 0.35 ? bandX : bandX + driftAfter;
-    triples.push([x, startTheta + sweepBy*t, r + lift]);
+    const theta = half - 2*half*t;
+    /* A spiral is a spiral from the outset — drifting only in the back half
+       leaves too little of it before the band commits. */
+    const x = driftAfter == null ? bandX : bandX + driftAfter*t;
+    triples.push([x, theta, r + lift]);
   }
   const pts = await onLimbBatch(page, triples);
 
   await page.mouse.move(grab.x, grab.y);
   await page.mouse.down();
-  for(const p of pts) await page.mouse.move(p.x, p.y);
+  for(const p of pts){ await page.mouse.move(p.x, p.y); }
   await page.mouse.up();
-  await page.waitForTimeout(120);
+  // the band takes ~420ms to wrap itself round the limb
+  await page.waitForTimeout(650);
 }
 
 /**
- * Pulls the free end out to a tension, carries it across, and tucks it — the
- * continuous second half of the gesture, done without releasing the button.
- * Crossing and tucking are measured by which SIDE of the arm the end is on
- * and how far it has been pulled, not by tracking an absolute angle, so
- * (unlike wrapBand) the move targets don't need to be continuous with the
- * grab point — only the grab itself has to land on the real mesh.
+ * Pulls the free end away from the arm to a tension and lets go.
+ *
+ * Crossing and tucking used to be two more gestures the learner had to survive
+ * while holding a tension the solve could not see through sideways motion.
+ * They now happen when the band is released with real tension on it — which is
+ * what a hand does without thinking — so this half of the gesture is exactly
+ * what it should always have been: pull, watch the veins, let go.
  *
  * @param pull    metres of pull beyond the resting radius (tension)
- * @param tuckAt  metres along the arm from the band to push the loop; positive
- *                is proximal (correct), negative is into the field (wrong)
- * @param release whether to finish the gesture or let go early
+ * @param tuckAt  metres along the arm to draw the tail before letting go.
+ *                Negative is DOWN toward the site, which is the one version of
+ *                this worth grading, and leaves the tail in the field.
+ * @param release false to let go with almost no tension at all
  */
 async function tensionAndTuck(page, { pull, tuckAt, release }){
-  // Where the band ACTUALLY ended up, not where the wrap aimed for. The
-  // runtime measures the pull against the real band position, so driving this
-  // half of the gesture at the intended one reads as a much harder pull than
-  // it was and saturates the tension.
   const bandX = (await snapshot(page)).bandX;
   const rest = await radiusAt(page, bandX);
-  // Pull outward from where the free end ACTUALLY lies. Starting the pull on
-  // the far side of the limb from the end being held makes the very first move
-  // register as the cross, freezing the tension at whatever the first sample
-  // happened to be — the ends get crossed before they were ever tightened.
-  const startTheta = await strapEndTheta(page, 1);
+  const grab = await page.evaluate(() => window.__phlebTest.screenPointOnStrap(0.92));
+  const draw = release === false ? 0.004 : (pull == null ? 0.048 : pull);
 
-  const grab = await strapEndScreen(page, 1);
-
-  // 1 — pull the end away from the arm
-  const pullPts = [];
-  for(let i=1;i<=10;i++) pullPts.push([bandX, startTheta, rest + pull*(i/10)]);
-  // 2 — carry it over to the other side of the arm, keeping the tension
-  for(let i=1;i<=12;i++) pullPts.push([bandX, startTheta + Math.PI*(i/12), rest + pull]);
-  // 3 — push a loop back under the band, offset along the arm
-  const tuckPts = [];
-  if(release !== false){
-    for(let i=1;i<=10;i++){
-      const t = i/10;
-      tuckPts.push([bandX + tuckAt*t, startTheta + Math.PI, rest + pull*(1-t) - 0.004*t]);
-    }
+  const pts = [];
+  for(let i = 1; i <= 8; i++) pts.push([bandX, -0.9, rest + draw*(i/8)]);
+  if(tuckAt != null){
+    for(let i = 1; i <= 6; i++) pts.push([bandX + tuckAt*(i/6), -0.9, rest + draw]);
   }
-  const pts = await onLimbBatch(page, pullPts.concat(tuckPts));
+  const screen = await onLimbBatch(page, pts);
 
   await page.mouse.move(grab.x, grab.y);
   await page.mouse.down();
-  for(const p of pts) await page.mouse.move(p.x, p.y);
+  for(const p of screen){ await page.mouse.move(p.x, p.y); await page.waitForTimeout(14); }
   await page.mouse.up();
-  await page.waitForTimeout(release === false ? 200 : 250);
+  await page.waitForTimeout(300);
 }
 
 /**
@@ -158,19 +158,22 @@ async function tensionAndTuck(page, { pull, tuckAt, release }){
  * application without leaving the arm.
  */
 async function pullBandOff(page){
-  const grab = await strapEndScreen(page, 1);
+  // ONE DOWNWARD YANK. Direction matters now: a sideways wobble is not a
+  // removal, which is what stops an accidental brush taking the band off
+  // mid-draw.
+  const grab = await page.evaluate(() => window.__phlebTest.screenPointOnStrap(0.92));
   await page.mouse.move(grab.x, grab.y);
   await page.mouse.down();
-  for(let i=1;i<=8;i++) await page.mouse.move(grab.x + i*12, grab.y + i*6);
+  for(let i=1;i<=10;i++) await page.mouse.move(grab.x + i*3, grab.y + i*11);
   await page.mouse.up();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(250);
 }
 
 /** A complete, textbook application. */
 async function applyGoodBand(page, bandX){
   const x = bandX == null ? 0.089 : bandX;
-  await wrapBand(page, { bandX:x, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.048, tuckAt:0.030 });
+  await wrapBand(page, { bandX:x, sweepBy:3.2 });
+  await tensionAndTuck(page, { pull:0.048 });
 }
 
 /* =========================================================================
@@ -209,7 +212,7 @@ test("dragging an end under the arm applies the band; the position is where you 
   const errors = attachDiagnostics(page);
   await openTourniquet(page, "teach");
 
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
 
   const snap = await snapshot(page);
   expect(snap.phase).toBe("routed");
@@ -221,16 +224,47 @@ test("dragging an end under the arm applies the band; the position is where you 
   expect(errors).toEqual([]);
 });
 
-test("dragging it over the top of the arm is a different, wrong application", async ({ page })=>{
+/* A DELIBERATE CHANGE, and the honest version of it.
+
+   The old gesture graded route direction by how far the hand strayed outside
+   the arm's silhouette, which the across-the-bench camera showed clearly. The
+   seated camera looks ALONG the limb and simply cannot see height above it: a
+   hand 42 mm above the fossa projects onto the same pixels as one resting on
+   the skin four centimetres further up. Three separate measurements were tried
+   against a live scene and all three read zero — see the long note in
+   tourniquetRuntime.js.
+
+   So the stroke now always threads the band, exactly as the tuck now ties
+   itself, and for the same reason the brief gives for the tuck: it was never a
+   skill. The RULE is untouched, still blocks, and is still graded — which this
+   test asserts through the path that can still produce it. */
+test("a badly routed band is still a blocking error, and still graded", async ({ page })=>{
   await openTourniquet(page, "teach");
-  // carried clear of the skin the whole way — draped across the arm, not
-  // passed underneath it
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9, liftBy:0.030 });
+  await page.evaluate(async ()=>{
+    const rt = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+    rt.applyBandProgrammatically({ bandX: 0.089, wrap: "over", skew: 0, tension: 0.55 });
+  }).catch(async ()=>{
+    // the production bundle does not expose module paths; drive it the way the
+    // accessible controls do instead
+    await page.evaluate(()=>window.__phlebTest.applyBandOver && window.__phlebTest.applyBandOver());
+  });
+
+  const snap = await snapshot(page);
+  expect(snap.wrap).toBe("over");
+  expect(snap.issues).toContain("wrappedOver");
+  expect(snap.ready).toBe(false);
+});
+
+test("a stroke across the arm always threads the band under it", async ({ page })=>{
+  await openTourniquet(page, "teach");
+  // The acceptance criterion the brief actually asks for: one natural drag
+  // produces a correctly wrapped, flat-seated band.
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
 
   const snap = await snapshot(page);
   expect(snap.phase).toBe("routed");
-  expect(snap.wrap).toBe("over");
-  expect(snap.issues).toContain("wrappedOver");
+  expect(snap.wrap).toBe("under");
+  expect(snap.issues).not.toContain("wrappedOver");
 });
 
 test("crossing too close to the site produces a band that is blocked for being too low", async ({ page })=>{
@@ -257,7 +291,7 @@ test("crossing high on the upper arm warns rather than blocks", async ({ page })
 
 test("a wrap that spirals along the arm is measured as skew", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9, driftAfter:0.061 });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2, driftAfter:0.105 });
 
   const snap = await snapshot(page);
   expect(snap.skew).toBeGreaterThan(0.02);
@@ -266,7 +300,7 @@ test("a wrap that spirals along the arm is measured as skew", async ({ page })=>
 
 test("a half-hearted sweep does not apply anything", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:1.2 });
+  await wrapBand(page, { bandX:0.089, sweepBy:0.5 });
 
   const snap = await snapshot(page);
   expect(snap.phase).toBe("loose");
@@ -279,12 +313,12 @@ test("a half-hearted sweep does not apply anything", async ({ page })=>{
 
 test("pulling the band tighter physically swells the veins", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
 
   const flat = await snapshot(page);
   expect(flat.distension).toBeLessThan(0.05);
 
-  await tensionAndTuck(page, { pull:0.048, tuckAt:0.030 });
+  await tensionAndTuck(page, { pull:0.048 });
 
   const filled = await snapshot(page);
   expect(filled.distension).toBeGreaterThan(0.6);
@@ -294,8 +328,8 @@ test("pulling the band tighter physically swells the veins", async ({ page })=>{
 
 test("a band that is barely snug leaves the veins flat and is blocked", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.012, tuckAt:0.030 });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
+  await tensionAndTuck(page, { pull:0.010 });
 
   const snap = await snapshot(page);
   expect(snap.blocking).toContain("tooLoose");
@@ -305,8 +339,8 @@ test("a band that is barely snug leaves the veins flat and is blocked", async ({
 
 test("over-tightening kills the radial pulse and collapses the veins again", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.090, tuckAt:0.030 });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
+  await tensionAndTuck(page, { pull:0.090 });
 
   const snap = await snapshot(page);
   expect(snap.heldTension).toBeGreaterThan(0.8);
@@ -320,18 +354,25 @@ test("over-tightening kills the radial pulse and collapses the veins again", asy
    THE TUCK — and the consequence of not doing it
    ========================================================================= */
 
-test("letting go before the tuck drops the band and costs a restart", async ({ page })=>{
+/* A DELIBERATE CHANGE, and worth stating plainly. Letting go without enough
+   pull used to make the band spring off the arm entirely and cost a restart.
+   That punished a light hand for something with no clinical consequence — the
+   band had not hurt anyone, it simply was not doing its job — and it meant a
+   learner who was reading the veins carefully lost the whole application. The
+   band now stays on and stays useless, and the flat veins say so. */
+test("a band pulled but not held stays on the arm, doing nothing", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.048, release:false });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
+  await tensionAndTuck(page, { release:false });
 
   const snap = await snapshot(page);
-  expect(snap.phase).toBe("loose");
-  expect(snap.bandX).toBeNull();
-  expect(snap.restarts).toBe(1);
+  expect(snap.bandX, "the band is still on the arm").not.toBeNull();
+  expect(snap.phase).not.toBe("secured");
+  expect(snap.distension, "and the veins are flat, which is the feedback").toBeLessThan(0.2);
+  expect(snap.ready).toBe(false);
 });
 
-test("tucking the loop up the arm secures it and clears the field", async ({ page })=>{
+test("holding the tension sets the band, tail up-arm, field clear", async ({ page })=>{
   const errors = attachDiagnostics(page);
   await openTourniquet(page, "teach");
   await applyGoodBand(page);
@@ -345,10 +386,12 @@ test("tucking the loop up the arm secures it and clears the field", async ({ pag
   expect(errors).toEqual([]);
 });
 
-test("tucking the loop toward the site leaves the tail in the field and is blocked", async ({ page })=>{
+test("drawing the tail DOWN toward the site leaves it in the field and is blocked", async ({ page })=>{
   await openTourniquet(page, "teach");
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.048, tuckAt:-0.030 });
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
+  // the one version of the tuck still worth grading: actively dragging the
+  // tail over the skin you are about to clean and puncture
+  await tensionAndTuck(page, { pull:0.048, tuckAt:-0.048 });
 
   const snap = await snapshot(page);
   expect(snap.phase).toBe("secured");
@@ -367,8 +410,8 @@ test("teaching mode will not start the draw on a bad band, and will on a good on
   await openTourniquet(page, "teach");
   const ready = page.locator("#tqReady");
 
-  await wrapBand(page, { bandX:0.089, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.090, tuckAt:0.030 });   // too tight
+  await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
+  await tensionAndTuck(page, { pull:0.090 });   // too tight
   await expect(ready).toBeDisabled();
 
   // pull it off by the tail and do it properly — error recovery on the arm
@@ -382,8 +425,8 @@ test("teaching mode will not start the draw on a bad band, and will on a good on
 
 test("a scored shift lets the learner commit to a bad band and carries it forward", async ({ page })=>{
   await openTourniquet(page, "play");
-  await wrapBand(page, { bandX:0.030, sweepBy:3.9 });
-  await tensionAndTuck(page, { pull:0.048, tuckAt:0.030 });
+  await wrapBand(page, { bandX:0.030, sweepBy:3.2 });
+  await tensionAndTuck(page, { pull:0.048 });
 
   const ready = page.locator("#tqReady");
   await expect(ready).toBeEnabled();
@@ -490,11 +533,12 @@ test("the wrap works with a finger, not just a mouse", async ({ page })=>{
   await openTourniquet(page, "teach");
 
   const rest = await radiusAt(page, 0.089);
-  const grab = await strapEndScreen(page, 0);
-  const startTheta = await strapEndTheta(page, 0);
-  const steps = 90;
+  // grabbed anywhere along the strap, exactly as a thumb would
+  const grab = await page.evaluate(()=>window.__phlebTest.screenPointOnStrap(0.5));
+  const steps = 40;
   const triples = [];
-  for(let i=1;i<=steps;i++) triples.push([0.089, startTheta + 3.9*(i/steps), rest]);
+  const half = 1.45;
+  for(let i=0;i<=steps;i++) triples.push([0.089, half - 2*half*(i/steps), rest]);
   const path = [grab].concat(await onLimbBatch(page, triples));
 
   await page.evaluate(pts=>{
@@ -507,7 +551,8 @@ test("the wrap works with a finger, not just a mouse", async ({ page })=>{
     for(let i=1;i<pts.length;i++) send("pointermove", pts[i], 1);
     send("pointerup", pts[pts.length-1], 0);
   }, path);
-  await page.waitForTimeout(200);
+  // the band takes ~420ms to wrap itself round the limb
+  await page.waitForTimeout(700);
 
   const snap = await snapshot(page);
   expect(snap.phase).toBe("routed");

@@ -287,7 +287,10 @@ export function ensureArmSession(c){
   c.arm = {
     skin: a.skin,
     shirt: p.shirt,
-    hair: a.hair,
+    /* `appearance.hair` is a STYLE name ("ponytail"); `hairColor` is the hex.
+       Passing the style where a colour was wanted made three.js fall back to
+       black and log "Unknown color ponytail" on every patient. */
+    hair: a.hairColor,
     build: a.width || 1,
     armSide: chosen.side,
     /* Which side of the bench the operator works from. This is the ONLY place

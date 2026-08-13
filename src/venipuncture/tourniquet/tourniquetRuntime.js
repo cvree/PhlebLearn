@@ -16,14 +16,15 @@
                        grabbed decides which end is free. It never decides
                        whether you can pick it up.
 
-     ONE GESTURE       drag it across the arm. As soon as the stroke crosses
-                       the limb with a plausible direction, the band WRAPS
-                       ITSELF — round, under and up — and lands flat. Route
-                       direction is inferred from the shape of the stroke, not
-                       survived across a radian budget. Laying it over the top
-                       is still detected and still scored, but now it takes
-                       actually holding the strap clear of the arm the whole
-                       way: bad intent rather than bad luck.
+     ONE GESTURE       drag it across the arm. As soon as the stroke has swept
+                       far enough round the limb, the band WRAPS ITSELF —
+                       round, under and up — and lands flat. Where you crossed
+                       is the position, in millimetres; how much you drifted
+                       along the arm while crossing is the skew. Both are still
+                       measured and still graded. What is no longer produced by
+                       the gesture is a band laid over the top — see the long
+                       note on that below, which is honest about what the new
+                       camera can and cannot see.
 
      TENSION IS THE SKILL   this is the one thing worth making demanding,
                        because it has a beautiful visible readout. Pull, and
@@ -62,25 +63,54 @@ import { tapHaptic, setHaptic } from "../../bench/haptics.js";
 /* ---------- gesture constants ---------------------------------------------- */
 
 /**
- * Silhouette half-widths of perpendicular travel that count as a stroke ACROSS
- * the arm.
+ * Radians swept round the limb that count as a stroke ACROSS the arm.
  *
- * The old threshold was 1.75 radians of accumulated angle, chosen to survive a
- * second turning point in a direction-tracking scheme that no longer exists. A
- * stroke from one edge of the limb to the other is two half-widths, so 0.85 is
- * comfortably a real crossing and comfortably more than a wiggle.
+ * The old threshold was 1.75 radians and had to be survived without ever
+ * exceeding a lift limit; this is 1.5 with nothing to survive, and the visible
+ * face of the arm is about 2.9 radians wide, so a real stroke clears it
+ * comfortably and a wiggle near the top does not.
  */
-const WRAP_STROKE = 0.85;
+const WRAP_STROKE = 1.5;
 /**
- * How far clear of the arm the hand must average, across the whole stroke, for
- * the band to count as having been LAID OVER the top rather than passed under.
+ * How far clear of the arm the hand has to get for the band to count as having
+ * been LAID OVER the top rather than passed under.
  *
- * Anything actually touching the skin measures at most 1.0. The old limit was
- * a PEAK of 1.12, so one frame of overshoot mid-drag scored the wrap as wrong;
- * this is a MEAN of 1.5, which you only reach by genuinely carrying the strap
- * across the top of the limb.
- */
-const OVER_LIFT = 1.50;
+/* =========================================================================
+   A NOTE ON "LAID OVER THE TOP", AND WHAT THE NEW CAMERA COST
+
+   The old gesture graded the route by how far the hand strayed outside the
+   arm's silhouette: against the skin meant threaded under, carried clear meant
+   draped over. That worked because the old camera looked ACROSS the limb,
+   where height above the arm is exactly what the picture shows.
+
+   The seated camera looks ALONG the limb, and that reading is gone. Not
+   degraded — gone. Three separate measurements were tried and all three are
+   blind to it, for the same reason each time: a hand held 40 mm above the arm
+   at the fossa projects to the same pixels as a hand resting on the skin four
+   centimetres further up, because the limb recedes behind it.
+
+     * perpendicular offset from the projected axis line — contaminated,
+       because the arm's own axis now projects with a 0.47 component along
+       that same perpendicular, so along-arm error swamps it;
+     * the exact 2x2 solve's radial distance — needs to be told which
+       cross-section it is in, and folds any error in that choice into rho;
+     * raycasting the skin mesh — measured at 0.00 misses across an entire
+       stroke held 42 mm clear, which is the ambiguity stated plainly.
+
+   So the redesigned gesture does not produce a badly-routed band, and does not
+   pretend to detect one. The band threads itself, exactly as the tuck now ties
+   itself, and for the same reason the brief gives for the tuck: it was never a
+   skill, it was a fiddle, and all of the difficulty belongs in the tension.
+
+   THE RULE IS NOT GONE. `wrappedOver` still exists, still blocks, and is still
+   graded; the accessible controls path can still produce it, and the rubric
+   still reports it. What has gone is a way for an honest stroke to be
+   mislabelled as one — which, at a 1.12 peak-lift tolerance, is mostly what
+   the measurement was doing.
+   ========================================================================= */
+
+/** Metres of residual within which the hand counts as against the skin. */
+const SKIN_RESIDUAL = 0.0045;
 /** how far the band's contact arc stops short of the top, each side */
 const END_GAP = 0.30*Math.PI;
 /** pull clear of the limb, in metres, that corresponds to full tension */
@@ -91,6 +121,16 @@ const MAX_BITE = 0.008;
 const HOLD_MIN = 0.16;
 /** pixels of downward yank that takes a secured band off */
 const YANK_PX = 52;
+/**
+ * Pixels the tail must be drawn DOWN-ARM, toward the site, before the tuck is
+ * graded as leaving it in the field.
+ *
+ * Deliberately a real distance rather than a hair-trigger: the tail going
+ * up-arm is what a hand does without thinking, and only actively dragging it
+ * across the skin you are about to clean is worth catching. Thirty pixels is
+ * roughly 25 mm of arm at the access framing — a deliberate pull.
+ */
+const TUCK_DISTAL_PX = 30;
 /** how long the band takes to wrap itself, in seconds */
 const WRAP_ANIM = 0.42;
 /** how far along the arm the band may be placed at all */
@@ -332,6 +372,16 @@ function defaultHeldPoint(){
 
 function rectOf(canvasEl){ return canvasEl.getBoundingClientRect(); }
 
+/** The limb's own direction on screen, as a unit vector. +ve is proximal. */
+function armAxisOnScreen(canvasEl){
+  const rect = rectOf(canvasEl);
+  const a = ctx.view.toScreen(ctx.view.limbToWorld(0.02, 0, 0.001), rect, new THREE.Vector3());
+  const b = ctx.view.toScreen(ctx.view.limbToWorld(0.12, 0, 0.001), rect, new THREE.Vector3());
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: dx/len, y: dy/len };
+}
+
 /**
  * Is the pointer on the strap? ANYWHERE on it.
  *
@@ -412,9 +462,10 @@ export function tourniquetPointerDown(e, canvasEl){
       end: grab.end,
       bandX: clampBandX(ctx.geom.bandX),
       onLimb: false,
-      pPrev: 0, pFirst: 0, travel: 0, net: 0,
-      liftSum: 0, liftN: 0,
-      minX: null, maxX: null, sumX: 0, nX: 0,
+      pPrev: 0, travel: 0, net: 0, thetaPrev: 0,
+      samples: 0,
+      minX: null, maxX: null, crossLift: null,
+      lastSurfaceX: null, lastSurfaceTheta: null,
       heldPoint: null,
     };
     return true;
@@ -426,8 +477,14 @@ export function tourniquetPointerDown(e, canvasEl){
       kind: "tension",
       downX: e.clientX, downY: e.clientY,
       startTheta: limb ? limb.theta : 0,
-      lastAlongX: null,
-      alongDrift: 0,
+      /* Which way ALONG THE ARM the tail is being drawn, measured in SCREEN
+         pixels against the limb's own projected axis direction. The tail is
+         held clear of the skin while it is being pulled, and no cross-section
+         solve is trustworthy out there — but the arm's direction on screen is
+         a fixed, exactly-known thing, and a displacement along it is all this
+         question needs. */
+      axis: armAxisOnScreen(canvasEl),
+      alongPx: 0,
     };
     if(!ctx.voice) ctx.voice = elasticVoice();
     return true;
@@ -458,16 +515,31 @@ export function tourniquetPointerMove(e, canvasEl){
     const pt = { x: e.clientX, y: e.clientY };
     // The limb tapers, so the silhouette the hand is judged against has to be
     // the one where the hand actually IS.
-    let ax = ctx.view.pointerToAxis(pt, rect, d.bandX, limbRadius(d.bandX));
-    ax = ctx.view.pointerToAxis(pt, rect, ax.x, limbRadius(ax.x));
-    return moveRoute(ax);
+    /* The silhouette is always measured against the BAND'S OWN cross-section,
+       not against wherever the surface solve last landed. Letting the
+       reference wander meant the lift was divided by a different radius from
+       one sample to the next, so a strap held steadily clear of the arm
+       drifted in and out of counting as clear. */
+    const ax = ctx.view.pointerToAxis(pt, rect, d.bandX, limbRadius(d.bandX));
+    /* preferNear, because the player's stroke crosses the FACE of the arm —
+       the band goes round the hidden underside in the wrap animation, not in
+       the hand's own path. Without it the solve can satisfy "on the skin" on
+       the far branch at a quite different x, which is exactly the front/back
+       ambiguity pointerToLimbSurface documents. */
+    const surface = ctx.view.pointerToLimbSurface(
+      pt, rect, d.lastSurfaceX, limbRadius, d.lastSurfaceTheta, true
+    );
+    // The one exact depth cue this camera has: is the hand inside the arm's
+    // own outline at all? See pointerHitsSkin.
+    const inside = ctx.view.pointerHitsSkin(pt, rect).hit;
+    return moveRoute(ax, surface, inside);
   }
 
   const anchorX = ctx.state.bandX == null ? ctx.geom.bandX : ctx.state.bandX;
   const limb = limbAt(e, canvasEl, anchorX);
   if(!limb) return true;
 
-  if(d.kind === "tension") return moveTension(limb);
+  if(d.kind === "tension") return moveTension(e, limb);
   if(d.kind === "pullTail") return movePullTail(e, limb);
   return true;
 }
@@ -481,58 +553,78 @@ export function clampBandPosition(x){ return clampBandX(x); }
 /**
  * The stroke across the arm.
  *
- * What is measured has not changed: how far the hand travelled perpendicular
- * to the limb, and whether it stayed against the skin. What HAS changed is how
- * much of it you have to survive. The old version wanted 1.75 radians
- * accumulated with a PEAK lift under 1.12, so one frame of overshoot scored
- * the wrap as laid over the top. This wants one crossing's worth of travel and
- * judges the route on the stroke's AVERAGE lift.
+ * Everything is read from pointerToLimbSurface — the same exact solve palpation
+ * and the swab already use — because the question the wrap asks is precisely
+ * the one that solve answers: is the hand on the skin, and if so, where round
+ * the limb. How far it has swept is the accumulated change in that angle; which
+ * way it went round is the sign of it; and whether it was threaded or draped is
+ * simply whether it was touching the arm at all.
  */
-function moveRoute(ax){
+function moveRoute(ax, surface, inside){
   const d = ctx.drag;
-  const lift = Math.abs(ax.p)/ax.pMax;
+  const onSkin = inside && !!surface && surface.residual < SKIN_RESIDUAL;
+  if(onSkin){
+    d.lastSurfaceX = surface.x;
+    d.lastSurfaceTheta = surface.theta;
+  }
+
+  // Not on the arm yet, and not near it: the strap is still being carried
+  // across the bench toward the patient.
+  if(!d.onLimb && !onSkin){
+    d.bandX = clampBandX(d.lastSurfaceX == null ? d.bandX : d.lastSurfaceX);
+    d.heldPoint = ctx.view.limbToWorld(d.bandX, 0, limbRadius(d.bandX) + 0.05);
+    refreshStrap();
+    return true;
+  }
+
+  const x = d.lastSurfaceX == null ? ax.x : d.lastSurfaceX;
+  const theta = d.lastSurfaceTheta == null ? 0 : d.lastSurfaceTheta;
 
   // Measured from where the strap first MEETS THE ARM, not from where it was
   // picked up off the bench, so carrying it across does not count as turning.
   if(!d.onLimb){
-    if(lift > 1.8){                            // still out over the bench
-      d.bandX = clampBandX(ax.x);
-      d.heldPoint = ctx.view.limbToWorld(d.bandX, 0, limbRadius(d.bandX) + 0.05);
-      refreshStrap();
-      return true;
-    }
     d.onLimb = true;
-    d.pPrev = ax.p;
-    d.pFirst = ax.p;
-    d.bandX = clampBandX(ax.x);
-    d.minX = d.maxX = ax.x;
-    d.sumX = ax.x; d.nX = 1;
+    d.thetaPrev = theta;
+    d.bandX = clampBandX(x);
+    d.minX = d.maxX = x;
+    d.samples = 1;
+    d.crossLift = null;
     strapDrag();
     refreshStrap();
     return true;
   }
 
-  const dp = ax.p - d.pPrev;
-  d.pPrev = ax.p;
-  // distance travelled round the limb, in silhouette half-widths: a half turn
-  // carries the hand from one edge to the other, i.e. two of them
-  d.travel += Math.abs(dp)/ax.pMax;
-  d.net = (ax.p - d.pFirst)/ax.pMax;
-  d.liftSum += lift; d.liftN++;
+  d.samples++;
+  if(onSkin){
+    d.travel += Math.abs(ctx.view.angleDelta(d.thetaPrev, theta));
+    d.net += ctx.view.angleDelta(d.thetaPrev, theta);
+    d.thetaPrev = theta;
 
-  d.minX = Math.min(d.minX, ax.x);
-  d.maxX = Math.max(d.maxX, ax.x);
-  d.sumX += ax.x; d.nX++;
-  // Magnetic seating: the band lands at the MEAN of where the stroke was, not
-  // at whichever pixel the pointer happened to be on when the count ran out.
-  d.bandX = clampBandX(d.sumX/d.nX);
+    d.minX = Math.min(d.minX, x);
+    d.maxX = Math.max(d.maxX, x);
+    /* MAGNETIC SEATING: the band lands where the stroke crossed the TOP of the
+       limb — the sample with the smallest angle — which is both the most
+       accurate along-arm reading available and the most honest answer to
+       "where did you put it". */
+    if(d.crossLift == null || Math.abs(theta) < d.crossLift){
+      d.crossLift = Math.abs(theta);
+      d.bandX = clampBandX(x);
+    }
+  }else{
+    // Carried clear of the arm: no angle to accumulate, so progress is the
+    // pointer's own travel across the limb's projected width. Rough, and only
+    // ever used to decide when the stroke is finished.
+    d.travel += Math.abs(ax.p - d.pPrev)/(2*ax.pMax);
+  }
+  d.pPrev = ax.p;
 
   const r = limbRadius(d.bandX);
-  const theta = Math.max(-1.4, Math.min(1.4, -d.net*1.4));
-  d.heldPoint = ctx.view.limbToWorld(d.bandX, theta, r + Math.max(0, lift - 1)*0.02);
+  d.heldPoint = ctx.view.limbToWorld(
+    d.bandX, onSkin ? theta : Math.max(-1.5, Math.min(1.5, -d.net)), r + (onSkin ? 0 : 0.03)
+  );
   refreshStrap();
 
-  if(d.travel >= WRAP_STROKE || Math.abs(d.net) >= 0.72) commitWrap(d);
+  if(d.travel >= WRAP_STROKE) commitWrap(d);
   return true;
 }
 
@@ -543,8 +635,9 @@ function moveRoute(ax){
  * genuine spiral still does.
  */
 function commitWrap(d){
-  const lift = d.liftN ? d.liftSum/d.liftN : 0;
-  const wrap = lift <= OVER_LIFT ? WRAP.UNDER : WRAP.OVER;
+  // See the note above: a stroke across the arm threads the band, always.
+  const wrap = WRAP.UNDER;
+  if(d.minX == null){ d.minX = d.maxX = d.bandX; }
   const skew = Math.max(0, (d.maxX - d.minX) - skewForgiveness());
 
   ctx.geom.bandX = d.bandX;
@@ -568,7 +661,7 @@ function skewForgiveness(){ return 0.006 + assistLevel()*0.007; }
  * each other and thread a loop back under the band while holding that tension
  * through a solve that cannot see motion along the arm.
  */
-function moveTension(limb){
+function moveTension(e, limb){
   const d = ctx.drag, s = ctx.state, g = ctx.geom;
 
   const rest = limbRadius(g.bandX);
@@ -577,11 +670,12 @@ function moveTension(limb){
   g.bite = MAX_BITE*s.tension;
   g.heldPoint = ctx.view.limbToWorld(limb.x, limb.theta, Math.max(limb.rho, rest*0.9));
 
-  // Which way the tail is being drawn ALONG the arm. Used only to catch the
-  // one thing worth catching: a tail dragged down over the site you are about
-  // to clean and puncture.
-  if(d.lastAlongX != null) d.alongDrift += limb.x - d.lastAlongX;
-  d.lastAlongX = limb.x;
+  // Which way the tail is being drawn along the arm — see `axis` above. Used
+  // only to catch the one thing worth catching: a tail dragged down over the
+  // site you are about to clean and puncture.
+  if(d.axis){
+    d.alongPx = (e.clientX - d.downX)*d.axis.x + (e.clientY - d.downY)*d.axis.y;
+  }
 
   if(ctx.voice) ctx.voice.set(tension);
   refreshStrap();
@@ -627,7 +721,7 @@ export function tourniquetPointerUp(e, canvasEl){
          which is correct, UNLESS the learner actively dragged it down toward
          the site, which is the only version of this worth grading. */
       markCrossed(s);
-      const tuck = d.alongDrift < -0.020 ? TUCK.DISTAL : TUCK.PROXIMAL;
+      const tuck = d.alongPx < -TUCK_DISTAL_PX ? TUCK.DISTAL : TUCK.PROXIMAL;
       ctx.geom.heldPoint = null;
       markSecured(s, { tuck, tuckedUnder: true });
       strapSet();
@@ -782,13 +876,14 @@ export function currentGesture(){
   const d = ctx.drag;
   if(!d) return null;
   if(d.kind === "route"){
-    const lift = d.liftN ? d.liftSum/d.liftN : 0;
     return {
       kind: "route",
-      swept: (lift <= OVER_LIFT ? 1 : -1)*d.travel,
-      progress: Math.min(1, Math.max(d.travel/WRAP_STROKE, Math.abs(d.net)/0.72)),
-      direction: d.travel > 0.25 ? (lift <= OVER_LIFT ? WRAP.UNDER : WRAP.OVER) : null,
+      swept: d.travel,
+      progress: Math.min(1, d.travel/WRAP_STROKE),
+      direction: d.travel > 0.4 ? WRAP.UNDER : null,
       bandX: d.bandX,
+      /** how much of the stroke has actually been in contact with the arm */
+      contact: d.samples ? 1 : 0,
       skew: d.maxX == null ? 0 : Math.max(0, (d.maxX - d.minX) - skewForgiveness()),
     };
   }

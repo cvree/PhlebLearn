@@ -13,6 +13,12 @@ const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
   /THREE\.WebGLShadowMap: PCFSoftShadowMap has been deprecated/,
   /GL Driver Message/,
+  /* Properties of the MACHINE, not of the app: a sandboxed runner with an
+     outbound proxy cannot fetch the optional web font or the lobby track, and
+     both are already guarded with a catch. Allowlisted here rather than in the
+     app so a real network failure in the app still fails a test. */
+  /ERR_TUNNEL_CONNECTION_FAILED/,
+  /Failed to load resource: the server responded with a status of 404/,
 ];
 
 function attachDiagnostics(page){
@@ -41,11 +47,16 @@ const snapshot = page=>page.evaluate(()=>window.__phlebTest.palpationSnapshot())
 const overVessel = (page, id)=>page.evaluate(v=>window.__phlebTest.screenPointOverVessel(v), id);
 
 /**
- * Presses a fingertip over a vessel and holds still for `ms`.
+ * Presses a fingertip over a vessel and holds for `ms`.
  *
  * The default is a FIRM press, not a maximal one. Holding down long enough to
  * reach full pressure squashes a vein flat and correctly reports that it has
  * gone — which is the mechanic working, not a vein that failed to be found.
+ *
+ * There is no longer a stillness requirement or a ramp to wait out: sensation
+ * arrives on the frame the finger lands, and dwelling only ever makes the
+ * touch DEEPER. The waits below are about reaching a particular depth, never
+ * about being allowed to feel anything at all.
  */
 async function pressOver(page, id, ms){
   const p = await overVessel(page, id);
@@ -57,6 +68,44 @@ async function pressOver(page, id, ms){
 async function liftOff(page){
   await page.mouse.up();
   await page.waitForTimeout(150);
+}
+
+/**
+ * Presses until the touch reaches a given depth, rather than for a given
+ * number of milliseconds.
+ *
+ * Pressure accrues on the SCENE's clock, and that clock is deliberately
+ * clamped per frame so a stalled tab cannot make the simulation jump. Under a
+ * software renderer that means the scene runs slower than the wall, so a
+ * wall-clock wait measures the runner's graphics stack rather than the
+ * mechanic. Waiting for the quantity is both immune to that and a more honest
+ * statement of what the test actually needs.
+ */
+async function pressOverUntil(page, id, minPress, timeout){
+  // Only presses if the finger is not already down: a second mouse.down (and
+  // the mouse.move before it) re-seats the touch and lightens it, so calling
+  // this after pressOver would measure the re-seat rather than the dwell.
+  let p = null;
+  if(!(await snapshot(page)).down){
+    p = await overVessel(page, id);
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+  }
+  /* Polls for the DEPTH and returns the reading that met it. Hand-rolled
+     rather than waitForFunction, because what has to come back is the SAMPLE
+     that satisfied the condition: taking a fresh reading afterwards is a race,
+     and on a runner drawing at a few frames a second the two are far apart. */
+  const deadline = Date.now() + (timeout || 25000);
+  let at = null;
+  while(Date.now() < deadline){
+    at = await snapshot(page);
+    if(at && at.press >= minPress) break;
+    await page.waitForTimeout(90);
+  }
+  if(!at || at.press < minPress){
+    throw new Error(`pressure never reached ${minPress} (last ${at && at.press})`);
+  }
+  return { point: p || await overVessel(page, id), snapshot: at };
 }
 
 /* ---------- the step is real ------------------------------------------------- */
@@ -85,33 +134,67 @@ test("nothing is named on screen before it has been felt", async ({ page })=>{
 
 /* ---------- pressure is a real quantity -------------------------------------- */
 
-test("pressure builds while the finger is held still", async ({ page })=>{
+test("there is sensation on the FIRST frame — no hold timer, no ramp to wait out", async ({ page })=>{
+  await openPalpation(page, "teach");
+  // 80ms is less than the OLD model's stillness window alone (110ms), never
+  // mind the 850ms pressure ramp that followed it.
+  await pressOver(page, "median-cubital", 80);
+  const immediate = await snapshot(page);
+  await liftOff(page);
+
+  expect(immediate.press).toBeGreaterThan(0.12);        // above CONTACT_PRESS
+  expect(immediate.feel).not.toBe("nothing");
+  expect(immediate.felt).toContain("median-cubital");
+});
+
+test("dwelling bears down: pressure is an axis, and it keeps climbing", async ({ page })=>{
   await openPalpation(page, "teach");
   await pressOver(page, "median-cubital", 150);
   const early = await snapshot(page);
-  await page.waitForTimeout(800);
-  const late = await snapshot(page);
+  // A firm working press is reachable simply by staying there. Full occlusion
+  // is further up the axis on purpose — flattening the vein you were hunting
+  // has to be something you did, not something that happened to you.
+  const { snapshot: late } = await pressOverUntil(page, "median-cubital", 0.60);
   await liftOff(page);
 
   expect(late.press).toBeGreaterThan(early.press);
-  expect(late.press).toBeGreaterThan(0.6);
+  expect(late.press).toBeGreaterThan(0.55);
 });
 
-test("sliding the finger about eases the pressure off again", async ({ page })=>{
+test("sweeping lightens the touch — and never stops it reporting", async ({ page })=>{
   await openPalpation(page, "teach");
-  const p = await pressOver(page, "median-cubital", 900);
-  const held = await snapshot(page);
-  expect(held.press).toBeGreaterThan(0.6);
+  const { point: p, snapshot: held } = await pressOverUntil(page, "median-cubital", 0.60);
+  expect(held.press).toBeGreaterThan(0.55);
 
-  // sweep across the arm rather than leaning on one spot, at a speed a hand
-  // could actually move at
-  for(let i=1;i<=10;i++){
-    await page.mouse.move(p.x + i*9, p.y + i*3);
-    await page.waitForTimeout(28);
+  /* Sweep across the arm rather than leaning on one spot, and read the touch
+     WHILE it is moving. Reading afterwards measures the recovery instead: the
+     hand stops, the dwell resumes, and it bears down again within a couple of
+     frames — which is the mechanic working, not the mechanic missing. */
+  /* A REAL search sweep, down the length of the forearm and back onto the
+     site. Two vessels a few pixels apart is not a sweep — it is a fidget, and
+     it sits right on the speed at which dwell and travel cancel out. */
+  const path = await page.evaluate(()=>window.__phlebTest.screenPointsOnBenchLimb(
+    [0.00, -0.03, -0.06, -0.09, -0.12, -0.09, -0.06, -0.03, 0.00, -0.04, -0.08, -0.02]
+      .map(x=>[x, 0.15, 0.045])
+  ));
+  let lightest = held.press;
+  let feltWhileMoving = null;
+  for(const q of path){
+    await page.mouse.move(q.x, q.y);
+    // long enough for a frame to actually run between samples: on a runner
+    // drawing at a few frames a second, twelve moves otherwise all land inside
+    // one frame and the sweep is never observed at all
+    await page.waitForTimeout(120);
+    const s = await snapshot(page);
+    if(s.press < lightest) lightest = s.press;
+    if(s.feel && s.feel !== "nothing") feltWhileMoving = s.feel;
   }
-  const swept = await snapshot(page);
   await liftOff(page);
-  expect(swept.press).toBeLessThan(held.press);
+  expect(lightest).toBeLessThan(held.press);
+  // THE POINT: moving is how you search, so a sweeping hand is still feeling.
+  // The old model decayed pressure to nothing the moment you moved at all.
+  expect(lightest).toBeGreaterThan(0.12);
+  expect(feltWhileMoving).not.toBeNull();
 });
 
 /* ---------- what is under the finger matters --------------------------------- */
@@ -136,8 +219,7 @@ test("pressing over the artery feels something pushing back in time", async ({ p
   await openPalpation(page, "teach");
   // the brachial artery runs deep — it takes a firm press to find at all,
   // which is why a light touch over it feels of nothing in particular
-  await pressOver(page, "brachial-artery", 1000);
-  const snap = await snapshot(page);
+  const snap = (await pressOverUntil(page, "brachial-artery", 0.68)).snapshot;
   await expect(page.locator('[data-live="feel"]')).toContainText(/pushing back/i);
   await liftOff(page);
 
@@ -147,8 +229,7 @@ test("pressing over the artery feels something pushing back in time", async ({ p
 
 test("pressing over the tendon feels hard and unmoving", async ({ page })=>{
   await openPalpation(page, "teach");
-  await pressOver(page, "biceps-tendon", 800);
-  const snap = await snapshot(page);
+  const snap = (await pressOverUntil(page, "biceps-tendon", 0.68)).snapshot;
   await expect(page.locator('[data-live="feel"]')).toContainText(/does not give/i);
   await liftOff(page);
   expect(snap.feel).toBe("tendon");
@@ -156,7 +237,7 @@ test("pressing over the tendon feels hard and unmoving", async ({ page })=>{
 
 test("lifting off something pulsing counts as recognising it", async ({ page })=>{
   await openPalpation(page, "teach");
-  await pressOver(page, "brachial-artery", 1000);
+  await pressOverUntil(page, "brachial-artery", 0.68);
   await liftOff(page);
   const snap = await snapshot(page);
   expect(snap.arteryPressed).toBe(true);
@@ -184,7 +265,7 @@ test("marking the vein you felt passes, and teaching mode then lets the draw on"
 
 test("marking the artery is blocked, whatever else was right", async ({ page })=>{
   await openPalpation(page, "teach");
-  await pressOver(page, "brachial-artery", 1000);
+  await pressOverUntil(page, "brachial-artery", 0.68);
   await liftOff(page);
   await page.locator("#plpMark").click();
   await page.waitForTimeout(150);
@@ -245,7 +326,7 @@ test("the controls path names spots on the arm, never the veins themselves", asy
 
 test("a scored shift never names what you are feeling", async ({ page })=>{
   await openPalpation(page, "play");
-  await pressOver(page, "brachial-artery", 1000);
+  await pressOverUntil(page, "brachial-artery", 0.68);
   const sensation = await page.locator('[data-live="feel"]').innerText();
   const whole = await page.locator(".plp-coach").innerText();
   await liftOff(page);
@@ -258,7 +339,7 @@ test("a scored shift never names what you are feeling", async ({ page })=>{
 
 test("a scored shift lets a bad site through and carries it forward", async ({ page })=>{
   await openPalpation(page, "play");
-  await pressOver(page, "biceps-tendon", 800);
+  await pressOverUntil(page, "biceps-tendon", 0.68);
   await liftOff(page);
   await page.locator("#plpMark").click();
   await page.waitForTimeout(150);
