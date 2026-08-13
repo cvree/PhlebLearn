@@ -9,6 +9,7 @@
    ends up inside a real container — or is refused by the trash.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { settleBench } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -44,6 +45,8 @@ async function open(page, mode, step){
     [step || "release", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
+  // the camera eases onto this step's framing; a point read mid-move is stale
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.withdrawalSnapshot());

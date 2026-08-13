@@ -1029,13 +1029,19 @@ function installTestSeam(){
       const mouth = ctx.axis.origin.clone().addScaledVector(ctx.axis.out, g.holderLen);
       const flange = ctx.axis.origin.clone().addScaledVector(ctx.axis.out, g.holderLen*g.flangeAt);
       const rack = {};
+      /* Whether each slot is SHOWING as well as where it is. rackTubeAt()
+         skips a hidden slot, so an anchor for one is a point that cannot be
+         grabbed — which looks exactly like a broken grab radius and is not
+         one. Reported so a test can say which of the two it hit. */
+      const rackVisible = {};
       for(const key of Object.keys(ctx.rack.slots)){
         const s = ctx.rack.slots[key];
         rack[key] = at(new THREE.Vector3(s.x, s.y + g.tubeLen*0.6, s.z));
+        rackVisible[key] = !!(s.group && s.group.visible);
       }
       return {
         mode: ctx.mode,
-        rack,
+        rack, rackVisible,
         mouth: at(mouth),
         flange: at(flange),
         /** screen pixels per 10mm along the seat axis, and across it */

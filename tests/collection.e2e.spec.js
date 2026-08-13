@@ -9,6 +9,16 @@
    collected.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { settleBench } from "./benchHelpers.js";
+
+/* The slowest file in the suite, and honestly so: several of these tests seat
+   a tube, fill it, pull it off and seat the next one, which is four separate
+   pointer-driven drags. Every pointer sample is acknowledged only once the
+   renderer's main thread gets to it, and on a runner with no GPU this scene
+   renders at about six frames a second with all of the rasterising on that
+   same thread. The tests are not doing anything they should not; the machine
+   is slow, and 90 seconds was not enough room for a four-drag test. */
+test.describe.configure({ timeout: 180000 });
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -44,6 +54,8 @@ async function open(page, mode, step){
     [step || "fill", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.collectionAnchors()), null, { timeout:10000 });
+  // the camera eases onto this step's framing; a point read mid-move is stale
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.collectionSnapshot());
@@ -55,7 +67,7 @@ async function carryToHolder(page, key){
   const a = await anchors(page);
   await page.mouse.move(a.rack[key].x, a.rack[key].y);
   await page.mouse.down();
-  await page.mouse.move(a.mouth.x, a.mouth.y, { steps: 28 });
+  await page.mouse.move(a.mouth.x, a.mouth.y, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(120);
 }
@@ -70,7 +82,14 @@ async function seatDrag(page, mm, from){
   const start = from === "tube" ? tubeGrabPoint(a) : a.flange;
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(start.x + a.alongPx.dx*mm/10, start.y + a.alongPx.dy*mm/10, { steps: 24 });
+  /* Eight samples, not twenty-four. A push onto a holder is a straight line
+     and needs only enough samples to be a drag rather than a teleport — and
+     each one is a round trip that Chromium acks only once the renderer's main
+     thread gets to it, which on a runner with no GPU (this scene renders at
+     about six frames a second there, all of it on the main thread) is a
+     couple of seconds. Twenty-four of those was a minute of budget for a
+     four-millimetre push. */
+  await page.mouse.move(start.x + a.alongPx.dx*mm/10, start.y + a.alongPx.dy*mm/10, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(150);
 }

@@ -10,6 +10,7 @@
    be clean.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { settleBench } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -42,6 +43,8 @@ async function open(page, mode){
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("insert", ["lightblue","lavender"], m, "straight-antecubital"), mode||"teach");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.insertAnchors()), null, { timeout:10000 });
+  // the camera eases onto this step's framing; a point read mid-move is stale
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.insertSnapshot());

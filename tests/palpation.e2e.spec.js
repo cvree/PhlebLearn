@@ -8,6 +8,7 @@
    you never actually pressed.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { settleBench } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -41,6 +42,8 @@ async function openPalpation(page, mode){
   await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.screenPointOverVessel("median-cubital")),
     null, { timeout:10000 });
+  // the camera eases onto this step's framing; a point read mid-move is stale
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.palpationSnapshot());
