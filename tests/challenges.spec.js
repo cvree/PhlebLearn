@@ -175,3 +175,39 @@ test("the armed ids are a copy — a caller cannot reach in and change them", ()
   assert.deepEqual(armedChallengeIds(), ["oneStick"]);
   disarmChallenges();
 });
+
+/* -------------------------------------------------------------------------
+   THE LOADOUT LOCK
+
+   The picker used to live on the clock-in screen, which cannot be reached
+   during a draw. It lives in Settings now, which Esc opens at any moment —
+   and challenges are armed ONCE, in startShift(), before the first patient is
+   rolled, because "Deep vein" changes the arm that roll produces.
+
+   So a draw must not be able to change underneath the player.
+   ------------------------------------------------------------------------- */
+import {
+  loadoutLocked, lockLoadout, unlockLoadout,
+} from "../src/game/activeChallenges.js";
+
+test("the loadout locks for the length of a shift and unlocks when it ends", () => {
+  unlockLoadout();
+  assert.equal(loadoutLocked(), false, "at clock-in the loadout is editable");
+  lockLoadout();
+  assert.equal(loadoutLocked(), true, "a running shift fixes the terms it started under");
+  lockLoadout();
+  assert.equal(loadoutLocked(), true, "locking twice is not an unlock");
+  unlockLoadout();
+  assert.equal(loadoutLocked(), false, "the next shift can be set up freely");
+});
+
+test("arming a loadout does not itself lock it — the shift does", () => {
+  // Kept separate on purpose: armChallenges() is also how the shift is
+  // DISarmed at the end, and disarming must not be able to leave the picker
+  // stuck read-only with no shift running.
+  unlockLoadout();
+  armChallenges(["noAssist"]);
+  assert.equal(loadoutLocked(), false);
+  disarmChallenges();
+  assert.equal(loadoutLocked(), false);
+});

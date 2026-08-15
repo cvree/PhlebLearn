@@ -40,13 +40,14 @@ import { tickComplications } from "./venipuncture/complications/complicationRunt
 import { tickMotion } from "./bench/motion.js";
 import { startRoomTone, stopRoomTone, roomToneRunning } from "./audio/procedural.js";
 
-import { SS, DARK, REDUCED, state } from "./game/gameState.js";
+import { SS, DARK, REDUCED, state, saveSS } from "./game/gameState.js";
+import { migrateSave } from "./game/saveSystem.js";
 import { sfx } from "./audio/audioManager.js";
 import { updateMusicBtn, setMusicVol, playLobby, armAudioUnlock } from "./audio/audioManager.js";
 import { toast, confetti } from "./ui/notifications.js";
 import {
   openSettings, closeSettings, toggleSettings, toggleReduced, toggleThemeAndSync, toggleMusicAndSync,
-  toggleHandedness, toggleAssistedSnapping,
+  toggleHandedness, toggleAssistedSnapping, toggleButtonControls,
   renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen
 } from "./ui/settings.js";
 import { go, syncTop } from "./ui/panels.js";
@@ -134,6 +135,7 @@ function setupInput(canvasEl){
   const su=document.getElementById("setMusic"); if(su) su.onclick=()=>toggleMusicAndSync();
   const sha=document.getElementById("setHand"); if(sha) sha.onclick=()=>toggleHandedness();
   const snp=document.getElementById("setSnap"); if(snp) snp.onclick=()=>toggleAssistedSnapping();
+  const dir=document.getElementById("setDirect"); if(dir) dir.onclick=()=>toggleButtonControls();
   const sv=document.getElementById("setMusicVol"); if(sv) sv.oninput=()=>{ setMusicVol((+sv.value||0)/100); };
   const ss=document.getElementById("openShopSettings"); if(ss) ss.onclick=()=>{ sfx("tap"); closeSettings(); renderUpgradeShop(); };
   const sc=document.getElementById("setClose"); if(sc) sc.onclick=()=>{ sfx("tap"); closeSettings(); };
@@ -285,6 +287,10 @@ function animate(){
 function boot(){
   if(window.__tinyVialsBooted) return;
   window.__tinyVialsBooted=true;
+  // Before anything reads the save: a game that shipped with four modes now
+  // has two, and a learner's Practice history belongs to Learn rather than to
+  // nobody. Idempotent, so it is safe on an already-migrated save.
+  try{ migrateSave(SS); saveSS(); }catch(e){ console.warn("save migration skipped", e); }
   try{ startThree(); }
   catch(e){ const m=document.getElementById("loadingMsg"); if(m) m.innerHTML='<span class="err">3D failed to start: '+(e.message||e)+'</span>'; return; }
   document.getElementById("loading").style.display="none";
@@ -620,6 +626,19 @@ function installTestSeam(){
     async applyBandOver(){
       const rt = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
       return !!rt.applyBandProgrammatically({ bandX: 0.089, wrap: "over", skew: 0, tension: 0.55 });
+    },
+    /**
+     * A correctly applied band, through the same pure helpers the gesture
+     * writes through. Exists because Learn GATES its continue button — that
+     * is the mode's defining property — so a test of what happens after a
+     * section cannot get there by forcing a click on a disabled control. It
+     * has to actually do the step, and this is the step done properly.
+     */
+    async applyBandWell(){
+      const rt = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      return !!rt.applyBandProgrammatically({
+        bandX: 0.089, wrap: "under", skew: 0, tension: 0.55, tuck: "proximal",
+      });
     },
     /** The tourniquet's state and the arm's response, as the rules see them. */
     async tourniquetSnapshot(){

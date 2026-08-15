@@ -38,3 +38,25 @@ export function challengeSetup(){ return SETUP; }
 
 /** Is anything at all in force? Lets callers skip the lookups entirely. */
 export function challengesArmed(){ return IDS.length > 0; }
+
+/* =========================================================================
+   THE CHOSEN LOADOUT — what the NEXT shift will be armed with.
+
+   Distinct from the armed setup above, and the distinction is load-bearing.
+   The picker used to live on the clock-in screen, which the learner could not
+   reach mid-draw; it lives in Settings now, which Esc opens at any moment.
+   Since `armChallenges()` runs once in `startShift()` — before the first
+   patient is rolled, because "Deep vein" changes the arm that roll produces —
+   a loadout edited mid-shift must not reach the draw already in progress.
+
+   So the choice is stored here and only ever transferred by `startShift()`.
+   The picker reads `loadoutLocked()` and goes read-only while a shift is
+   running. tests/challenges.spec.js asserts a draw cannot change underneath
+   the player.
+   ========================================================================= */
+let LOCKED = false;
+
+/** True while a shift is running: the loadout is fixed until it ends. */
+export function loadoutLocked(){ return LOCKED; }
+export function lockLoadout(){ LOCKED = true; }
+export function unlockLoadout(){ LOCKED = false; }

@@ -1,11 +1,13 @@
 /* =========================================================================
-   THREE MODES — browser acceptance tests against the PRODUCTION build.
+   TWO MODES — browser acceptance tests against the PRODUCTION build.
 
    The unit tests prove the reveal table is internally distinct. These prove
-   the distinction reaches the screen: that Learn instructs, that Practice
-   reminds without answering, and that the Final Practical says nothing —
-   including that it does not leak a verdict through colour, which is how
-   every judgement in this app is expressed.
+   the distinction reaches the screen: that Learn instructs, and that Play
+   says NOTHING — including that it does not leak a verdict through colour,
+   which is how every judgement in this app is expressed, and that it does not
+   leak one through chrome either. A step counter, a progress bar and a button
+   marked "Carry on" are all ways of telling a trained phlebotomist where they
+   are in a piece of software, and Play has none of them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
 
@@ -45,13 +47,53 @@ async function openStep(page, stepId, mode){
    The mode picker
    ------------------------------------------------------------------------- */
 
-test("the idle screen offers three separate modes", async ({ page }) => {
+test("the clock-in screen offers exactly two modes", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await page.goto("./");
   await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
-  await expect(page.locator("#modePractice")).toBeVisible();
-  await expect(page.locator("#modeFinal")).toBeVisible();
-  await expect(page.locator("#modeFinal")).toContainText("Final Practical");
+  await expect(page.locator("#modePlay")).toBeVisible();
+  await expect(page.locator("#modeLearn")).toContainText("Learn");
+  await expect(page.locator("#modePlay")).toContainText("Play");
+  // the two that were removed are gone, not merely renamed
+  await expect(page.locator("#modePractice")).toHaveCount(0);
+  await expect(page.locator("#modeFinal")).toHaveCount(0);
+  await expect(page.locator("#modeBench")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("Make it harder lives in Settings, and locks while a shift is running", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await page.goto("./");
+  await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
+
+  // not on the clock-in screen any more
+  await expect(page.locator("#panel .chal-chip")).toHaveCount(0);
+
+  await page.locator("#settingsBtn").click();
+  const box = page.locator("#setChallenges");
+  await expect(box).toBeVisible();
+  await expect(box).toContainText("Make it harder");
+  // it is a <details>, collapsed by default so Settings stays scannable
+  await box.locator("summary").click();
+  const chips = box.locator(".chal-chip");
+  expect(await chips.count()).toBeGreaterThan(4);
+
+  // editable at clock-in: arming one shows up on the clock-in screen
+  await chips.first().click();
+  await expect(chips.first()).toHaveAttribute("aria-pressed", "true");
+  await page.locator("#setClose").click();
+  await expect(page.locator("#panel .chal-armed")).toBeVisible();
+
+  /* And now the thing that made moving this non-trivial. Challenges are armed
+     ONCE, before the first patient is rolled, because "Deep vein" changes the
+     arm that roll produces. Clock-in could not be reached mid-draw; Settings
+     can. So a running shift must not be editable. */
+  await page.locator("#modeLearn").click();
+  await expect(page.locator("#panel")).toContainText(/requisition|Patient|arrives/i, { timeout:10000 });
+  await page.locator("#settingsBtn").click();
+  await box.locator("summary").click();
+  await expect(box).toContainText("Changes apply to your next one");
+  await expect(box.locator(".chal-chip").first()).toBeDisabled();
   expect(errors).toEqual([]);
 });
 
@@ -59,42 +101,57 @@ test("the idle screen offers three separate modes", async ({ page }) => {
    What each mode puts on the screen
    ------------------------------------------------------------------------- */
 
-test("Learn teaches the step and gates the Continue button", async ({ page }) => {
+test("Learn teaches the step, gates the Continue button, and says where you are", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await openStep(page, "insert", "learn");
   await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "learn");
   await expect(page.locator(".lesson .modetag")).toContainText("TEACHING");
   await expect(page.locator("#vpStage .stg-msg.neutral")).toHaveCount(0);
   await expect(page.locator("#insReady")).toBeDisabled();
+  // the chrome of a lesson: which step, how far through, and what it is called
+  await expect(page.locator(".vp-count")).toContainText("step");
+  await expect(page.locator(".vp-bar")).toBeVisible();
+  await expect(page.locator("#panel")).toHaveAttribute("data-chrome", "full");
   expect(errors).toEqual([]);
 });
 
-test("Practice reminds the learner what the step is for, without answering it", async ({ page }) => {
+test("Play says nothing at all: no lesson, no hint, no counter, no bar", async ({ page }) => {
   const errors = attachDiagnostics(page);
-  await openStep(page, "insert", "practice");
-  await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "practice");
-  await expect(page.locator(".lesson .modetag")).toHaveCount(0);
-  // the standing reminder is there…
-  const msg = page.locator("#vpStage .stg-msg.neutral");
-  await expect(msg).toContainText("Reminder.");
-  await expect(msg).toContainText("Anchor the vein");
-  // …but nothing tells them what is wrong right now, and nothing blocks them
-  await expect(page.locator("#vpStage .tq-next")).toHaveCount(0);
+  await openStep(page, "insert", "play");
+  await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "play");
+  await expect(page.locator("#panel")).toHaveAttribute("data-chrome", "hud");
+
+  await expect(page.locator(".lesson")).toHaveCount(0);
+  await expect(page.locator(".vp-hint")).toHaveCount(0);
+  await expect(page.locator(".vp-count")).toHaveCount(0);
+  await expect(page.locator(".vp-bar")).toHaveCount(0);
   await expect(page.locator("#insReady")).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
-test("the Final Practical gives no reminder, no coaching and no gate", async ({ page }) => {
+test("Play shows a HUD of values, not a coaching panel of prose", async ({ page }) => {
   const errors = attachDiagnostics(page);
-  await openStep(page, "insert", "final");
-  await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "final");
-  await expect(page.locator(".lesson .modetag")).toHaveCount(0);
-  const msg = page.locator("#vpStage .stg-msg.neutral");
-  await expect(msg).not.toContainText("Reminder.");
-  await expect(msg).toContainText("assessed after the patient");
-  await expect(page.locator("#insReady")).toBeEnabled();
-  // the step's own tip sheet is not printed above the stage either
-  await expect(page.locator(".vp-hint")).not.toContainText("shallow 15–30");
+  await openStep(page, "fill", "play");
+  const hud = page.locator("#panel .hud");
+  await expect(hud).toBeVisible();
+  // who this is, and how many tubes — the two things worth knowing mid-draw
+  await expect(hud.locator(".hud-who")).not.toBeEmpty();
+  await expect(hud.locator(".hud-tubes")).toContainText("/2");
+
+  /* The HUD is the WHOLE panel above the stage. If a paragraph of teaching
+     prose has crept back in, this is what catches it: the no-instructions
+     test is that a trained phlebotomist never has to read anything. */
+  const chromeText = await page.evaluate(()=>{
+    const panel = document.getElementById("panel");
+    const stage = document.getElementById("vpStage");
+    let t = "";
+    for(const node of panel.childNodes){
+      if(node === stage) break;
+      t += (node.textContent || "");
+    }
+    return t.trim();
+  });
+  expect(chromeText.length, `Play printed prose above the stage: ${chromeText}`).toBeLessThan(60);
   expect(errors).toEqual([]);
 });
 
@@ -126,46 +183,46 @@ async function valuesIn(page, mode){
   return values;
 }
 
-test("Learn colours a measured value; the Final Practical renders the same value plain", async ({ page }) => {
+test("Learn colours a measured value; Play renders the same value plain", async ({ page }) => {
   const errors = attachDiagnostics(page);
   const learn = await valuesIn(page, "learn");
-  const final = await valuesIn(page, "final");
+  const play = await valuesIn(page, "play");
 
   // the same nodes, with the same verdict classes, in both modes
-  expect(final.map(v=>v.cls)).toEqual(learn.map(v=>v.cls));
+  expect(play.map(v=>v.cls)).toEqual(learn.map(v=>v.cls));
   expect(learn.some(v=>/\b(good|bad|wait)\b/.test(v.cls))).toBe(true);
 
   // …but only Learn lets the class reach the pixels
-  expect(final.every(v=>v.decoration === "none")).toBe(true);
-  expect(new Set(final.map(v=>v.colour)).size).toBe(1);
-  const changed = learn.filter((v, i)=>v.colour !== final[i].colour);
+  expect(play.every(v=>v.decoration === "none")).toBe(true);
+  expect(new Set(play.map(v=>v.colour)).size).toBe(1);
+  const changed = learn.filter((v, i)=>v.colour !== play[i].colour);
   expect(changed.length, "Learn showed no verdict colour at all").toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 
-test("Practice withholds the verdict too — it arrives at the end of the section", async ({ page }) => {
-  const practice = await valuesIn(page, "practice");
-  await expect(page.locator("#vpStage")).toHaveAttribute("data-verdicts", "0");
-  expect(new Set(practice.map(v=>v.colour)).size).toBe(1);
-});
-
 /* -------------------------------------------------------------------------
-   Practice's section feedback and replay
+   Section feedback and replay — Practice's two good ideas, now in Learn
    ------------------------------------------------------------------------- */
 
-test("Practice shows the section's own measurements when the section ends, and can replay it", async ({ page }) => {
+test("Learn shows the section's own measurements when it ends, and can replay it", async ({ page }) => {
   test.slow();
   const errors = attachDiagnostics(page);
-  await openStep(page, "tourniquet", "practice");
+  await openStep(page, "tourniquet", "learn");
 
-  // finish the tourniquet section however it went
+  /* Learn GATES its continue button — that is the mode — so the section has
+     to actually be done before it can end. The band goes on through the same
+     pure helpers the gesture writes through. */
+  await page.evaluate(()=>window.__phlebTest.applyBandWell());
+  await expect(page.locator("#tqReady")).toBeEnabled({ timeout:10000 });
   await page.locator("#tqReady").click();
 
-  const card = page.locator(".sec-card");
+  const card = page.locator(".sec-card").first();
   await expect(card).toBeVisible({ timeout:10000 });
-  await expect(page.locator("h2")).toContainText("Tourniquet");
   await expect(card.locator(".sec-score")).toContainText("/100");
-  await expect(card.locator(".sec-narrative")).not.toBeEmpty();
+  // The card can carry two narrative paragraphs (the reading, and "nothing was
+  // recorded" when there are no mistakes), so assert on what the learner
+  // actually reads rather than on one node.
+  await expect(card).toContainText(/Band at .*″ above the site/);
 
   // replaying rewinds to the section's first step and clears its session
   await page.locator("#secAgain").click();
@@ -176,11 +233,9 @@ test("Practice shows the section's own measurements when the section ends, and c
   expect(errors).toEqual([]);
 });
 
-test("Learn and the Final Practical never show a section card", async ({ page }) => {
-  for(const mode of ["learn", "final"]){
-    await openStep(page, "tourniquet", mode);
-    await page.locator("#tqReady").click({ force:true });
-    await page.waitForTimeout(400);
-    await expect(page.locator(".sec-card")).toHaveCount(0);
-  }
+test("Play never shows a section card — nothing is said until the report", async ({ page }) => {
+  await openStep(page, "tourniquet", "play");
+  await page.locator("#tqReady").click({ force:true });
+  await page.waitForTimeout(600);
+  await expect(page.locator(".sec-card")).toHaveCount(0);
 });

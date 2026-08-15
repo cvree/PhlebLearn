@@ -48,13 +48,12 @@ test("production build loads with a Three.js canvas and no fatal errors", async 
   expect(errors, `Unexpected console/page errors:\n${errors.join("\n")}`).toEqual([]);
 });
 
-test("main interaction panel shows Clock In and offers the three modes", async ({ page }) => {
+test("main interaction panel shows Clock In and offers the two modes", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
   await expect(page.locator("#modeLearn")).toBeVisible();
-  await expect(page.locator("#modePractice")).toBeVisible();
-  await expect(page.locator("#modeFinal")).toBeVisible();
+  await expect(page.locator("#modePlay")).toBeVisible();
   await page.locator("#modeLearn").click();
   await expect(page.getByRole("heading", { name: /Patient 1 of/i })).toBeVisible();
   expect(errors).toEqual([]);
@@ -105,8 +104,12 @@ test("reading the requisition leads into the draw, not into two tube-tapping scr
   const count = await options.count();
   for(let i=0;i<count;i++){
     if(await page.locator("#opts").count() === 0) break;
-    await page.locator("#opts .opt").nth(i).click();
-    await page.waitForTimeout(200);
+    // The list re-renders after each wrong pick, so re-resolve it every time
+    // rather than holding a handle to a node that is about to be replaced.
+    const opt = page.locator("#opts .opt").nth(i);
+    if(!(await opt.count())) break;
+    await opt.click({ timeout: 5000 }).catch(()=>{});
+    await page.waitForTimeout(250);
   }
   const cont = page.locator("#panel button", { hasText: /Continue/i });
   if(await cont.count()) await cont.first().click();

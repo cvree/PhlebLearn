@@ -71,3 +71,41 @@
 
 /* ---------- the mode picker on the idle screen --------------------------- */
 .mode-note{font-size:11.5px;color:var(--ink-soft);margin:-4px 0 8px;text-align:center}
+
+/* ---------- the two mode cards on the clock-in screen ---------------------
+   Two, where there used to be four. Each card says what happens rather than
+   who it is for, because "for confident learners" is a thing to worry about
+   and "nothing is said until the report" is a fact to choose between. */
+.modecard{
+  display:flex; flex-direction:column; align-items:flex-start; gap:3px;
+  text-align:left; padding:14px 16px; line-height:1.35;
+}
+.mc-title{font-size:17px;font-weight:900;letter-spacing:-.01em}
+.mc-sub{font-size:12.5px;font-weight:700;opacity:.8}
+.mc-stat{font-size:11px;font-weight:800;opacity:.55;font-variant-numeric:tabular-nums}
+.chal-armed{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.chal-armed .sub{font-size:11px;opacity:.7;margin:0}
+
+/* ---------- the HUD: what replaces the panel in Play ----------------------
+   Four values, no words, no verdicts, no buttons. It is deliberately
+   monochrome: every judgement in this game is expressed as colour, and Play
+   withholds judgement until the report. */
+.hud{
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px;
+  padding:8px 12px; margin:0 0 8px;
+  border-radius:12px; background:var(--card); border:1px solid var(--line);
+  font-size:12.5px; font-weight:800; color:var(--ink-soft);
+  font-variant-numeric:tabular-nums;
+}
+.hud-who{color:var(--ink);font-weight:900}
+.hud-tubes{display:inline-flex;align-items:center;gap:4px}
+.hud-pip{
+  width:8px;height:8px;border-radius:50%;
+  border:1.5px solid var(--ink-soft); opacity:.45;
+}
+.hud-pip.on{background:var(--ink-soft);opacity:.9}
+.hud-clock,.hud-vol{opacity:.85}
+
+/* In Play the panel is a HUD, not a sheet: it must not sit on top of the
+   millimetre work. Narrow, top-aligned, and no taller than its contents. */
+.panel[data-chrome="hud"]{max-height:none}

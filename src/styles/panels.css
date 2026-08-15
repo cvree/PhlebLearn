@@ -86,7 +86,11 @@
 .settings-overlay{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(20,18,33,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 .settings-overlay.show{display:flex;animation:fadeIn .18s ease both}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.settings-card{background:#fff;border:2px solid var(--line);border-radius:18px;padding:18px;width:min(340px,86vw);box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.settings-card{background:#fff;border:2px solid var(--line);border-radius:18px;padding:18px;width:min(340px,86vw);box-shadow:0 18px 50px rgba(0,0,0,.28);
+  /* Settings grew a Make-it-harder section with eight chips in it. Without a
+     scroll the card runs off the bottom of a laptop viewport and the Done
+     button becomes unreachable. */
+  max-height:88vh;overflow:auto;overscroll-behavior:contain}
 .settings-card h3{margin:0 0 2px;font-size:18px;color:var(--plum)}
 .settings-card .ssub{font-size:12px;color:var(--ink-soft);margin-bottom:10px}
 .settings-card .credits{margin-top:10px;text-align:center;font-size:11px;font-weight:800;color:var(--ink-soft);opacity:.8}
@@ -128,3 +132,14 @@
 .shop-tags button.buy:hover{filter:brightness(1.05)}
 .shop-close{border:1.5px solid var(--line);background:#f3ecfb;color:var(--plum);border-radius:12px;padding:7px 12px;font-family:inherit;font-weight:900;cursor:pointer;flex:0 0 auto}
 @media(max-width:620px){.shop-card{padding:15px}}
+
+/* ---- settings: grouped, because a flat list of nine rows is a search ---- */
+.setgroup{
+  font-size:10.5px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-soft);opacity:.65;margin:12px 0 -2px;padding-top:4px;
+}
+.setgroup:first-of-type{margin-top:4px}
+#setChallenges{margin-top:14px}
+#setChallenges .ssub{margin:6px 0 8px}
+#setChallenges .locked-note{font-weight:800;opacity:.9}
+.chal-chip:disabled{opacity:.5;cursor:default}

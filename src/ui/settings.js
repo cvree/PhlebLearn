@@ -15,6 +15,14 @@ import {
 import { STICKERS } from "../config.js";
 import { toggleTheme } from "../rendering/materials.js";
 import { updateRoomUpgrades, arrangeStart, arrangeStop, arrangeIsOpen } from "../world/room.js";
+import { CHALLENGES } from "../game/challenges.js";
+import { chosenChallenges, toggleChallenge } from "../game/saveSystem.js";
+import { loadoutLocked } from "../game/activeChallenges.js";
+/* One-directional: panels.js does not import this file, so this is not a
+   cycle. It exists because the clock-in screen STATES the loadout that
+   Settings now chooses — arming a challenge and closing the overlay has to
+   leave the terms of the next shift visible on the screen behind it. */
+import { refreshIdle } from "./panels.js";
 
 /* ---------- settings overlay ---------------------------------------------- */
 export function syncSettingsLabels(){
@@ -24,6 +32,63 @@ export function syncSettingsLabels(){
   const sv=$("setMusicVol"); if(sv){ sv.value=Math.round(musicVolNow()*100); }
   const h=$("setHand"); if(h){ const left=SS.handedness==="left"; h.textContent=left?"Left":"Right"; h.classList.toggle("on",left); }
   const sn=$("setSnap"); if(sn){ const on=!!SS.assistedSnapping; sn.textContent=on?"On":"Off"; sn.classList.toggle("on",on); }
+  const dm=$("setDirect"); if(dm){ const on=!SS.buttonControls; dm.textContent=on?"Direct":"Buttons"; dm.classList.toggle("on",on); }
+  renderChallengePicker();
+}
+
+/* =========================================================================
+   MAKE IT HARDER — the technique challenges, moved here from clock-in.
+
+   Every entry takes something away: the coach, the magnetism, the vein
+   finder, the hand you are used to. Nothing here makes a draw easier, which
+   is what lets a challenge run be worth more (see game/challenges.js for the
+   two invariants that keep the bonus honest).
+
+   THE ONE THING THAT MADE THIS MOVE NON-TRIVIAL. The loadout is armed once,
+   in startShift(), BEFORE the first patient is rolled — "Deep vein" changes
+   the arm that roll produces. Clock-in was unreachable during a draw; Settings
+   opens on Esc at any moment. So while a shift is running the picker is
+   read-only and says so. Toggling comes back the moment there is no draw for
+   an edit to reach.
+   ========================================================================= */
+export function renderChallengePicker(){
+  const host = $("setChallenges");
+  if(!host) return;
+  const on = new Set(chosenChallenges());
+  const locked = loadoutLocked();
+  const mult = [...on].reduce((m, id) => m*(CHALLENGES.find(c => c.id===id) || {bonus:1}).bonus, 1);
+
+  host.innerHTML = `
+    <summary>⚡ Make it harder${on.size ? ` <b>· ${on.size} on · ×${mult.toFixed(2)}</b>` : ""}</summary>
+    <p class="ssub">Every one of these takes something away, so a challenge run is always
+       worth more — and stacking them multiplies.</p>
+    ${locked ? `<p class="ssub locked-note">A shift is running. Changes apply to your next one.</p>` : ""}
+    <div class="chal-chips">
+      ${CHALLENGES.map(c => `
+        <button class="chal-chip${on.has(c.id) ? " on" : ""}" data-chal="${c.id}"
+                aria-pressed="${on.has(c.id)}" ${locked ? "disabled" : ""} title="${c.blurb}">
+          ${c.label} <span class="chal-mult">×${c.bonus.toFixed(2)}</span>
+        </button>`).join("")}
+    </div>`;
+
+  if(locked) return;
+  host.querySelectorAll("[data-chal]").forEach(btn=>{
+    btn.onclick = ()=>{ toggleChallenge(btn.dataset.chal); sfx("click"); renderChallengePicker(); };
+  });
+}
+
+/**
+ * Direct manipulation, or buttons for everything.
+ *
+ * This is an ACCESS preference and it belongs here, which is the whole point
+ * of moving it. It used to be a per-step toggle inside the collection panel
+ * that wrote itself to the save — so one tap of "Use controls" during one
+ * tube made every future tube in every future draw a list of buttons, and the
+ * 3D bench the game is built around was never seen again.
+ */
+export function toggleButtonControls(){
+  SS.buttonControls = !SS.buttonControls;
+  saveSS(); syncSettingsLabels(); sfx("tap");
 }
 export function toggleReduced(){ setReduced(!REDUCED); syncSettingsLabels(); sfx("tap"); }
 // Handedness is not cosmetic: it mirrors the staging zones, the tray and the
@@ -31,7 +96,7 @@ export function toggleReduced(){ setReduced(!REDUCED); syncSettingsLabels(); sfx
 export function toggleHandedness(){ SS.handedness = SS.handedness==="left"?"right":"left"; saveSS(); syncSettingsLabels(); sfx("tap"); }
 export function toggleAssistedSnapping(){ SS.assistedSnapping = !SS.assistedSnapping; saveSS(); syncSettingsLabels(); sfx("tap"); }
 export function openSettings(){ const o=$("settings"); if(o){ o.classList.add("show"); syncSettingsLabels(); } }
-export function closeSettings(){ const o=$("settings"); if(o) o.classList.remove("show"); }
+export function closeSettings(){ const o=$("settings"); if(o) o.classList.remove("show"); refreshIdle(); }
 export function toggleSettings(){ const o=$("settings"); if(!o)return; o.classList.contains("show")?closeSettings():openSettings(); }
 export function toggleMusicAndSync(){ toggleMusic(); syncSettingsLabels(); }
 export function toggleThemeAndSync(){ toggleTheme(); syncSettingsLabels(); }

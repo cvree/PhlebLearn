@@ -35,12 +35,17 @@ export let state = "idle";
 export function setState(s){ state = s; }
 
 /* =========================================================================
-   THE THREE MODES
+   TWO MODES
 
-   Learn, Practice and Final Practical are not difficulty settings — they
-   differ in WHAT THE LEARNER IS TOLD WHILE THEY WORK. One boolean could not
-   express that, so `MODE` is a three-way value and `reveal()` is the single
-   descriptor every coach and panel reads instead of re-deriving it.
+   The game used to have four — Learn, Practice, Final Practical and the
+   Bench — which is four answers to the two questions a learner actually
+   arrives with: TEACH ME and TEST ME. Every extra card on the clock-in screen
+   was a decision taken before any blood was drawn, by someone with no basis
+   yet for taking it.
+
+   So there are two, and they differ in exactly one thing: WHAT THE LEARNER IS
+   TOLD WHILE THEY WORK. One boolean could not express that, so `reveal()` is
+   the single descriptor every coach and panel reads instead of re-deriving it.
 
      instruction      full teaching prose, the specific error, the correct
                       next action, and a Continue button gated on being right
@@ -52,65 +57,75 @@ export function setState(s){ state = s; }
      sectionFeedback  shows the section's own measurements when it ends
      repeatSections   may offer to replay a section that went badly
      highlights       may highlight anatomy and tool regions in the scene
+     stepChrome       a step counter, a progress bar, and a button that has to
+                      be pressed before the next step will start
 
-   The legacy strings "teach" and "play" still map in, because the ?e2e=1
-   seam and saved links pass them.
+   WHAT HAPPENED TO PRACTICE AND THE BENCH.
+
+   Practice's two genuinely good ideas — feedback at the end of a section, and
+   being able to replay that section — are TEACHING, not testing, so they moved
+   into Learn, which is where a learner who wants to be shown their mistakes
+   already is. Nothing was deleted except the card.
+
+   The Bench was a rehearsal room with no scoring and an instant reset. What it
+   was really compensating for is that a draw used to be a sixteen-screen form
+   you could not get through quickly; Play is continuous now, so "one more go"
+   is just the next patient.
+
+   NOTE FOR ANYONE DELETING THINGS: `src/bench/` is NOT the Bench. That
+   directory is the scene-lease layer (`benchSession.js`) and the feel layer
+   (`assist`, `motion`, `haptics`) that one-scene-per-encounter is built on.
+   Removing it would rebuild the patient's arm between every step again, which
+   is the exact architectural problem the redesign exists to have fixed.
+
+   The legacy strings still map in, because saved games, saved links and the
+   ?e2e=1 seam all pass them.
    ========================================================================= */
-/**
- * BENCH is the fourth mode and it is not a difficulty setting.
- *
- * Mastery needs cheap repetition, and until now every practice stick cost a
- * four-minute patient — which is why nobody ever practised the one gesture
- * they were bad at. The Bench is one arm, infinite supplies, no scoring and
- * an instant reset, and it is the single highest-value addition for
- * replayability in the whole redesign.
- */
-export const MODES = { LEARN:"learn", PRACTICE:"practice", FINAL:"final", BENCH:"bench" };
+export const MODES = { LEARN:"learn", PLAY:"play" };
 
-const LEGACY_MODES = { teach:MODES.LEARN, play:MODES.FINAL };
+/* "final" was the old name for Play. "practice" and "bench" were modes whose
+   worthwhile parts are now inside Learn, so that is where their saved progress
+   goes — a learner who put twenty draws through Practice must not open the new
+   build to a blank record. See saveSystem.js's migration for the other half. */
+const LEGACY_MODES = {
+  teach: MODES.LEARN,
+  practice: MODES.LEARN,
+  bench: MODES.LEARN,
+  final: MODES.PLAY,
+};
 
 export function normaliseMode(m){
   if(LEGACY_MODES[m]) return LEGACY_MODES[m];
-  return (m===MODES.LEARN || m===MODES.PRACTICE || m===MODES.FINAL || m===MODES.BENCH) ? m : MODES.FINAL;
+  return (m===MODES.LEARN || m===MODES.PLAY) ? m : MODES.PLAY;
 }
 
 export const MODE_REVEAL = {
   [MODES.LEARN]: {
     instruction:true, hints:true, verdicts:true, liveNumbers:true,
-    gateContinue:true, sectionFeedback:false, repeatSections:false, highlights:true,
+    gateContinue:true, sectionFeedback:true, repeatSections:true, highlights:true,
+    stepChrome:true,
   },
-  [MODES.PRACTICE]: {
-    // No immediate answers: the hint says what the step is for, the verdict
-    // waits for the end of the section, and nothing blocks the learner from
-    // finishing a step badly — that is the thing being practised.
-    instruction:false, hints:true, verdicts:false, liveNumbers:true,
-    gateContinue:false, sectionFeedback:true, repeatSections:true, highlights:false,
-  },
-  [MODES.FINAL]: {
-    instruction:false, hints:false, verdicts:false, liveNumbers:true,
+  /* Nothing is said until the report. No instruction, no hint, no verdict, no
+     step counter, and no button between one step and the next — the action
+     itself is what advances the draw. A trained phlebotomist should be able to
+     work through this without reading anything at all, which is only true if
+     there is nothing to read. */
+  [MODES.PLAY]: {
+    instruction:false, hints:false, verdicts:false, liveNumbers:false,
     gateContinue:false, sectionFeedback:false, repeatSections:false, highlights:false,
-  },
-  // Nothing is withheld and nothing is graded. It is a rehearsal room: the
-  // numbers are live so you can see what your hands are doing, the coach is
-  // quiet so you are not being talked at, and nothing blocks anything.
-  [MODES.BENCH]: {
-    instruction:false, hints:true, verdicts:true, liveNumbers:true,
-    gateContinue:false, sectionFeedback:false, repeatSections:true, highlights:true,
+    stepChrome:false,
   },
 };
 
 export const MODE_NAMES = {
-  [MODES.LEARN]:"Learn", [MODES.PRACTICE]:"Practice",
-  [MODES.FINAL]:"Final Practical", [MODES.BENCH]:"The Bench",
+  [MODES.LEARN]:"Learn", [MODES.PLAY]:"Play",
 };
 
-export let MODE = MODES.FINAL;
+export let MODE = MODES.PLAY;
 export function setMode(m){ MODE = normaliseMode(m); }
 export function guided(){ return MODE===MODES.LEARN; }
-export function practiceMode(){ return MODE===MODES.PRACTICE; }
-export function finalPractical(){ return MODE===MODES.FINAL; }
-/** The rehearsal room: no scoring, no gating, instant reset. */
-export function benchMode(){ return MODE===MODES.BENCH; }
+/** A scored shift. Nothing is revealed until the debrief. */
+export function playMode(){ return MODE===MODES.PLAY; }
 /** The descriptor above for the current mode. Never mutate the result. */
 /**
  * What the learner is told while they work.
@@ -122,7 +137,7 @@ export function benchMode(){ return MODE===MODES.BENCH; }
  * instruction, just one delivered as a locked button.
  */
 export function reveal(){
-  const base = MODE_REVEAL[MODE] || MODE_REVEAL[MODES.FINAL];
+  const base = MODE_REVEAL[MODE] || MODE_REVEAL[MODES.PLAY];
   if(!challengeSetup().silence) return base;
   return Object.assign({}, base, {
     instruction:false, hints:false, verdicts:false, gateContinue:false, highlights:false,

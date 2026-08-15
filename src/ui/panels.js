@@ -14,7 +14,7 @@ import { shuffle, pick, arraysEqual } from "../utils.js";
 import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, ALL_CATCHES } from "../config.js";
 import {
   SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
-  MODE, MODES, MODE_NAMES, guided, finalPractical, benchMode, reveal,
+  MODE, MODES, MODE_NAMES, guided, playMode, reveal,
 } from "../game/gameState.js";
 import { summaryLine, recordAttempt, recordFor, weakestCategories } from "../game/modeProgress.js";
 import { sectionForStep, endsSection, sectionMeasurements, resetFromSection } from "../venipuncture/sections.js";
@@ -22,7 +22,7 @@ import { MEASUREMENT_LABELS, CATEGORIES } from "../venipuncture/rubric/policy.js
 import { buildRubricReport } from "../venipuncture/rubric/rubricReport.js";
 import { buildReplay } from "../venipuncture/rubric/replay.js";
 import { renderPracticalReport, renderRubricSummary } from "./reportView.js";
-import { awardBadge, difficultyName, addXP, addCoins } from "../game/saveSystem.js";
+import { awardBadge, difficultyName, addXP, addCoins, chosenChallenges } from "../game/saveSystem.js";
 import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
 import { getRoomLevel, canChooseProcedure, hasUpgrade } from "../game/progression.js";
@@ -48,7 +48,7 @@ import { buildDebrief, sectionScores } from "../game/debrief.js";
 import { normaliseMastery, applyDraw as applyMastery, weakestTrack, TRACKS } from "../game/mastery.js";
 import { offerBests } from "../game/personalBests.js";
 import { CHALLENGES, scoreChallenges } from "../game/challenges.js";
-import { armChallenges, disarmChallenges, armedChallengeIds } from "../game/activeChallenges.js";
+import { armChallenges, disarmChallenges, armedChallengeIds, lockLoadout, unlockLoadout } from "../game/activeChallenges.js";
 
 /* ---------- top bar + panel entrance -------------------------------------- */
 /**
@@ -78,6 +78,13 @@ export function go(s){
   render();
   syncTop();
 }
+/**
+ * Re-renders the clock-in screen if that is what is showing, and does nothing
+ * otherwise. Settings calls it on close: the loadout is chosen there now, and
+ * the clock-in screen is where the shift's terms are stated.
+ */
+export function refreshIdle(){ if(state === "idle") render(); }
+
 export function render(){
   renderStep();
   animatePanelIn();
@@ -109,26 +116,18 @@ function renderStep(){
 }
 
 /* ---------- idle / clock in ------------------------------------------------ */
-// Shift length per mode: Learn is a short guided walk, Practice is long
-// enough to repeat what went badly, the Final Practical is one assessed
-// attempt — an examiner does not give you five goes at it.
-const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PRACTICE]:4, [MODES.FINAL]:1, [MODES.BENCH]:1 };
-
-/** The beats a Bench session can jump straight to. */
-const BENCH_BEATS = [
-  { id: "tourniquet", label: "Band", step: "tourniquet" },
-  { id: "palpation",  label: "Palpate", step: "palpate" },
-  { id: "cleaning",   label: "Clean", step: "clean" },
-  { id: "equipment",  label: "Assemble", step: "assemble" },
-  { id: "insert",     label: "Stick", step: "insert" },
-  { id: "collection", label: "Collect", step: "collect" },
-];
+/* Learn is a short guided walk through every step. Play is a shift: patient
+   after patient until you clock out, which is what the last screen of the
+   debrief is for. The old Final Practical was one patient because "an examiner
+   does not give you five goes at it" — but the report is per DRAW, so a longer
+   shift does not dilute it, and stopping a learner after one draw was the game
+   ending just as it started being a game. */
+const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PLAY]:6 };
 
 function renderIdle(){
   const line = m => summaryLine(SS.modeProgress, m);
   panel.innerHTML=`
     <h2>🩺 Clock in</h2>
-    <p class="sub">Four ways to work. <b>Learn</b> talks you through every step. <b>Practice</b> stays quiet until the end of each section, then lets you replay it. The <b>Final Practical</b> says nothing at all until the report. <b>The Bench</b> is not a shift — it is one arm, unlimited supplies, nothing scored, and a reset button.</p>
     <div class="tubechips">
       <span class="pill">⭐ XP ${SS.xp}</span>
       <span class="pill">🪙 ${SS.coins}</span>
@@ -137,23 +136,25 @@ function renderIdle(){
       <span class="pill">🏠 ${getRoomLevel().name}</span>
       ${equipmentPills()}
     </div>
-    <button class="btn alt cta-pulse starborder" id="modeLearn">🎓 Learn (guided, ${SHIFT_LEN[MODES.LEARN]} patients)</button>
-    <div class="mode-note">${line(MODES.LEARN)}</div>
-    <button class="btn alt" id="modePractice">🔁 Practice (${SHIFT_LEN[MODES.PRACTICE]} patients, feedback per section)</button>
-    <div class="mode-note">${line(MODES.PRACTICE)}</div>
-    <button class="btn cta-pulse starborder" id="modeFinal">📋 Final Practical (1 patient, full rubric report)</button>
-    <div class="mode-note">${line(MODES.FINAL)}</div>
-    <button class="btn alt" id="modeBench">🔧 The Bench (rehearse one gesture, nothing scored)</button>
+
+    <button class="btn alt modecard" id="modeLearn">
+      <span class="mc-title">🎓 Learn</span>
+      <span class="mc-sub">Talked through, step by step. Replay any section that went badly.</span>
+      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}</span>
+    </button>
+
+    <button class="btn cta-pulse starborder modecard" id="modePlay">
+      <span class="mc-title">🩸 Play</span>
+      <span class="mc-sub">A real shift. Nothing is said until the report.</span>
+      <span class="mc-stat">${line(MODES.PLAY)}</span>
+    </button>
     <div class="mode-note">${masteryLine()}</div>
-    ${SS.weak.length?`<div class="hint">Weak topics queued for Learn Mode: ${SS.weak.length}</div>`:""}
-    ${challengePickerHTML()}
+    ${SS.weak.length?`<div class="hint">Weak topics queued for Learn: ${SS.weak.length}</div>`:""}
+    ${armedChallengesHTML()}
   `;
   blurText(panel.querySelector("h2"));
   $("modeLearn").onclick=()=>{ sfx("win"); startShift(MODES.LEARN); };
-  $("modePractice").onclick=()=>{ sfx("win"); startShift(MODES.PRACTICE); };
-  $("modeFinal").onclick=()=>{ sfx("win"); startShift(MODES.FINAL); };
-  $("modeBench").onclick=()=>{ sfx("win"); startShift(MODES.BENCH); };
-  wireChallengePicker();
+  $("modePlay").onclick=()=>{ sfx("win"); startShift(MODES.PLAY); };
 }
 
 /* ---------- technique challenges ---------------------------------------------
@@ -162,59 +163,23 @@ function renderIdle(){
    different game, and a run with two of them on is worth more than either
    alone. See game/challenges.js for why none of them can make a draw easier.
 
-   Deliberately on the clock-in screen and nowhere else: the loadout is chosen
-   before the shift, not adjusted mid-draw when it is losing. */
+   THE PICKER LIVES IN SETTINGS NOW (ui/settings.js). All that is left here is
+   a line saying what is armed, so the clock-in screen states the terms of the
+   shift about to start without also being the place they are negotiated. */
 
-/** Chosen challenges, kept on the save so a loadout survives a reload. */
-function chosenChallenges(){
-  if(!Array.isArray(SS.challenges)) SS.challenges = [];
-  const ids = new Set(CHALLENGES.map(c => c.id));
-  SS.challenges = SS.challenges.filter(id => ids.has(id));
-  return SS.challenges;
-}
-
-function challengePickerHTML(){
-  const on = new Set(chosenChallenges());
-  const chips = CHALLENGES.map(c => `
-    <button class="chal-chip${on.has(c.id) ? " on" : ""}" data-chal="${c.id}"
-            aria-pressed="${on.has(c.id)}" title="${c.blurb}">
-      ${c.label} <span class="chal-mult">×${c.bonus.toFixed(2)}</span>
-    </button>`).join("");
-  const mult = [...on].reduce((m, id) => m*(CHALLENGES.find(c => c.id===id) || {bonus:1}).bonus, 1);
-  return `
-    <details class="challenges" id="chalBox"${on.size ? " open" : ""}>
-      <summary>⚡ Make it harder ${on.size ? `<b>· ${on.size} on · ×${mult.toFixed(2)}</b>` : ""}</summary>
-      <p class="sub">Every one of these takes something away. Nothing here makes a draw
-         easier, so a challenge run is always worth more — and stacking them multiplies.</p>
-      <div class="chal-chips">${chips}</div>
-    </details>`;
-}
-
-function wireChallengePicker(){
-  panel.querySelectorAll("[data-chal]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const id = btn.dataset.chal;
-      const list = chosenChallenges();
-      const i = list.indexOf(id);
-      if(i >= 0) list.splice(i, 1); else list.push(id);
-      saveSS();
-      sfx("click");
-      // re-render just this block, so the multiplier in the summary keeps up
-      const box = $("chalBox");
-      const wasOpen = box ? box.open : true;
-      if(box){
-        box.outerHTML = challengePickerHTML();
-        const fresh = $("chalBox");
-        if(fresh) fresh.open = wasOpen;
-        wireChallengePicker();
-      }
-    };
-  });
+/** A quiet line on the clock-in screen, only when something is actually on. */
+function armedChallengesHTML(){
+  const on = chosenChallenges();
+  if(!on.length) return "";
+  const mult = on.reduce((m, id) => m*(CHALLENGES.find(c => c.id===id) || {bonus:1}).bonus, 1);
+  const names = on.map(id => (CHALLENGES.find(c => c.id===id)||{}).label).filter(Boolean);
+  return `<div class="hint chal-armed">⚡ ${names.join(" · ")} <b>×${mult.toFixed(2)}</b>
+    <span class="sub">Change these in Settings.</span></div>`;
 }
 
 /**
  * What the learner has actually demonstrated, as opposed to how long they
- * have played. Sits under the Bench because the Bench is how you move it.
+ * have played.
  */
 function masteryLine(){
   const m = normaliseMastery(SS.mastery);
@@ -238,11 +203,63 @@ function equipmentPills(){
   return kit.map(([, label]) => `<span class="pill">${label}</span>`).join("");
 }
 
+/* =========================================================================
+   THE HUD — what replaces the coaching panel in Play.
+
+   Four values, no words, no verdicts, no buttons: who this is, how many tubes
+   are done, whichever clock is clinically live right now, and what is
+   currently flowing. It shows a value only while that value MEANS something —
+   the band clock exists while a band is on and not before, the volume exists
+   while a tube is filling — so the strip is a readout of the procedure rather
+   than a dashboard of everything the simulation happens to know.
+
+   Everything the coaching panels print in Learn still exists; in Play it is
+   held back to the debrief, which is where this game already decided feedback
+   belongs.
+
+   No verdict colours here, deliberately. Every judgement in this app is
+   expressed as colour and Play withholds judgement, so the HUD is
+   monochrome by construction and there is nothing for modes.css to suppress.
+   ========================================================================= */
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/[&<>"]/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[ch]));
+}
+
+function hudHTML(c){
+  const p = ENC.p;
+  const tubes = c.tubes || [];
+  const collected = c.collection
+    ? tubes.filter(k => c.collection.tubes[k] && c.collection.tubes[k].removedAt).length
+    : 0;
+  const pips = tubes.map((k, i) => `<span class="hud-pip${i < collected ? " on" : ""}"></span>`).join("");
+
+  // The one clock that is live. A band that is on is the only thing in a draw
+  // with a clinical deadline the learner is expected to be watching.
+  const tq = c.tourniquet;
+  const bandOn = tq && tq.securedAt && !tq.releasedAt;
+  const bandS = bandOn ? Math.floor((Date.now() - tq.securedAt)/1000) : 0;
+
+  const cur = c.collection && c.collection.currentKey;
+  const filling = cur && c.collection.tubes[cur];
+  const ml = filling && filling.drawnMl > 0 ? filling.drawnMl : null;
+
+  return `<div class="hud" data-live="hud">
+    <span class="hud-who">${p ? esc(p.last) + ", " + esc(p.first[0]) + "." : ""}</span>
+    ${tubes.length ? `<span class="hud-tubes" title="tubes collected">${pips}<b>${collected}/${tubes.length}</b></span>` : ""}
+    ${bandOn ? `<span class="hud-clock">band ${Math.floor(bandS/60)}:${String(bandS%60).padStart(2,"0")}</span>` : ""}
+    ${ml != null ? `<span class="hud-vol">${ml.toFixed(1)} mL</span>` : ""}
+  </div>`;
+}
+
 function startShift(mode){
   /* The loadout goes live BEFORE the first patient is rolled: "Deep vein"
      changes the arm the roll produces, and "Wrong hand" changes the bench it
-     is laid out on. The Bench is a rehearsal room and never carries them. */
-  armChallenges(mode === MODES.BENCH ? [] : chosenChallenges());
+     is laid out on. This is the ONE transfer point from the chosen loadout to
+     the armed one — and the moment the loadout locks, so that opening Settings
+     mid-draw cannot change the draw that is already running. */
+  armChallenges(chosenChallenges());
+  lockLoadout();
   setMode(mode);
   setShift({len:SHIFT_LEN[MODE]||1,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[]});
   nextPatient();
@@ -398,18 +415,34 @@ function renderCollect(){
     ? `<div class="lesson"><span class="modetag">🎓 TEACHING</span><span class="lh">${VP_ICON[id]} ${info.t}</span>${info.tip}<br><span class="why">Why it matters: ${info.why}</span></div>`
     : r.hints
       ? `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b> ${info.tip}</div>`
-      : `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b></div>`;
-  panel.innerHTML=`
+      : "";
+
+  /* THE CHROME IS THE MODE.
+
+     Learn gets the heading, the step counter, the progress bar and the tip —
+     it is a lesson, and a lesson says where you are in it. Play gets a HUD:
+     the patient, the tubes, and whichever clock is clinically live right now.
+     No step number, no percentage, no prose. A draw is not seventeen screens
+     with a progress bar over them, and a trained phlebotomist counting down
+     "step 9 of 16" is being reminded they are in a piece of software.
+
+     It is also what gives the millimetre work its screen back. The panel was
+     eating 40% of the viewport, measureObstruction() was dutifully pushing
+     the camera back to compensate, and the arm ended up small and far away. */
+  panel.innerHTML = r.stepChrome ? `
     <h2>🩸 ${section ? section.label : "Venipuncture"} <span class="vp-count">step ${done+1}/${total}</span></h2>
     <div class="vp-bar"><div class="vp-bar-fill" style="width:${pctDone}%"></div></div>
     <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%</span></div>
     ${lesson}
     <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
-    ${benchMode() ? benchControlsHTML(section) : ""}
-    <button class="btn ghost vp-leave" id="vpLeave">${benchMode() ? "Leave the bench" : "Leave this draw"}</button>`;
+    <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`
+  : `
+    ${hudHTML(c)}
+    <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="0"></div>
+    <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`;
+  panel.dataset.chrome = r.stepChrome ? "full" : "hud";
   const stage=$("vpStage");
   wireLeaveDraw();
-  if(benchMode()) wireBenchControls(c);
   renderCurrentStep(c, stage, {
     rerender: renderCollect,
     onComplete: vpFinish,
@@ -418,7 +451,7 @@ function renderCollect(){
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
     onStepFinished: (finishedId, nextId)=> rewardStep(c, finishedId, nextId),
     onCleanup: ()=>{ if(ENC._collectCleanup) ENC._collectCleanup(); },
-    // Practice mode only. The driver asks; the mode decision lives here.
+    // Learn only. The driver asks; the mode decision lives here.
     sectionFeedbackFor: (finishedId, nextId)=>{
       if(!reveal().sectionFeedback) return null;
       if(!endsSection(finishedId, nextId)) return null;
@@ -431,11 +464,15 @@ function renderCollect(){
   });
   if(FX.gsap && !SS.reduceMotion){ FX.gsap.from(stage,{opacity:0,y:12,duration:.3,ease:"power2.out"}); }
 }
-/* ---------- Practice mode: feedback at the end of each section --------------
-   The brief puts Practice's feedback here rather than after every screen, and
-   makes the section repeatable. Both are the same data the rubric will use
-   later — this is the step's own measurement object, shown early, not a
-   second opinion invented for the practice loop.
+/* ---------- Learn: feedback at the end of each section ----------------------
+   Feedback belongs at the end of a piece of TECHNIQUE rather than after every
+   screen, and the section is repeatable. Both are the same data the rubric
+   will use later — this is the step's own measurement object, shown early,
+   not a second opinion invented for a practice loop.
+
+   These two ideas were the whole of the old Practice mode, and they are
+   teaching rather than testing, so they live in Learn now. Play shows none of
+   it: nothing is said until the report.
 
    Repeating clears this section AND everything downstream of it, because the
    later sessions are built from the earlier ones: a re-done insertion with a
@@ -547,10 +584,6 @@ function heldFor(c){
 }
 
 function rewardStep(c, finishedId, nextId){
-  // The Bench pays nothing and grades nothing. That is not a limitation, it
-  // is the mode: a rehearsal room where a bad attempt costs you nothing but
-  // the six seconds it takes to press "Again".
-  if(benchMode()) return;
   const held = heldFor(c);
   held.xp += STEP_XP;
 
@@ -569,54 +602,6 @@ function rewardStep(c, finishedId, nextId){
   held.coins += r.coins || 0;
   held.streakPeak = Math.max(held.streakPeak, c.streak);
   held.sections.push({ id: section.id, label: section.label, score, xp: r.xp || 0, coins: r.coins || 0, clean: !!r.clean });
-}
-
-/* =========================================================================
-   THE BENCH'S OWN CONTROLS
-
-   Two of them, and they are the whole mode: jump to any beat, and start this
-   one again. Mastery needs cheap repetition, and before this every practice
-   stick cost a four-minute patient — so the gesture a learner was worst at
-   was the one they practised least, which is exactly backwards.
-
-   `resetFromSection` already existed for Practice mode's replay, and it does
-   the right thing here for the right reason: it clears the section's sessions
-   and measurements and LEAVES THE ARM ALONE, so you are rehearsing on the
-   same vein you just missed rather than on a freshly rolled one.
-   ========================================================================= */
-function benchControlsHTML(section){
-  return `<div class="bench-bar">
-    <span class="bench-lab">Bench</span>
-    ${BENCH_BEATS.map(b => `<button type="button" class="bench-jump${section && section.id===b.id ? " on" : ""}" data-beat="${b.id}">${b.label}</button>`).join("")}
-    <button type="button" class="bench-reset" id="benchReset">↻ Again</button>
-  </div>`;
-}
-
-function wireBenchControls(c){
-  const jump = (sectionId)=>{
-    const at = resetFromSection(c, sectionId);
-    if(at < 0) return;
-    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
-    c.step = at;
-    // Nothing is scored on the bench, so nothing carries: a run that went
-    // badly must not follow you into the next rehearsal of it.
-    c.held = null; c.streak = 0; c.sectionsDone = 0; c.cleanSections = 0;
-    tapHapticSafe();
-    renderCollect();
-  };
-  panel.querySelectorAll(".bench-jump").forEach(b=>{
-    b.onclick = ()=>{ sfx("tap"); jump(b.dataset.beat); };
-  });
-  const reset = $("benchReset");
-  if(reset) reset.onclick = ()=>{
-    sfx("tap");
-    const here = sectionForStep(c.steps[c.step]);
-    if(here) jump(here.id);
-  };
-}
-
-function tapHapticSafe(){
-  try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_){}
 }
 
 /* ---------- complications ---------------------------------------------------
@@ -710,19 +695,6 @@ function recapChips(c){
 
 function vpFinish(){
   const c=ENC.collect;
-  /* The Bench has no end. Finishing a draw there loops straight back to the
-     first beat with the same arm, because "one more go" is the entire mode
-     and a results screen in the middle of it would be a wall across it. */
-  if(benchMode()){
-    const at = resetFromSection(c, "tourniquet");
-    if(at >= 0){
-      if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
-      c.step = at;
-      c.held = null; c.streak = 0; c.sectionsDone = 0; c.cleanSections = 0;
-      c.awarded = false; c.specimenQuality = null;
-      return renderCollect();
-    }
-  }
   // The draw is over: close the complication watch and let the laboratory
   // look at what came out of it. Both are idempotent — vpFinish() is
   // reachable more than once.
@@ -794,7 +766,7 @@ function vpFinish(){
   // and every judgement lands together on the score screen once the patient
   // is finished with. `gradeAttempt()` still runs here, because this is the
   // moment the attempt genuinely ended.
-  const body = finalPractical()
+  const body = playMode()
     ? `${haltNote}
        <div class="fb"><b>Draw complete.</b> Your practical report follows once you have finished with the patient.</div>
        <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
@@ -810,7 +782,7 @@ function vpFinish(){
        ${progressLine?`<div class="rep-policy">${progressLine}</div>`:""}
        ${guided()?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}`;
   panel.innerHTML=`
-    <h2>${finalPractical()?`📋 Practical report — ${ENC.p.first}`:`✅ Draw complete — ${ENC.p.first}`}</h2>
+    <h2>${playMode()?`📋 Practical report — ${ENC.p.first}`:`✅ Draw complete — ${ENC.p.first}`}</h2>
     ${body}
     <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
   $("vpToLabel").onclick=()=>{ sfx("tap"); go(hasPostDraw?"drawresp":"label"); };
@@ -1140,7 +1112,7 @@ function renderScore(){
   const s = ENC.scores, cats = Object.keys(s);
   const correct = cats.filter(k => s[k]).length;
   const pct = Math.round(correct/cats.length*100);
-  const practical = (finalPractical() && c.report)
+  const practical = (playMode() && c.report)
     ? `<h3 class="rep-sec rep-title">📋 Practical report</h3>${renderPracticalReport(c.report, c.replay, { progress: c.progressLine })}`
     : "";
 
@@ -1310,8 +1282,10 @@ function endShift(){
     if(avg>SS.bestRating)SS.bestRating=avg;
   }
   saveSS();
-  // the loadout does not outlive the shift it was chosen for
+  // the loadout does not outlive the shift it was chosen for, and it can be
+  // edited again the moment there is no draw for an edit to reach
   disarmChallenges();
+  unlockLoadout();
   removePatient(getScene());
   go("summary");
 }
@@ -1358,12 +1332,9 @@ function renderSummary(){
 
 /** The one-click repeat, named after what it will actually give you. */
 function sameAgainHTML(mode){
-  const label = mode === MODES.FINAL ? "📋 Another practical"
-    : mode === MODES.BENCH ? "🔧 Back to the bench"
-    : mode === MODES.LEARN ? "🎓 Another guided shift"
-    : "🔁 Another shift";
+  const label = mode === MODES.LEARN ? "🎓 Another guided shift" : "🩸 Another shift";
   const on = chosenChallenges();
-  const note = on.length && mode !== MODES.BENCH
+  const note = on.length
     ? `<div class="mode-note">Same loadout: ${on.map(id=>{
         const c = CHALLENGES.find(x=>x.id===id);
         return c ? c.label : id;

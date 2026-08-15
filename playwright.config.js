@@ -34,9 +34,14 @@ export default defineConfig({
     // (a different build number in a fixed location). Pointing at it is a
     // property of the MACHINE, not of this project, so it arrives as an
     // environment variable rather than a committed path — see docs/TESTING.md.
-    launchOptions: process.env.PW_CHROMIUM_PATH
-      ? { executablePath: process.env.PW_CHROMIUM_PATH }
-      : {},
+    launchOptions: {
+      ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
+      /* A runner with no GPU still has to produce a real WebGL context: every
+         test here drives one, and a Chromium that silently refuses falls back
+         to the accessible controls path, which looks exactly like a broken
+         3D gesture and is not one. */
+      args: ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"],
+    },
   },
   webServer: {
     command: `npm run preview -- --port ${PORT} --strictPort`,

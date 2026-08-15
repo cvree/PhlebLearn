@@ -42,12 +42,17 @@
     <div class="settings-card">
       <h3>⚙️ Settings</h3>
       <div class="ssub">Press <b>Esc</b> any time to open or close this.</div>
+      <div class="setgroup">Display</div>
       <div class="setrow"><span>🌗 Dark mode</span><button id="setTheme">Off</button></div>
       <div class="setrow"><span>🎬 Animations</span><button id="setMotion">On</button></div>
+      <div class="setgroup">Hands</div>
       <div class="setrow"><span>✋ Dominant hand</span><button id="setHand">Right</button></div>
       <div class="setrow"><span>🧲 Assisted snapping</span><button id="setSnap">Off</button></div>
+      <div class="setrow"><span>🖐️ Controls</span><button id="setDirect">Direct</button></div>
+      <div class="setgroup">Sound</div>
       <div class="setrow"><span>🎵 Lobby music</span><button id="setMusic">On</button></div>
       <div class="setrow"><span>🔊 Music volume</span><input type="range" id="setMusicVol" min="0" max="100" value="55" style="flex:1;max-width:140px;accent-color:#ff9cc0"></div>
+      <details class="challenges" id="setChallenges"></details>
       <button class="btn ghost" id="openShopSettings">🏠 Office upgrades</button>
       <button class="btn closebtn" id="setClose">Done</button>
       <div class="credits">Tiny Vials · a Tiny Clinic game</div>

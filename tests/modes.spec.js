@@ -27,84 +27,80 @@ import { MEASUREMENT_SOURCES, CATEGORIES } from "../src/venipuncture/rubric/poli
    THE MODES THEMSELVES
    ------------------------------------------------------------------------- */
 
-/**
- * The three ASSESSED modes, which is the set every claim below is about.
- * The Bench is deliberately not one of them: it is a rehearsal room, it
- * grades nothing and pays nothing, and holding it to the assessed modes'
- * rules would be asserting something the mode is not for.
- */
-const ASSESSED = [MODES.LEARN, MODES.PRACTICE, MODES.FINAL];
-
-test("there are three assessed modes plus the bench, each with a descriptor", () => {
-  assert.deepEqual(Object.values(MODES).sort(), ["bench", "final", "learn", "practice"]);
+test("there are two modes, each with a descriptor and a name", () => {
+  assert.deepEqual(Object.values(MODES).sort(), ["learn", "play"]);
   for(const m of Object.values(MODES)){
     assert.ok(MODE_REVEAL[m], `${m} has no reveal descriptor`);
     assert.ok(MODE_NAMES[m], `${m} has no display name`);
   }
 });
 
-test("the bench is a rehearsal room: hints on, nothing gated, replay allowed", () => {
-  const b = MODE_REVEAL[MODES.BENCH];
-  assert.equal(b.gateContinue, false, "nothing on the bench may block anything");
-  assert.equal(b.repeatSections, true, "starting again is the entire mode");
-  assert.equal(b.sectionFeedback, false, "the bench scores nothing, so it reports nothing");
-  assert.equal(b.instruction, false, "it is rehearsal, not a lesson");
-  assert.equal(b.liveNumbers, true, "you have to be able to see what your hands did");
-});
-
-test("the legacy mode names still map in, and anything unknown is the strictest", () => {
+test("every legacy mode name still maps in, and anything unknown is the strictest", () => {
+  // Saved games, saved links and the ?e2e=1 seam all pass the old names.
   assert.equal(normaliseMode("teach"), MODES.LEARN);
-  assert.equal(normaliseMode("play"), MODES.FINAL);
-  assert.equal(normaliseMode("practice"), MODES.PRACTICE);
-  assert.equal(normaliseMode(undefined), MODES.FINAL);
-  assert.equal(normaliseMode("nonsense"), MODES.FINAL);
+  assert.equal(normaliseMode("final"), MODES.PLAY);
+  assert.equal(normaliseMode("play"), MODES.PLAY);
+  // Practice and the Bench were both ways of being TAUGHT, so they fold into
+  // Learn rather than into the scored mode — a save that had been practising
+  // must not silently start being assessed.
+  assert.equal(normaliseMode("practice"), MODES.LEARN);
+  assert.equal(normaliseMode("bench"), MODES.LEARN);
+  assert.equal(normaliseMode(undefined), MODES.PLAY);
+  assert.equal(normaliseMode("nonsense"), MODES.PLAY);
 });
 
-test("the Final Practical reveals nothing: no coaching, no hints, no verdicts", () => {
-  const f = MODE_REVEAL[MODES.FINAL];
-  assert.equal(f.instruction, false);
-  assert.equal(f.hints, false);
-  assert.equal(f.verdicts, false);
-  assert.equal(f.gateContinue, false);
-  assert.equal(f.sectionFeedback, false);
-  assert.equal(f.highlights, false);
+test("Play reveals nothing at all — no coaching, no hints, no verdicts, no chrome", () => {
+  const p = MODE_REVEAL[MODES.PLAY];
+  assert.equal(p.instruction, false);
+  assert.equal(p.hints, false, "a hint is still being told something");
+  assert.equal(p.verdicts, false);
+  assert.equal(p.gateContinue, false);
+  assert.equal(p.sectionFeedback, false);
+  assert.equal(p.highlights, false);
+  assert.equal(p.liveNumbers, false, "a live measurement is a verdict with extra steps");
+  assert.equal(p.stepChrome, false,
+    "no step counter, no progress bar, and no button between one step and the next");
 });
 
-test("Learn is the only ASSESSED mode that instructs, gates or highlights", () => {
-  for(const m of ASSESSED){
-    const r = MODE_REVEAL[m];
+test("Learn is the mode that teaches: it instructs, gates, highlights and replays", () => {
+  const l = MODE_REVEAL[MODES.LEARN];
+  assert.equal(l.instruction, true);
+  assert.equal(l.hints, true);
+  assert.equal(l.verdicts, true);
+  assert.equal(l.gateContinue, true);
+  assert.equal(l.highlights, true);
+  assert.equal(l.stepChrome, true);
+  // Practice's two good ideas moved here, because being shown your mistakes
+  // and being allowed to try again is teaching, not testing.
+  assert.equal(l.sectionFeedback, true, "section feedback belongs where the teaching is");
+  assert.equal(l.repeatSections, true, "so does replaying the section that went badly");
+});
+
+test("only Learn may gate, instruct, highlight or report a section", () => {
+  for(const m of Object.values(MODES)){
     const isLearn = m === MODES.LEARN;
+    const r = MODE_REVEAL[m];
     assert.equal(r.instruction, isLearn, `${m}.instruction`);
     assert.equal(r.gateContinue, isLearn, `${m}.gateContinue`);
     assert.equal(r.highlights, isLearn, `${m}.highlights`);
-  }
-  // and nothing anywhere may gate except Learn, bench included
-  for(const m of Object.values(MODES)){
-    if(m !== MODES.LEARN) assert.equal(MODE_REVEAL[m].gateContinue, false, `${m}.gateContinue`);
+    assert.equal(r.sectionFeedback, isLearn, `${m}.sectionFeedback`);
+    assert.equal(r.repeatSections, isLearn, `${m}.repeatSections`);
   }
 });
 
-test("Practice is the only ASSESSED mode that reports a section or replays one", () => {
-  for(const m of ASSESSED){
-    const isPractice = m === MODES.PRACTICE;
-    assert.equal(MODE_REVEAL[m].sectionFeedback, isPractice, `${m}.sectionFeedback`);
-    assert.equal(MODE_REVEAL[m].repeatSections, isPractice, `${m}.repeatSections`);
-  }
-  // No mode at all reports a section score except Practice — including the
-  // bench, which reports nothing because it grades nothing.
-  for(const m of Object.values(MODES)){
-    if(m !== MODES.PRACTICE) assert.equal(MODE_REVEAL[m].sectionFeedback, false, `${m}.sectionFeedback`);
+test("every reveal channel Learn opens, Play closes", () => {
+  // The two modes are opposites by construction. If a channel is ever added
+  // that both open, it is a channel that does not distinguish them and it
+  // belongs in neither descriptor.
+  const l = MODE_REVEAL[MODES.LEARN], p = MODE_REVEAL[MODES.PLAY];
+  const keys = Object.keys(l);
+  assert.deepEqual(keys.sort(), Object.keys(p).sort(), "both modes describe the same channels");
+  for(const k of keys){
+    assert.notEqual(l[k], p[k], `${k} is the same in both modes, so it distinguishes nothing`);
   }
 });
 
-test("Practice gives hints but no immediate answers — verdicts wait for the section", () => {
-  const p = MODE_REVEAL[MODES.PRACTICE];
-  assert.equal(p.hints, true);
-  assert.equal(p.verdicts, false);
-  assert.equal(p.instruction, false);
-});
-
-test("the three modes are genuinely distinct — no two share a reveal descriptor", () => {
+test("the two modes are genuinely distinct", () => {
   const seen = new Map();
   for(const m of Object.values(MODES)){
     const key = JSON.stringify(MODE_REVEAL[m]);
@@ -338,4 +334,77 @@ test("recordAttempt does not mutate the progress object it was given", () => {
   const { progress } = recordAttempt(before, MODES.FINAL, REPORT(11, false), 1000);
   assert.deepEqual(before, {});
   assert.notEqual(progress, before);
+});
+
+/* -------------------------------------------------------------------------
+   SAVE MIGRATION — a learner's history survives the modes being merged.
+
+   The game shipped with four modes and now has two. Someone with twenty
+   draws through Practice must not open the new build to a blank record.
+   ------------------------------------------------------------------------- */
+import { migrateSave } from "../src/game/saveSystem.js";
+
+const REC = (o)=>Object.assign({
+  attempts:0, passes:0, bestTotal:null, bestPct:null, bestAt:null,
+  bestByCategory:{}, history:[],
+}, o);
+
+test("Practice and Bench progress folds into Learn, and Final into Play", () => {
+  const save = { modeProgress: {
+    practice: REC({ attempts:8, passes:3, bestTotal:14, bestAt:100,
+                    bestByCategory:{ id:4, technique:2 },
+                    history:[{at:10,total:9},{at:20,total:14}] }),
+    bench:    REC({ attempts:5, passes:0 }),
+    final:    REC({ attempts:2, passes:1, bestTotal:17, bestAt:300 }),
+  } };
+  migrateSave(save);
+  const p = save.modeProgress;
+
+  assert.equal(p.practice, undefined, "the removed mode's key is gone");
+  assert.equal(p.bench, undefined);
+  assert.equal(p.final, undefined);
+
+  assert.equal(p[MODES.LEARN].attempts, 13, "both taught modes' attempts are kept");
+  assert.equal(p[MODES.LEARN].passes, 3);
+  assert.equal(p[MODES.LEARN].bestTotal, 14, "the best from either is still the best");
+  assert.deepEqual(p[MODES.LEARN].bestByCategory, { id:4, technique:2 });
+  assert.equal(p[MODES.PLAY].attempts, 2, "the Final Practical was Play under its old name");
+  assert.equal(p[MODES.PLAY].bestTotal, 17);
+});
+
+test("merging two records keeps the better best and interleaves the history", () => {
+  const save = { modeProgress: {
+    learn:    REC({ attempts:2, bestTotal:11, bestByCategory:{ id:2, safety:4 },
+                    history:[{at:50,total:11}] }),
+    practice: REC({ attempts:3, bestTotal:16, bestAt:900, bestByCategory:{ id:4, safety:1 },
+                    history:[{at:10,total:8},{at:90,total:16}] }),
+  } };
+  migrateSave(save);
+  const l = save.modeProgress[MODES.LEARN];
+  assert.equal(l.attempts, 5);
+  assert.equal(l.bestTotal, 16, "the higher of the two bests survives the merge");
+  assert.equal(l.bestAt, 900, "and it carries its own timestamp with it");
+  assert.deepEqual(l.bestByCategory, { id:4, safety:4 },
+    "each category keeps its own best, whichever mode produced it");
+  assert.deepEqual(l.history.map(h=>h.at), [10, 50, 90], "history is one timeline, in order");
+});
+
+test("migration is idempotent and harmless on a save that never had the old shape", () => {
+  const fresh = { modeProgress: { learn: REC({ attempts:1 }), play: REC({ attempts:4 }) } };
+  const once = JSON.stringify(migrateSave(fresh));
+  const twice = JSON.stringify(migrateSave(fresh));
+  assert.equal(once, twice);
+  assert.doesNotThrow(()=>migrateSave({}));
+  assert.doesNotThrow(()=>migrateSave({ modeProgress:null }));
+  assert.doesNotThrow(()=>migrateSave(undefined));
+});
+
+test("history stays capped at ten after a merge", () => {
+  const many = n => Array.from({length:n}, (_, i)=>({ at:i, total:i%20 }));
+  const save = { modeProgress: {
+    learn:    REC({ history: many(8) }),
+    practice: REC({ history: many(9).map(h=>({ ...h, at:h.at+100 })) }),
+  } };
+  migrateSave(save);
+  assert.equal(save.modeProgress[MODES.LEARN].history.length, 10);
 });
