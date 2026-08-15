@@ -20,7 +20,7 @@ import { labelTexture, contactShadowTexture } from "../../rendering/labelTexture
 import { decorateInstance, buildTubeRack } from "./supplyModels.js";
 import { CATEGORY } from "./supplyCatalog.js";
 import { ZONE } from "./stagingState.js";
-import { rackSlotPosition, trayRestingSpot, storeSlot, ORIENTATION } from "./stagingLayout.js";
+import { rackSlotPosition, trayRestingSpot, storeSlot, ORIENTATION, restingY, supportHeight } from "./stagingLayout.js";
 
 const COUNTER_Y = 0;
 
@@ -237,6 +237,17 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
     const bounds = new THREE.Box3().setFromObject(inst);
     const size = bounds.getSize(new THREE.Vector3());
     const centre = bounds.getCenter(new THREE.Vector3());
+
+    /* How high this object's ORIGIN has to sit above whatever it rests on, so
+       that its lowest point touches that surface and nothing more. Measured
+       from the decorated instance rather than tabulated, so a GLB that later
+       replaces the procedural builder is seated correctly with no code change.
+       This is the number whose absence made staged items sink into the tray.
+       It is signed: a model authored with its geometry slightly ABOVE its own
+       origin (the coiled tourniquet is 4.35 mm up) gets a negative offset and
+       is seated that much lower, so it touches the surface instead of
+       hovering over it. */
+    holder.userData.restOffset = Number.isFinite(bounds.min.y) ? -bounds.min.y : 0;
     if(Number.isFinite(size.x) && Number.isFinite(size.y)){
       const minGrab = layout.orientation===ORIENTATION.PORTRAIT ? 0.062 : 0.052;
       const px = Math.max(size.x, minGrab), py = Math.max(size.y, 0.034), pz = Math.max(size.z, minGrab);
@@ -254,7 +265,7 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
     // corner; everything else is shelf stock, positioned below.
     if(def.category===CATEGORY.SHARPS){
       const p = storeSlot(layout, sharpsCursor.i++);
-      holder.position.set(p.x, COUNTER_Y, p.z);
+      holder.position.set(p.x, restingYFor(def.id, ZONE.COUNTER), p.z);
       holder.userData.home = { x:p.x, z:p.z };
     }else{
       shelfStock.push({ holder, height: Number.isFinite(size.y) ? size.y : 0 });
@@ -271,7 +282,7 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
   shelfStock.sort((a,b)=>b.height - a.height);
   shelfStock.forEach((entry, i)=>{
     const slot = layout.shelf[i % layout.shelf.length];
-    entry.holder.position.set(slot.x, COUNTER_Y, slot.z);
+    entry.holder.position.set(slot.x, restingYFor(entry.holder.userData.itemId, ZONE.COUNTER), slot.z);
     entry.holder.userData.home = { x:slot.x, z:slot.z };
   });
 
@@ -394,6 +405,21 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
   // silently leaves the object sitting in the cart while the checklist says
   // it's staged — which is exactly the "object teleports between screens"
   // problem this branch exists to remove.
+  /**
+   * The y this item's origin must sit at to rest ON its zone's surface.
+   *
+   * THE one height authority for this scene. Every path that puts an object
+   * down calls it — reconciling from state, committing a drop, staging from
+   * the list view, recovering from the floor, and setting an inspected item
+   * back down. Before this existed there were four such paths writing
+   * `COUNTER_Y` (0) at a tray whose floor top is 12 mm up, which is why
+   * anything flatter than 12 mm disappeared into it.
+   */
+  function restingYFor(id, zone){
+    const mesh = itemMeshes.get(id);
+    return restingY(zone, mesh ? mesh.userData.restOffset : 0);
+  }
+
   function restPositionFor(id, st, trayIndexRef){
     if(st.pos) return st.pos;
     const mesh = itemMeshes.get(id);
@@ -417,9 +443,8 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
       const p = restPositionFor(id, st, trayIndexRef);
       mesh.position.x = p.x;
       mesh.position.z = p.z;
-      mesh.position.y = st.zone===ZONE.FLOOR ? -0.30 : COUNTER_Y;
+      mesh.position.y = restingYFor(id, st.zone);
       mesh.visible = st.zone!==ZONE.WASTE;
-      if(st.zone===ZONE.RACK) mesh.position.y = 0.018;   // seated down in the well
     });
   }
   refreshFromState(state);
@@ -437,15 +462,36 @@ export function buildStagingScene({ catalog, state, layout, requiredTubes }){
     scene.clear();
   }
 
-  /** Moves the whole work area. `offset` is absolute, relative to the tray's default spot. */
-  function setTrayOffset(offset){
+  /**
+   * Moves the whole work area. `offset` is absolute, relative to the tray's
+   * default spot.
+   *
+   * Staged items live on `root`, not on `trayGroup` — their world positions
+   * stay authoritative, which is what lets the layout, the state and the mesh
+   * all agree on where a thing is. The cost is that moving `trayGroup` alone
+   * slides the tray out from under its own contents for the length of the
+   * drag: the state positions were only rewritten on drop, so the tray
+   * visibly abandoned everything on it and then teleported it back. So the
+   * same delta is applied to everything the tray is carrying, live.
+   */
+  let carriedOffset = { x:0, z:0 };
+  function setTrayOffset(offset, state){
     trayGroup.position.set(offset.x, 0, offset.z);
+    const dx = offset.x - carriedOffset.x, dz = offset.z - carriedOffset.z;
+    carriedOffset = { x:offset.x, z:offset.z };
+    if(!state || (!dx && !dz)) return;
+    itemMeshes.forEach((mesh, id)=>{
+      const st = state.items[id];
+      if(!st || (st.zone!==ZONE.TRAY && st.zone!==ZONE.RACK)) return;
+      mesh.position.x += dx;
+      mesh.position.z += dz;
+    });
   }
 
   return {
     scene, camera, root, itemMeshes, rack, tray, trayGroup, armGroup,
     setHover, setInvalid, showHeldShadow, hideHeldShadow, showGhost, hideGhost,
-    fitCamera, refreshFromState, setTrayOffset, dispose,
+    fitCamera, refreshFromState, setTrayOffset, restingYFor, supportHeight, dispose,
     COUNTER_Y,
   };
 }

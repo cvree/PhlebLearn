@@ -550,6 +550,52 @@ function installTestSeam(){
         trayOffset: s.state.trayOffset,
       };
     },
+    /**
+     * Where every staged object's LOWEST POINT actually is, against the
+     * surface that is supposed to be holding it.
+     *
+     * This exists because the first playable shipped with every staged item
+     * positioned at the counter's height while standing on a tray whose floor
+     * is 12 mm up — so anything flatter than 12 mm was entirely inside the
+     * tray and the coach could list four items on a tray that looked empty.
+     * A screenshot is a bad way to notice that and a terrible way to prove it
+     * has stopped happening, so the geometry answers for itself.
+     */
+    async stagedHeights(){
+      const [{ getStagingContext }, { supportHeight }, THREE] = await Promise.all([
+        import("./venipuncture/staging/stagingRuntime.js"),
+        import("./venipuncture/staging/stagingLayout.js"),
+        import("three"),
+      ]);
+      const ctx = getStagingContext();
+      if(!ctx) return null;
+      const out = [];
+      ctx.view.itemMeshes.forEach((mesh, id)=>{
+        const st = ctx.state.items[id];
+        if(!st) return;
+        mesh.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(mesh);
+        if(!Number.isFinite(box.min.y)) return;
+        const surface = supportHeight(st.zone);
+        out.push({
+          id, zone: st.zone,
+          lowest: Math.round(box.min.y*10000)/10000,
+          surface: Math.round(surface*10000)/10000,
+          // negative means it is sunk into the thing holding it
+          clearanceMm: Math.round((box.min.y - surface)*10000)/10,
+          visible: mesh.visible,
+        });
+      });
+      return out;
+    },
+    /** The catalog as the cart built it, for driving the list view. */
+    async stagingCatalog(){
+      const { ENC } = await import("./game/gameState.js");
+      const s = ENC && ENC.collect && ENC.collect.supplies;
+      if(!s) return [];
+      const { isUsable } = await import("./venipuncture/staging/supplyCatalog.js");
+      return s.catalog.map(d=>({ id:d.id, category:d.category, tubeKey:d.tubeKey, usable:isUsable(d) }));
+    },
     async screenPointFor(itemId){
       const { getStagingContext } = await import("./venipuncture/staging/stagingRuntime.js");
       const ctx = getStagingContext();

@@ -11,12 +11,53 @@ import * as THREE from "three";
 
 const cache = new Map();
 
+/* =========================================================================
+   HEADLESS DEGRADATION.
+
+   Every equipment model in the game builds its printed markings through this
+   file, so without a `document` the model builders throw and the entire
+   supply catalog fails to build. That put all of the game's REAL geometry —
+   how tall a tube is, how deep a tray's floor is, where an object's lowest
+   point sits — permanently out of reach of `npm test`, which is why the bug
+   that dropped every staged item 12 mm into the tray floor could only ever
+   have been caught by looking at a screenshot.
+
+   In a headless environment the drawing is skipped and a blank texture is
+   returned instead. Materials stay valid, geometry is unchanged, and the
+   dimensional properties of every prop become assertable without a browser.
+   Nothing in the browser path changes: `document` exists there, and the same
+   canvas is drawn as before.
+   ========================================================================= */
+const HEADLESS = typeof document === "undefined" || !document.createElement;
+
+/** A drawing context stand-in whose every method is a no-op. */
+function nullContext(){
+  return new Proxy({}, {
+    get(_, prop){
+      if(prop === "canvas") return null;
+      if(prop === "measureText") return ()=>({ width: 0 });
+      if(prop === "createLinearGradient" || prop === "createRadialGradient"){
+        return ()=>({ addColorStop(){} });
+      }
+      return ()=>{};
+    },
+    set(){ return true; },
+  });
+}
+
 function makeCanvas(w,h){
+  if(HEADLESS) return { width:w, height:h, getContext: nullContext };
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   return c;
 }
 function finish(canvas){
+  if(HEADLESS){
+    // A texture with no image: bindable, disposable, and never uploaded.
+    const blank = new THREE.Texture();
+    blank.colorSpace = THREE.SRGBColorSpace;
+    return blank;
+  }
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 4;
   tex.colorSpace = THREE.SRGBColorSpace;

@@ -16,11 +16,15 @@
      createModelInstance(id)                // returns a fresh clone, or null
      disposeModel(id) / disposeAllModels()   // free geometry/material memory
    ========================================================================= */
+import * as THREE from "three";
 import { loadGLB } from "./assetLoader.js";
 
 const registry = new Map();   // id -> { url, fallback }
 const cache = new Map();      // id -> THREE.Object3D (the template that gets cloned)
 const failures = new Map();   // id -> Error (last load failure, for diagnostics)
+const restOffsets = new Map();// id -> metres from the model's origin down to its lowest point
+
+const _box = new THREE.Box3();
 
 export function registerModel({ id, url, fallback }){
   if(!id) throw new Error("registerModel requires an id");
@@ -39,6 +43,7 @@ async function loadOne(id){
     try{
       const gltfScene = await loadGLB(entry.url);
       cache.set(id, gltfScene);
+      measureRestOffset(id, gltfScene);
       return gltfScene;
     }catch(err){
       failures.set(id, err);
@@ -48,9 +53,40 @@ async function loadOne(id){
   if(entry.fallback){
     const built = entry.fallback();
     cache.set(id, built);
+    measureRestOffset(id, built);
     return built;
   }
   throw new Error(`Model "${id}" has no url and no fallback — nothing to build`);
+}
+
+/* =========================================================================
+   REST OFFSET — how high a model's ORIGIN sits above the surface it rests on.
+
+   Every placement path in the game needs this and none of them had it, which
+   is what made staged items sink through the tray: an item positioned at the
+   tray's y sat with its origin on the tray floor and therefore with half its
+   body inside it, and anything shorter than the tray's 12 mm floor vanished
+   entirely.
+
+   Measured ONCE, from the built template's own bounding box, rather than
+   tabulated per item — so a GLB that later replaces a procedural builder gets
+   the right offset for free and nobody has to remember to update a table.
+   A model whose geometry already sits on y=0 measures 0 and costs nothing.
+   ========================================================================= */
+function measureRestOffset(id, template){
+  try{
+    _box.setFromObject(template);
+    const minY = _box.min.y;
+    restOffsets.set(id, Number.isFinite(minY) ? -minY : 0);
+  }catch{
+    restOffsets.set(id, 0);
+  }
+}
+
+/** Metres to add to a support surface's height to seat this model on it. */
+export function modelRestOffset(id){
+  const v = restOffsets.get(id);
+  return v == null ? 0 : v;
 }
 
 // Preloads every id, in parallel, tolerating individual failures (a failed
@@ -87,6 +123,7 @@ export function disposeModel(id){
   const template = cache.get(id);
   if(template) disposeObject3D(template);
   cache.delete(id);
+  restOffsets.delete(id);
 }
 export function disposeAllModels(){
   for(const id of cache.keys()) disposeModel(id);

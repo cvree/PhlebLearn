@@ -30,6 +30,17 @@ import { measureObstruction, viewportAspect } from "../viewport.js";
 
 const TAP_PX = 7;              // pointer travel below this is a tap, not a drag
 const LIFT = 0.045;            // how high a held object floats above the surface
+
+/**
+ * Carry height for a held object: above whatever it is currently OVER.
+ * Held against the counter it clears the counter; carried across the tray it
+ * clears the tray's rim, so dragging a tube over a staged glove box no longer
+ * dips it through the tray wall on the way past.
+ */
+function carryY(id, x, z){
+  const zone = zoneAt(ctx.layout, x, z);
+  return ctx.view.restingYFor(id, zone) + LIFT;
+}
 /**
  * How far a tube can be released from a rack well and still land in it.
  *
@@ -313,7 +324,7 @@ export function stagingPointerDown(e, canvasEl){
     grabOffset: p ? { x: mesh.position.x - p.x, z: mesh.position.z - p.z } : { x:0, z:0 },
     from: ctx.state.items[id].zone,
   };
-  mesh.position.y = ctx.view.COUNTER_Y + LIFT;
+  mesh.position.y = carryY(id, mesh.position.x, mesh.position.z);
   ctx.view.setHover(id);
   if(canvasEl.style) canvasEl.style.cursor = "grabbing";
   try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
@@ -356,7 +367,7 @@ function moveTrayDrag(e, canvasEl){
   if(Math.hypot(e.clientX-d.downX, e.clientY-d.downY) > TAP_PX) d.moved = true;
   const wanted = { x: d.startOffset.x + (p.x - d.grab.x), z: d.startOffset.z + (p.z - d.grab.z) };
   const applied = applyTrayOffset(ctx.layout, wanted);
-  ctx.view.setTrayOffset(applied);
+  ctx.view.setTrayOffset(applied, ctx.state);
   const dx = applied.x - d.startOffset.x, dz = applied.z - d.startOffset.z;
   d.carried.forEach(c=>{ c.mesh.position.x = c.from.x + dx; c.mesh.position.z = c.from.z + dz; });
   return true;
@@ -418,7 +429,7 @@ export function stagingPointerMove(e, canvasEl){
   const x = p.x + ctx.drag.grabOffset.x;
   const z = p.z + ctx.drag.grabOffset.z;
   const mesh = ctx.drag.mesh;
-  mesh.position.set(x, ctx.view.COUNTER_Y + LIFT, z);
+  mesh.position.set(x, carryY(ctx.drag.id, x, z), z);
 
   const cb = ctx.layout.counter;
   const offCounter = x<cb.minX || x>cb.maxX || z<cb.minZ || z>cb.maxZ;
@@ -477,7 +488,7 @@ export function stagingPointerUp(e, canvasEl){
 
   if(!d.moved){
     // a tap on an object turns it over instead of moving it
-    d.mesh.position.y = ctx.view.COUNTER_Y;
+    d.mesh.position.y = ctx.view.restingYFor(d.id, ctx.state.items[d.id] ? ctx.state.items[d.id].zone : ZONE.COUNTER);
     enterInspect(d.mesh);
     return true;
   }
@@ -528,7 +539,7 @@ function commitDrop(d){
     markContaminated(ctx.state, d.id, "dropped on the floor");
     // a higher, slower arc than a normal placement, so the recovery reads as
     // deliberate rather than as a glitch
-    tweenTo(mesh, { x: settled.x, y: ctx.view.COUNTER_Y, z: settled.z }, 0.42);
+    tweenTo(mesh, { x: settled.x, y: ctx.view.restingYFor(d.id, ZONE.FLOOR), z: settled.z }, 0.42);
     sharpsDrop();
     winceHaptic();
     notify();
@@ -538,7 +549,7 @@ function commitDrop(d){
   const snap = snapTarget(d.id, x, z);
   if(snap){
     placeItem(ctx.state, d.id, ZONE.RACK, { slot:snap.slot, pos:{x:snap.x, z:snap.z}, crossedField:false });
-    tweenTo(mesh, { x:snap.x, y:0.018, z:snap.z }, 0.18);
+    tweenTo(mesh, { x:snap.x, y:ctx.view.restingYFor(d.id, ZONE.RACK), z:snap.z }, 0.18);
     /* The whole reward of the step, in three lines: a glass-on-plastic click,
        a small wobble in the rack it landed in, and a squash on the tube
        itself. Racking six tubes should be genuinely pleasant. */
@@ -560,7 +571,7 @@ function commitDrop(d){
   const settled = zone===ZONE.TRAY ? settleInTray(d.id, x, z) : { x, z };
 
   placeItem(ctx.state, d.id, zone, { pos:settled, crossedField:crossed });
-  tweenTo(mesh, { x:settled.x, y:ctx.view.COUNTER_Y, z:settled.z }, 0.16);
+  tweenTo(mesh, { x:settled.x, y:ctx.view.restingYFor(d.id, zone), z:settled.z }, 0.16);
   tubeChink();
   impactPulse(mesh, 0.5);
   tapHaptic();

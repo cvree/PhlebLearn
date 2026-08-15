@@ -189,6 +189,62 @@ export function crossesField(layout, x){
   return layout.sign>0 ? x < -0.02 : x > 0.02;
 }
 
+/* =========================================================================
+   SUPPORT HEIGHTS — the top surface of whatever a zone's objects rest ON.
+
+   This table is the fix for the bug that made staged items disappear. Every
+   placement path used to write `y = COUNTER_Y` (0), which is the counter, not
+   the tray: `buildTray()` builds a floor whose top surface is 12 mm up, so an
+   item "on the tray" was positioned 12 mm INSIDE the tray floor. Anything
+   shorter than 12 mm — the alcohol pad, the gauze, the bandage — was entirely
+   swallowed, which is why the coach could list four items on a tray that
+   looked empty.
+
+   The rack escaped the bug only because ONE of the four write paths hardcoded
+   `y: 0.018` for it. That is the shape of the defect: four write paths, one of
+   which knew about one surface. There is now one table, and every path reads it.
+
+   Kept in this file (pure maths, no THREE) so the property "nothing ever rests
+   below the thing holding it" is unit-testable without a browser.
+   ========================================================================= */
+export const COUNTER_TOP = 0;
+/** buildTray(): floor box of height 0.012 centred at 0.006 → top at 0.012. */
+export const TRAY_FLOOR_TOP = 0.012;
+/** buildTubeRack(): the floor a tube bottoms out on inside its well. */
+export const RACK_SEAT_TOP = 0.0115;
+/** The marked pad the sharps container stands on. */
+export const PAD_TOP = 0.002;
+
+export function supportHeight(zone){
+  switch(zone){
+    case ZONE.TRAY:   return TRAY_FLOOR_TOP;
+    case ZONE.RACK:   return RACK_SEAT_TOP;
+    case ZONE.REACH:
+    case ZONE.ACROSS: return PAD_TOP;
+    /* ZONE.FLOOR is "this hit the floor", not "this is on the floor". The drop
+       handler deliberately arcs it back onto the counter — an object that
+       leaves the world can leave a player unable to finish a draw, which is a
+       dead end rather than a difficulty setting. It rests on the counter,
+       marked and unusable. The reconciler used to disagree with that and drop
+       it to y=-0.30, so a recovered item vanished the next time state was
+       pushed back onto the meshes. */
+    default:          return COUNTER_TOP;
+  }
+}
+
+/**
+ * The y an item's ORIGIN must sit at to rest on its zone's surface.
+ *
+ * `restOffset` is the model's own distance from origin down to its lowest
+ * point, measured from the built mesh at registration time — see
+ * `rendering/modelRegistry.js`. Passing 0 degrades to "origin on the surface",
+ * which is exactly the old behaviour and is correct for a model already
+ * authored with its base at y=0.
+ */
+export function restingY(zone, restOffset){
+  return supportHeight(zone) + (restOffset || 0);
+}
+
 /** A free position inside the tray that isn't already occupied. */
 export function trayRestingSpot(layout, index){
   // Two rows in front of the tube rack, inset far enough that a wide item

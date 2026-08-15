@@ -529,3 +529,90 @@ test("a model whose GLB fails to load falls back to its procedural build", async
   assert.equal(inst.isFakeObject3D, true);
   assert.equal(built, 1, "the procedural fallback must be the thing that got built");
 });
+
+/* ---------- resting heights: nothing sinks through what holds it -------------
+   The bug this guards: every placement path wrote `y = COUNTER_Y` (0), while
+   buildTray() builds a floor whose top surface is 12 mm up. Everything staged
+   on the tray was positioned 12 mm INSIDE the tray floor, and anything
+   shorter than that — the alcohol pad, the gauze, the bandage — disappeared
+   completely, which is why the coach could list four items on a tray that
+   looked empty.
+
+   Asserted against the REAL procedural builders and the REAL layout table, so
+   a future model whose geometry moves, or a fifth placement path that forgets
+   to ask, fails here rather than in a screenshot.
+   ---------------------------------------------------------------------------- */
+import * as THREE from "three";
+import { registerSupplyModels } from "../src/venipuncture/staging/supplyModels.js";
+import { modelRestOffset } from "../src/rendering/modelRegistry.js";
+import {
+  supportHeight, restingY, TRAY_FLOOR_TOP, RACK_SEAT_TOP, COUNTER_TOP,
+} from "../src/venipuncture/staging/stagingLayout.js";
+
+test("the tray's floor is above the counter, and the table says so", () => {
+  assert.ok(TRAY_FLOOR_TOP > COUNTER_TOP,
+    "a tray you can put things in has a floor above the counter it stands on");
+  assert.equal(supportHeight(ZONE.TRAY), TRAY_FLOOR_TOP);
+  assert.equal(supportHeight(ZONE.COUNTER), COUNTER_TOP);
+  assert.equal(supportHeight(ZONE.RACK), RACK_SEAT_TOP);
+});
+
+test("every supply model measures its own rest offset from its own geometry", async () => {
+  const ids = registerSupplyModels();
+  await preloadModels(ids);
+  ids.forEach(id=>{
+    const off = modelRestOffset(id);
+    assert.ok(Number.isFinite(off), `${id} must produce a finite rest offset`);
+    // The offset is SIGNED. A model authored with its geometry above its own
+    // origin — the coiled tourniquet sits 4.35 mm up — gets a negative offset
+    // and is seated lower, so it touches the surface instead of hovering.
+    // Rebuild it and check the offset genuinely puts its lowest point on zero.
+    const inst = createModelInstance(id);
+    const box = new THREE.Box3().setFromObject(inst);
+    if(!Number.isFinite(box.min.y)) return;         // an empty group has no floor
+    assert.ok(Math.abs((box.min.y + off)) < 1e-6,
+      `${id}: origin + restOffset must land its lowest point exactly on the surface`);
+  });
+});
+
+test("nothing rests below the surface that is holding it, in any zone", async () => {
+  const ids = registerSupplyModels();
+  await preloadModels(ids);
+  const zones = [ZONE.COUNTER, ZONE.TRAY, ZONE.RACK, ZONE.REACH, ZONE.ACROSS, ZONE.FLOOR];
+  ids.forEach(id=>{
+    const inst = createModelInstance(id);
+    const box = new THREE.Box3().setFromObject(inst);
+    if(!Number.isFinite(box.min.y)) return;
+    const off = modelRestOffset(id);
+    zones.forEach(zone=>{
+      const surface = supportHeight(zone);
+      const lowest = restingY(zone, off) + box.min.y;
+      assert.ok(lowest >= surface - 1e-9,
+        `${id} in ${zone} would sit ${((surface-lowest)*1000).toFixed(1)}mm below its own support`);
+    });
+  });
+});
+
+test("a flat item staged on the tray is not swallowed by the tray floor", async () => {
+  const ids = registerSupplyModels();
+  await preloadModels(ids);
+  // The alcohol pad is the shortest thing on the cart, and the item that
+  // vanished most completely under the old arithmetic.
+  const pad = createModelInstance("supply.alcoholPad");
+  const box = new THREE.Box3().setFromObject(pad);
+  const height = box.max.y - box.min.y;
+  assert.ok(height < TRAY_FLOOR_TOP,
+    "this test is only meaningful while the pad is shorter than the tray floor");
+  const top = restingY(ZONE.TRAY, modelRestOffset("supply.alcoholPad")) + box.max.y;
+  assert.ok(top > TRAY_FLOOR_TOP,
+    "the whole pad used to fit inside the tray floor — its top must clear it");
+});
+
+test("a recovered item stays on the counter rather than dropping out of the world", () => {
+  // ZONE.FLOOR means "this hit the floor", and the drop handler deliberately
+  // arcs it back onto the counter, marked and unusable. The reconciler used to
+  // disagree and send it to y = -0.30, so a recovered item vanished the next
+  // time state was pushed onto the meshes.
+  assert.equal(supportHeight(ZONE.FLOOR), COUNTER_TOP,
+    "a retrieved item is reachable; an object that leaves the world is a dead end");
+});
