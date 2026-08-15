@@ -144,6 +144,25 @@ export function reveal(){
   });
 }
 
+/* =========================================================================
+   DIRECT MANIPULATION, OR BUTTONS FOR EVERYTHING.
+
+   One accessibility preference, read by all eleven physical steps.
+
+   It replaces eleven SEPARATE per-step flags — `SS.collectionListView`,
+   `SS.tourniquetListView`, and nine more — each of which was written to the
+   SAVE the moment a learner tapped that step's "Use controls" toggle. So one
+   tap during one tube made every future tube in every future draw a list of
+   buttons, permanently and invisibly, and the 3D bench this entire game is
+   built around was simply never seen again. That is the direct cause of the
+   report that tube collection "becomes a 2D thing".
+
+   An access need is a property of the PERSON, not of a step, and it belongs
+   in Settings where it can be found and undone. The in-step toggle survives
+   as a per-draw preference that does not outlive the encounter.
+   ========================================================================= */
+export function buttonControls(){ return !!SS.buttonControls; }
+
 export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true};
 export function setShift(next){ SHIFT = next; }
 

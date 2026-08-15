@@ -131,7 +131,7 @@ export function renderAssemblyCoach(host, o){
           ? `<b>Peel the pouch open along its seam.</b> Drag from the notch and stay on the seam — tearing across the film sheds onto the needle you are about to pull through it.`
           : !state.needleInHand
             ? `<b>Take the needle out by its coloured sheath.</b> The grey sleeved end is what goes inside the holder and into every tube — fingers do not go on it.`
-            : `<b>Bring the needle onto the hub along the hub's own axis, then turn it in.</b> More than ${CROSS_THREAD_DEG}° off and it cross-threads: it will feel like it is going on, bind, and never seat. Finger-tight is about ${SNUG_TURNS} turns — circle the pointer round the hub to turn it.`}
+            : `<b>Carry the needle onto the hub and keep pushing along the hub's own axis.</b> It turns as it goes. More than ${CROSS_THREAD_DEG}° off the axis and it cross-threads: it will feel like it is going on, bind, and never seat. You will feel it stop at finger-tight.`}
       </p>`}
 
       <button class="btn vp-tap" id="asmReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">

@@ -21,14 +21,17 @@
    ========================================================================= */
 import * as THREE from "three";
 import { tubeChink, safetyClack, wince, strapDrag } from "../../audio/procedural.js";
-import { tapHaptic, clackHaptic, winceHaptic } from "../../bench/haptics.js";
+import { tapHaptic, clackHaptic, winceHaptic, seatHaptic } from "../../bench/haptics.js";
 import { leaseBenchView } from "../../bench/benchSession.js";
 import { veinDistension, distalPallor, SITE } from "../arm/armAnatomy.js";
 import { FIELD_RADIUS, dryness, secondsDrying } from "../cleaning/cleaningRules.js";
 import {
   evaluateAssembly, evaluateUncap, bevelFromTurns,
-  SNUG_TURNS, CAP_TRAVEL,
+  SECURE_TURNS, SNUG_TURNS, OVERTIGHT_TURNS, CAP_TRAVEL,
 } from "./assemblyRules.js";
+import {
+  axialTravel, seatingDelta, threadSpec, crossed, tickedPast,
+} from "../../bench/seating.js";
 import {
   createAssemblyState, CAP_PLACE,
   peel, liftNeedle, contaminate, engage, turn, releaseNeedle, backOut,
@@ -66,6 +69,14 @@ const NEEDLE_POINT_DX = -0.026;
 
 /** How close the leading tip has to get to the hub mouth to catch the threads. */
 const ENGAGE_R = 0.011;
+
+/* The holder lies along the arm's own axis with its hub toward the hand, so a
+   needle threads IN along +X. One straight push, in the direction the object
+   itself goes. */
+const HUB_AXIS = { x: 1, z: 0 };
+const THREAD = threadSpec({
+  secure: SECURE_TURNS, snug: SNUG_TURNS, overtight: OVERTIGHT_TURNS,
+});
 /** Metres of travel before the carried needle's heading is trusted. */
 const HEADING_MIN = 0.0022;
 /** Metres of drag that rolls the holder a full half-turn. */
@@ -134,7 +145,6 @@ export async function startAssembly(opts){
     headingFrom: null,
     holdFrom: null,
     holdAt: 0,
-    lastAngle: null,
     active: true,
     frame: 0,
     lastAspect: 0,
@@ -499,8 +509,7 @@ export function assemblyPointerDown(e, canvasEl){
     return true;
   }
   if(s.engaged){
-    ctx.grab = { kind: "thread" };
-    ctx.lastAngle = screenAngleAboutHub(e, canvasEl);
+    ctx.grab = { kind: "thread", last: p.clone() };
     return true;
   }
   if(onNeedle(p)){
@@ -556,8 +565,7 @@ export function assemblyPointerMove(e, canvasEl){
       // the angle between the needle's own axis and the hub's (+X)
       const misalign = Math.abs(ctx.carry.yaw*180/Math.PI);
       engage(s, misalign > 180 ? 360 - misalign : misalign);
-      ctx.grab = { kind: "thread" };
-      ctx.lastAngle = screenAngleAboutHub(e, canvasEl);
+      ctx.grab = { kind: "thread", last: p.clone() };
       if(s.crossThreaded){ wince(); winceHaptic(); } else tubeChink();
     }
     syncObjects(); notify();
@@ -565,25 +573,42 @@ export function assemblyPointerMove(e, canvasEl){
   }
 
   if(g && g.kind === "thread"){
-    const a = screenAngleAboutHub(e, canvasEl);
-    if(a != null && ctx.lastAngle != null){
-      let d = a - ctx.lastAngle;
-      while(d > Math.PI) d -= 2*Math.PI;
-      while(d < -Math.PI) d += 2*Math.PI;
-      const before = s.turns;
-      turn(s, d/(2*Math.PI));
-      // one click per half turn: the thread you can hear is the thread you can feel
-      if(Math.floor(s.turns*2) !== Math.floor(before*2)){ tubeChink(); tapHaptic(); }
-      // unscrewed right off: the only way back from a cross-thread
-      if(s.crossThreaded && s.turns <= 0 && before > 0){
-        backOut(s);
-        ctx.grab = { kind: "carry" };
-        ctx.carry = { pos: hubMouth().clone().setX(hubMouth().x - 0.02), yaw: 0 };
-        ctx.headingFrom = p.clone();
-        tapHaptic();
-      }
+    /* ONE STRAIGHT PUSH, along the hub's own axis.
+
+       This used to ask the learner to circle the pointer around the hub two
+       and a half times. It corresponds to nothing a hand does — in life,
+       pushing a needle onto a hub and turning it are ONE motion — and on a
+       phone it was genuinely hard to perform at all.
+
+       The model is untouched: turn() still takes turns, ATTACH/SECURE/SNUG/
+       OVERTIGHT are the same numbers, the bevel still comes from wherever the
+       threading stopped. Only what feeds turn() changed, from radians of
+       pointer rotation to metres of axial drag. */
+    const travel = axialTravel(g.last, p, HUB_AXIS);
+    const before = s.turns;
+    const d = seatingDelta(travel, s.turns, THREAD);
+    if(d !== 0){
+      turn(s, d);
+      g.last.copy(p);
     }
-    ctx.lastAngle = a;
+
+    /* The stop is FELT. A click every half turn while it spins on freely, and
+       a single thunk at finger-tight — which is a wall you can force past
+       rather than a number to compare a caption against. */
+    if(tickedPast(before, s.turns, 0.5)){ tubeChink(); tapHaptic(); }
+    if(crossed(before, s.turns, SNUG_TURNS)){ safetyClack(); seatHaptic(); }
+    if(crossed(before, s.turns, OVERTIGHT_TURNS)){ wince(); winceHaptic(); }
+
+    // unscrewed right off: the only way back from a cross-thread, and backing
+    // out is deliberately free — undoing a mistake is never harder than making
+    // it, or a recoverable error becomes a dead end.
+    if(s.crossThreaded && s.turns <= 0 && before > 0){
+      backOut(s);
+      ctx.grab = { kind: "carry" };
+      ctx.carry = { pos: hubMouth().clone().setX(hubMouth().x - 0.02), yaw: 0 };
+      ctx.headingFrom = p.clone();
+      tapHaptic();
+    }
     syncObjects(); notify();
     return true;
   }
@@ -633,7 +658,6 @@ export function assemblyPointerUp(e, canvasEl){
   }
   ctx.down = false;
   ctx.grab = null;
-  ctx.lastAngle = null;
   syncObjects();
   notify();
   return true;
@@ -661,14 +685,6 @@ function tipOf(pos, yaw){
  * the thing being turned. Screen y runs downward, so a rising atan2 is
  * clockwise on screen — which is the direction that tightens.
  */
-function screenAngleAboutHub(e, canvasEl){
-  const rect = canvasEl.getBoundingClientRect();
-  const c = ctx.view.toScreen(hubMouth(), rect, new THREE.Vector3());
-  const dx = e.clientX - c.x, dy = e.clientY - c.y;
-  if(Math.hypot(dx, dy) < 6) return null;   // too close to the centre to have an angle
-  return Math.atan2(dy, dx);
-}
-
 function detachCap(p){
   const colour = GAUGE_COLOUR[ctx.state.gauge] || GAUGE_COLOUR[21];
   const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0046, 0.0040, 0.030, 14), mat(colour, { roughness: 0.5 }));

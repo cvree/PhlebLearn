@@ -35,9 +35,9 @@ body[data-panel="hidden"] .disclaimer{opacity:.55}
 .stg-topline{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .stg-mode{font-size:11px;font-weight:900;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-soft)}
 .stg-toggles{display:flex;gap:6px}
-.stg-toggle{font-family:inherit;font-size:11.5px;font-weight:800;color:var(--plum);background:#f7f3ff;
-  border:1.5px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer}
-.stg-toggle:hover{background:#efe8ff}
+.stg-toggle{font-family:inherit;font-size:11px;font-weight:800;color:var(--ink-soft);background:transparent;
+  border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer;opacity:.72}
+.stg-toggle:hover{background:#f3eefb;opacity:1;color:var(--plum)}
 .stg-toggle:focus-visible{outline:3px solid var(--plum);outline-offset:2px}
 
 /* ---- readiness checklist: glyph + text carry the state, not colour ---- */
@@ -139,7 +139,7 @@ body[data-panel="hidden"] .disclaimer{opacity:.55}
 /* larger touch targets on coarse pointers */
 @media (pointer:coarse){
   .stg-mini{min-height:34px;padding:6px 10px;font-size:12px}
-  .stg-toggle{padding:7px 12px;font-size:12.5px}
+  .stg-toggle{padding:7px 12px;font-size:12px}
 }
 
 /* high contrast: borders and text, never colour alone */

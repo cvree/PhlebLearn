@@ -930,6 +930,26 @@ function installTestSeam(){
      * circle this exact centre — computing one from the bench plane would be
      * measuring a different thing.
      */
+    /**
+     * Where the needle currently is on the bench, in bench metres.
+     *
+     * The threading gesture is a straight push along the hub's own axis now,
+     * so a test that wants to push it in has to know where the push starts —
+     * which used to be irrelevant, because circling the pointer round the hub
+     * could start anywhere on the circle.
+     */
+    async assemblyPointer(){
+      const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
+      const ctx = getAssemblyContext();
+      if(!ctx) return null;
+      const n = ctx.needle.group.position;
+      return { x: n.x, z: n.z };
+    },
+    /** Metres of axial drag per full turn, so a test can ask for turns. */
+    async threadTravelPerTurn(){
+      const { TURN_TRAVEL_M } = await import("./bench/seating.js");
+      return TURN_TRAVEL_M;
+    },
     async hubScreenPoint(){
       const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
       const ctx = getAssemblyContext();

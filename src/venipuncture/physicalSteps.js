@@ -12,7 +12,7 @@
    ========================================================================= */
 import { LAST } from "../config.js";
 import { pick } from "../utils.js";
-import { SS, saveSS, guided, reveal } from "../game/gameState.js";
+import { SS, saveSS, guided, reveal, buttonControls } from "../game/gameState.js";
 import { difficultyLevel } from "../game/saveSystem.js";
 import { challengeSetup } from "../game/activeChallenges.js";
 import {
@@ -745,7 +745,7 @@ export const PHYSICAL_STEPS = {
   gather(c, stage, advance){
     const session = ensureSupplySession(c);
     const canRender3d = !!getRenderer();
-    let listView = !canRender3d || !!SS.stagingListView;
+    let listView = !canRender3d || buttonControls();
     let inspecting = null;
     let disposed = false;
 
@@ -808,7 +808,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.stagingListView = listView; saveSS();
       if(listView){ stopStaging(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -879,7 +878,7 @@ export const PHYSICAL_STEPS = {
     // what palpation sees next. Controls-only sidesteps it entirely.
     const isHandDraw = c.procedure.siteKind === SITE_KIND.HAND;
     const canRender3d = !isHandDraw && !!getRenderer();
-    let listView = !canRender3d || !!SS.tourniquetListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
 
     const evaluate = ()=>evaluateTourniquet(tqState, { vessels:(c.armVessels||[]), vigour:arm.vigour, site:arm.site });
@@ -963,7 +962,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.tourniquetListView = listView; saveSS();
       if(listView){ stopTourniquet(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1015,7 +1013,7 @@ export const PHYSICAL_STEPS = {
     // the tourniquet step just above.
     const isHandDraw = c.procedure.siteKind === SITE_KIND.HAND;
     const canRender3d = !isHandDraw && !!getRenderer();
-    let listView = !canRender3d || !!SS.palpationListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
     let touch = null;
 
@@ -1083,7 +1081,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.palpationListView = listView; saveSS();
       if(listView){ stopPalpation(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1124,7 +1121,7 @@ export const PHYSICAL_STEPS = {
     const arm = ensureArmSession(c);
     const clean = ensureCleaningSession(c);
     const canRender3d = !!getRenderer();
-    let listView = !canRender3d || !!SS.cleaningListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
 
     const evaluate = ()=>evaluateCleaning(clean);
@@ -1181,7 +1178,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.cleaningListView = listView; saveSS();
       if(listView){ stopCleaning(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1219,7 +1215,7 @@ export const PHYSICAL_STEPS = {
     const arm = ensureArmSession(c);
     const unit = ensureAssemblySession(c);
     const canRender3d = !!getRenderer();
-    let listView = !canRender3d || !!SS.assemblyListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
 
     const evaluate = ()=>evaluateAssembly(unit);
@@ -1292,7 +1288,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.assemblyListView = listView; saveSS();
       if(listView){ stopAssembly(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1341,7 +1336,7 @@ export const PHYSICAL_STEPS = {
     beginUncap(unit);
 
     const canRender3d = !!getRenderer();
-    let listView = !canRender3d || !!SS.uncapListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
 
     const evaluate = ()=>evaluateUncap(unit);
@@ -1420,7 +1415,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.uncapListView = listView; saveSS();
       if(listView){ stopAssembly(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1469,7 +1463,7 @@ export const PHYSICAL_STEPS = {
     // here is honest: it means the mechanic is always exactly what it claims
     // to be, rather than a live path that would silently ignore it.
     const canRender3d = !isButterfly && !!getRenderer();
-    let listView = !canRender3d || !!SS.insertListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
 
     const bevelDeg = ()=> c.needleUnit
@@ -1585,7 +1579,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.insertListView = listView; saveSS();
       if(listView){ stopInsert(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1705,7 +1698,7 @@ export const PHYSICAL_STEPS = {
     const arm = ensureArmSession(c);
     const inv = ensureInversionSession(c);
     const canRender3d = !!getRenderer();
-    let listView = !canRender3d || !!SS.inversionListView;
+    let listView = !canRender3d || buttonControls();
     let disposed = false;
 
     const evaluate = ()=>evaluateInversion(inv);
@@ -1779,7 +1772,6 @@ export const PHYSICAL_STEPS = {
 
     function toggleView(){
       listView = !listView;
-      SS.inversionListView = listView; saveSS();
       if(listView){ stopInversion(); draw(); }
       else launch3d().then(()=>draw());
     }
@@ -1825,7 +1817,7 @@ function runWithdrawal(c, stage, advance, mode){
   const arm = ensureArmSession(c);
   const wd = ensureWithdrawalSession(c);
   const canRender3d = !!getRenderer();
-  let listView = !canRender3d || !!SS.withdrawalListView;
+  let listView = !canRender3d || buttonControls();
   let disposed = false;
 
   const liveCtx = ()=>({
@@ -1945,7 +1937,6 @@ function runWithdrawal(c, stage, advance, mode){
 
   function toggleView(){
     listView = !listView;
-    SS.withdrawalListView = listView; saveSS();
     if(listView){ stopWithdrawal(); draw(); }
     else launch3d().then(()=>draw());
   }
@@ -2019,7 +2010,7 @@ function runCollection(c, stage, advance, mode){
   // Same reasoning as the insert step: the winged set's tubing physics are
   // only wired through the accessible controls.
   const canRender3d = !isButterfly && !!getRenderer();
-  let listView = !canRender3d || !!SS.collectionListView;
+  let listView = !canRender3d || buttonControls();
   let disposed = false;
 
   const evaluate = ()=>evaluateCollection(col, {
@@ -2152,7 +2143,6 @@ function runCollection(c, stage, advance, mode){
 
   function toggleView(){
     listView = !listView;
-    SS.collectionListView = listView; saveSS();
     if(listView){ stopCollection(); draw(); }
     else launch3d().then(()=>draw());
   }
@@ -2206,7 +2196,7 @@ function runPostDraw(c, stage, advance, mode){
   const arm = ensureArmSession(c);
   const pd = ensurePostDrawSession(c);
   const canRender3d = !!getRenderer();
-  let listView = !canRender3d || !!SS.postDrawListView;
+  let listView = !canRender3d || buttonControls();
   let disposed = false;
 
   const evaluate = ()=>evaluatePostDraw(pd);
@@ -2297,7 +2287,6 @@ function runPostDraw(c, stage, advance, mode){
 
   function toggleView(){
     listView = !listView;
-    SS.postDrawListView = listView; saveSS();
     if(listView){ stopPostDraw(); draw(); }
     else launch3d().then(()=>draw());
   }

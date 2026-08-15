@@ -175,25 +175,32 @@ async function carryToHub(page, lineUp){
 }
 
 /** Puts the pointer on a known circle round the hub before turning it. */
-async function startTurnFrom(page){
-  const hub = await hubScreen(page);
-  const r = 80;
-  await page.mouse.move(hub.x + r, hub.y);
-  return { hub, r };
-}
-
 /**
- * Circles the pointer round the hub — which is how the needle gets turned in.
- * Eight chords per revolution, each interpolated driver-side, keeps every
- * angular step well under the half-turn the runtime unwraps at while costing
- * a fraction of the round trips a per-sample loop would.
+ * Threads the needle in by PUSHING it, which is what the gesture is now.
+ *
+ * It used to circle the pointer round the hub — eight chords a revolution, two
+ * and a half revolutions. That corresponded to nothing a hand does: in life,
+ * pushing a needle onto a hub and turning it are one motion. So this is one
+ * straight drag along the hub's own axis (+x), at the rate seating.js maps
+ * travel to turns, and the resistance curve does the rest.
+ *
+ * The pointer is left DOWN, exactly as `turnAround` left it, so the tests
+ * that push and then push back still read as one continuous gesture.
  */
-async function turnAround(page, hub, r, turns){
-  const chords = Math.max(6, Math.round(Math.abs(turns)*8));
-  for(let i = 1; i <= chords; i++){
-    const a = (i/chords)*turns*Math.PI*2;
-    await page.mouse.move(hub.x + Math.cos(a)*r, hub.y + Math.sin(a)*r, { steps: 2 });
-  }
+async function pushIn(page, turns){
+  const from = await page.evaluate(()=>window.__phlebTest.assemblyPointer());
+  const perTurn = await page.evaluate(()=>window.__phlebTest.threadTravelPerTurn());
+  const a = await anchors(page);
+  // Enough travel to reach `turns` THROUGH the resistance curve: past
+  // finger-tight the same push moves it a fraction as far, so asking for more
+  // than 2.5 turns needs disproportionately more drag — which is the point.
+  const target = { x: from.x + perTurn*turns*(turns > 2.4 ? 3.2 : 1), z: from.z };
+  const screen = await onBench(page, [[from.x, from.z], [target.x, target.z]]);
+  await page.mouse.move(screen[0].x, screen[0].y);
+  await page.mouse.down();
+  await page.mouse.move(screen[1].x, screen[1].y, { steps: Math.max(10, Math.round(Math.abs(turns)*14)) });
+  await page.waitForTimeout(60);
+  return a;
 }
 
 test("lining the needle up with the hub threads it; turning it in is real turning", async ({ page })=>{
@@ -207,8 +214,7 @@ test("lining the needle up with the hub threads it; turning it in is real turnin
   expect(snap.crossThreaded).toBe(false);
   expect(snap.engageMisalignDeg).toBeLessThan(12);
 
-  const { hub, r } = await startTurnFrom(page);
-  await turnAround(page, hub, r, 2.6);
+  await pushIn(page, 2.6);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
@@ -223,8 +229,7 @@ test("one turn is not finger-tight, and the step says so", async ({ page })=>{
   test.slow();
   await open(page, "assemble", "teach");
   await carryToHub(page, true);
-  const { hub, r } = await startTurnFrom(page);
-  await turnAround(page, hub, r, 1.3);
+  await pushIn(page, 1.3);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
@@ -240,12 +245,11 @@ test("turning the wrong way takes it back off", async ({ page })=>{
   test.slow();
   await open(page, "assemble", "teach");
   await carryToHub(page, true);
-  const { hub, r } = await startTurnFrom(page);
-  await turnAround(page, hub, r, 2.5);
+  await pushIn(page, 2.5);
   const mid = await snapshot(page);
   expect(mid.turns).toBeGreaterThan(2);
 
-  await turnAround(page, hub, r, -1.2);
+  await pushIn(page, -1.2);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
@@ -264,8 +268,7 @@ test("coming at the hub crooked cross-threads it, and forcing it gets nowhere", 
   expect(snap.crossThreaded).toBe(true);
   expect(snap.engageMisalignDeg).toBeGreaterThan(12);
 
-  const { hub, r } = await startTurnFrom(page);
-  await turnAround(page, hub, r, 3);
+  await pushIn(page, 3);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
