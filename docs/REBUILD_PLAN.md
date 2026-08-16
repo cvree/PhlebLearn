@@ -17,14 +17,10 @@ build with acceptance criteria that can be failed.
 | 7 | Assembly rebuilt on the axial-drag grammar | **shipped** |
 | 8 | Palpation traces replace the Mark button | **shipped** |
 | 9 | The HUD, and implicit advancement in Play | **shipped** |
-| 10 | Camera follows what is in the hand | not started |
-| 11 | The whole kit live at once — dispatcher inversion | not started |
-| 12 | Step 1 deleted; the arrival room | not started |
+| 10 | Camera follows what is in the hand | **shipped** |
+| 11 | The whole kit live at once — dispatcher inversion | **in progress** |
+| 12 | Step 1 deleted; the arrival room | **shipped** |
 | — | Butterfly in 3D | deferred, as planned |
-
-Items 10–12 are the three largest and riskiest in the plan and remain as
-written below. Item 11 in particular should still be built behind a flag, with
-the two-lease bench test written first.
 
 Three things were found while building that this plan did not predict, and all
 three are in the commit log rather than here: the "use controls" toggle was

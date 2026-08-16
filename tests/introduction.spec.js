@@ -398,3 +398,112 @@ test("finishing stops the transcript accepting more", () => {
   say(s, ACT.EXPLAIN, { now: 31000 });
   assert.equal(s.transcript.length, before);
 });
+
+/* -------------------------------------------------------------------------
+   THE ARRIVAL ROOM
+
+   The introduction stopped being step 1 of 16 and became a room you meet the
+   patient in, before the procedure starts. The COMPETENCY did not move: two
+   identifiers, from the patient's own mouth or their band, before anything is
+   collected. What went is the screen — five fieldsets holding thirteen written
+   sentences, which is a multiple-choice question about a conversation.
+
+   `liveActs` is what replaced them: the two or three things actually worth
+   saying at this moment.
+   ------------------------------------------------------------------------- */
+import { liveActs, mayStartDraw } from "../src/venipuncture/introduction/introductionRules.js";
+
+const PT = { name:"Camila Kowalski", first:"Camila", dob:"12/20/2000", id:"MRN-4471" };
+function room(){
+  return createIntroductionState({ patient: PT, tests:["CBC"], tubeCount: 2 });
+}
+
+test("an open ask and its leading twin are always offered together", () => {
+  // This is the entire lesson of the step: a patient will agree to a name that
+  // is not theirs. Choosing wrongly has to be as easy as choosing rightly, so
+  // hiding the leading variant would be the game refusing to let the learner
+  // make the mistake it exists to warn them about.
+  const s = room();
+  say(s, ACT.GREET);
+  const acts = liveActs(s);
+  assert.ok(acts.includes(ACT.ASK_NAME_OPEN));
+  assert.ok(acts.includes(ACT.ASK_NAME_LEADING));
+
+  say(s, ACT.ASK_NAME_OPEN);
+  const next = liveActs(s);
+  assert.ok(next.includes(ACT.ASK_DOB_OPEN));
+  assert.ok(next.includes(ACT.ASK_DOB_LEADING), "the pair must never split");
+});
+
+test("a pair is taken whole or not at all, however few slots are left", () => {
+  const s = room();
+  // One slot: not enough for the greeting AND a pair, so only the greeting.
+  assert.deepEqual(liveActs(s, 1), [ACT.GREET]);
+  // Two: still not enough for greeting + pair, and the pair must not be cut
+  // in half to fit — which would leave the open ask without its twin.
+  assert.deepEqual(liveActs(s, 2), [ACT.GREET]);
+  assert.deepEqual(liveActs(s, 3), [ACT.GREET, ACT.ASK_NAME_OPEN, ACT.ASK_NAME_LEADING]);
+});
+
+test("it offers what is live, not everything that exists", () => {
+  const s = room();
+  assert.ok(liveActs(s).length <= 3, "three at a time, not thirteen");
+  // …and nothing already done comes back round
+  say(s, ACT.GREET);
+  assert.ok(!liveActs(s, 9).includes(ACT.GREET));
+});
+
+test("the room runs out of things to say once everything is covered", () => {
+  const s = room();
+  [ACT.GREET, ACT.ASK_NAME_OPEN, ACT.ASK_DOB_OPEN, ACT.CHECK_WRISTBAND,
+   ACT.CONFIRM_ORDER, ACT.EXPLAIN, ACT.ASK_ALLERGIES, ACT.ASK_FAINTING,
+   ACT.POSITION].forEach(a => say(s, a));
+  assert.deepEqual(liveActs(s, 9), []);
+});
+
+test("the sink and the gloves are objects in the room, never things to say", () => {
+  // They are reachable the whole time — hand hygiene is a duration you hold —
+  // so they must never take a conversational slot from an ask.
+  const s = room();
+  for(let i = 0; i < 12; i++){
+    const acts = liveActs(s, 9);
+    assert.ok(!acts.includes(ACT.HAND_HYGIENE));
+    assert.ok(!acts.includes(ACT.GLOVE));
+    assert.ok(!acts.includes(ACT.TOUCH_PHONE));
+    if(!acts.length) break;
+    say(s, acts[0]);
+  }
+});
+
+test("two identifiers is the one gate, and it is the only one", () => {
+  const s = room();
+  assert.equal(mayStartDraw(s), false);
+
+  say(s, ACT.ASK_NAME_OPEN);
+  assert.equal(mayStartDraw(s), false, "one identifier is not identification");
+
+  say(s, ACT.ASK_DOB_OPEN);
+  assert.equal(mayStartDraw(s), true);
+
+  /* And nothing else blocks. Ungloved, unwashed, having asked nothing about
+     allergies and never having introduced yourself — the draw can still be
+     started, and every one of those is recorded and reported. The draw has to
+     be able to go wrong for the report to mean anything. */
+  const r = evaluateIntroduction(s);
+  assert.equal(r.ready, false, "…and the rules still say it was done badly");
+  assert.ok(r.issues.length > 0);
+});
+
+test("a leading question still gets you through the gate, which is the hazard", () => {
+  // The patient agrees. That is exactly why it is dangerous, and exactly why
+  // it is recorded rather than refused.
+  const s = room();
+  say(s, ACT.ASK_NAME_LEADING);
+  say(s, ACT.ASK_DOB_LEADING);
+  assert.equal(mayStartDraw(s), true);
+  assert.equal(s.leadingAsks, 2);
+  const m = measureIntroduction(s, evaluateIntroduction(s));
+  assert.equal(m.leadingQuestions, 2);
+  assert.ok(m.mistakes.some(x => x.code === "leadingQuestion"));
+  assert.ok(m.score < 80, `a fully-led identification should score badly, got ${m.score}`);
+});

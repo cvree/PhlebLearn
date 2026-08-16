@@ -991,6 +991,19 @@ function installTestSeam(){
       return TURN_TRAVEL_M;
     },
     /** What the draw is currently waiting to advance past, if anything. */
+    /** The draw's real step sequence, so a check cannot test a step twice. */
+    async stepSequence(tubes){
+      const [{ buildStepSequence, canonicalTubeOrder }, { TUBES }] = await Promise.all([
+        import("./venipuncture/procedureState.js"), import("./config.js"),
+      ]);
+      return buildStepSequence(canonicalTubeOrder(tubes || ["lightblue"], TUBES).length);
+    },
+    /** Which step the draw is actually on. */
+    async currentStep(){
+      const { ENC } = await import("./game/gameState.js");
+      const c = ENC && ENC.collect;
+      return c ? (c.steps[c.step] || null) : null;
+    },
     async autoAdvance(){
       return autoAdvanceState();
     },

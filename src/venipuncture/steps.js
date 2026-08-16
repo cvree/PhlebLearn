@@ -22,21 +22,6 @@ export function vpTubeDot(k){ return `<span class="vp-dot" style="background:#${
 function vpBtn(label,cls){ return `<button class="btn ${cls||''} vp-tap" id="vpAct">${label}</button>`; }
 
 export const VP_STEPS = {
-  introduce(c,stage,advance){
-    stage.innerHTML=`
-      <div class="vp-tray">
-        <div class="vp-tool" id="vpSan">🧴<span>sanitizer</span></div>
-        <div class="vp-tool" id="vpGlove">🧤<span>gloves</span></div>
-      </div>
-      <div class="vp-status" id="vpMsg">Sanitize your hands, then glove up.</div>
-      ${vpBtn("🧼 Sanitize & glove up","alt")}`;
-    $("vpAct").onclick=()=>{
-      sfx("good"); c.introOk=true;
-      const s=$("vpSan"),g=$("vpGlove"); if(s)s.classList.add("vp-check"); if(g)g.classList.add("vp-check");
-      $("vpMsg").innerHTML="✅ Hands clean, gloves on.";
-      setTimeout(advance,360);
-    };
-  },
   gather(c,stage,advance){
     const supplies=[
       {k:"gloves",emoji:"🧤",name:"Gloves"},{k:"tq",emoji:"🎀",name:"Tourniquet"},

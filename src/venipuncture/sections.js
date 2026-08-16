@@ -23,8 +23,16 @@ import { MEASUREMENT_SOURCES } from "./rubric/policy.js";
 
 export const SECTIONS = [
   {
+    /* The one section with no STEP in it. Meeting the patient happens in the
+       arrival room, before the procedure starts and outside its step machine
+       — see procedureState.js. It keeps its measurement, its session and its
+       rubric row; what it does not have is a screen in the sequence.
+
+       An empty `steps` is meaningful rather than an oversight: sectionForStep
+       will never return it, so no step can end it and no section feedback can
+       fire for it. Its measurement is finished when the arrival room is. */
     id: "introduction", label: "Introduction and identification",
-    steps: ["introduce"],
+    steps: [],
     measurements: ["introduction"],
     sessions: ["introduction"],
     chips: ["introOk"],

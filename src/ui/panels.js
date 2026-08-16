@@ -11,7 +11,7 @@ import { sfx } from "../audio/audioManager.js";
 import { musicForState } from "../audio/audioManager.js";
 import { toast, confetti, floatXP } from "./notifications.js";
 import { shuffle, pick, arraysEqual } from "../utils.js";
-import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES, ALL_CATCHES } from "../config.js";
+import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES } from "../config.js";
 import {
   SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
   MODE, MODES, MODE_NAMES, guided, playMode, reveal,
@@ -36,7 +36,7 @@ import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
 import { tubeMeshes, resetTubeSelection } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
 import { clearAutoAdvance } from "../venipuncture/autoAdvance.js";
-import { ensureArmSession } from "../venipuncture/physicalSteps.js";
+import { ensureArmSession, runArrivalRoom } from "../venipuncture/physicalSteps.js";
 import { closeBench } from "../bench/benchSession.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
@@ -280,65 +280,64 @@ function nextPatient(){
   go("review");
 }
 
-/* ---------- review requisition ----------------------------------------------- */
-function reqCardHTML(p){
-  const fl=p.reqIssue&&p.reqIssue.flaw;
-  const nameShown = fl==="name" ? p.first+" "+p.decoyLast : p.name;
-  const dobShown  = fl==="dob"  ? '<span style="color:var(--bad)">(missing)</span>' : p.dob;
-  const dateShown = fl==="date" ? '<span style="color:var(--bad)">(missing)</span>' : "06/13/2026";
-  const provShown = fl==="prov" ? '<span style="color:var(--bad)">(missing)</span>' : p.provider;
-  let orders=p.orders.slice();
-  if(fl==="dup") orders=[orders[0],orders[0]].concat(orders.slice(1));
-  const ordersHTML = orders.map((o,i)=> (fl==="test"&&i===0) ? '<span class="pill" style="color:var(--bad)">▒▒▒▒▒</span>' : `<span class="pill">${o}</span>`).join("");
-  return `<div class="req">
-      <div>Patient: <b>${nameShown}</b> • ${p.ageCat}</div>
-      <div>DOB: <b>${dobShown}</b> &nbsp; ID: <b>${p.id}</b></div>
-      <div>Collection date: <b>${dateShown}</b> &nbsp; Provider: <b>${provShown}</b></div>
-      <div style="margin-top:6px">Tests ordered:</div>${ordersHTML}
-    </div>`;
-}
+/* =========================================================================
+   THE ARRIVAL ROOM — where the patient is met.
+
+   This used to be a multiple-choice question about the requisition, followed
+   by an `introduce` STEP inside the draw that offered thirteen written
+   sentences to click. Both are gone, and the reason is the rule
+   ARCHITECTURE.md already sets: *if the draw already makes the learner do the
+   thing, the screen that asks them about it is deleted, and the score reads
+   what they did instead.*
+
+   So there is one room, before the procedure, with a person in it and things
+   you can pick up — the requisition, the wristband, the sink, the gloves —
+   and no step number attached to any of it. The competency is untouched: two
+   identifiers, from the patient's own mouth or their band, before anything is
+   collected, and the draw cannot be entered without them.
+
+   venipuncture/physicalSteps.js's runArrivalRoom owns the session and the two
+   clocks; this only says where it goes and what happens when it ends.
+   ========================================================================= */
 function renderReview(){
-  const p=ENC.p;
-  // The patient arrives here rather than on a screen of their own: saying
-  // hello was never a decision, and the introduction step inside the draw is
-  // where greeting them is actually performed and measured.
-  const greet=pick(["Hi, I'm here for my blood draw.","Hello! Ready when you are.","Hi there. I've got my lab order right here.","Morning! Hope this is quick."]);
-  let options;
-  if(p.reqIssue){
-    const other=pick(ALL_CATCHES.filter(c=>c!==p.reqIssue.catch));
-    options=[
-      {t:p.reqIssue.catch+" Hold and clarify before drawing.",ok:true,reply:"Good catch, flag it before we draw a drop."},
-      {t:"Looks complete, go straight to the tubes.",ok:false,reply:"Look again, something's missing on there."},
-      {t:other+" Hold and clarify.",ok:false,reply:"Not quite that, but you're right to scrutinize."}
-    ];
-  }else{
-    const two=shuffle(ALL_CATCHES).slice(0,2);
-    options=[
-      {t:"Looks complete and matches, proceed to the tubes.",ok:true,reply:"Yep, it's all there. Let's grab tubes."},
-      {t:two[0]+" Hold and clarify.",ok:false,reply:"Actually that's present, this one's clean."},
-      {t:two[1]+" Hold and clarify.",ok:false,reply:"Take another look, that's filled in."}
-    ];
-  }
-  const learn="Read every field, name, DOB, tests, date, provider. If anything's missing or mismatched, hold and clarify before drawing.";
-  if(guided()){
-    runDialogue("review",{
-      head:`<h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>${says(p.first,pEmoji(p),greet,p.mood)}${teach("review")}`,
-      extra:reqCardHTML(p),
-      who:DOT.name, emoji:DOT.emoji, sub:"your guide",
-      lines:[pick(["Before we touch a tube, give the order a good scan.","Quick check of the requisition first. Anything off?","Let's read the whole order before we draw."])],
-      prompt:"Is this requisition ready to use?", options,
-      learn, teachWhy:"If something's missing or doesn't match, hold and clarify.",
-      rerender: renderReview,
-      onDone:(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; afterRequisition(); }
-    });
-  }else{
-    panel.innerHTML=`<h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
-      ${says(p.first,pEmoji(p),greet,p.mood)}
-      ${reqCardHTML(p)}
-      <p class="sub">${pick(["Anything missing or mismatched before you draw?","Scan it, is it ready to use?","Is the order complete and matching?"])}</p>
-      <div id="opts"></div>`;
-    optionStep(options,(o)=>{ ENC.reqChoice=o.ok; (ENC.answers=ENC.answers||{}).requisition={your:o.t,correct:(options.find(x=>x.ok)||{}).t}; afterRequisition(); }, "If something's missing or doesn't match, hold and clarify before drawing.");
-  }
+  const p = ENC.p;
+  /* The encounter's procedure state is built HERE now, not on the first frame
+     of the draw. The arrival room writes the introduction session into it, and
+     the whole point is that the introduction happens before the procedure —
+     so the thing that carries it has to exist before the procedure too. */
+  const c = ensureProcedureState();
+  const greet = pick([
+    "Hi, I'm here for my blood draw.",
+    "Hello! Ready when you are.",
+    "Hi there. I've got my lab order right here.",
+    "Morning! Hope this is quick.",
+  ]);
+
+  panel.innerHTML = `
+    <h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
+    ${says(p.first, pEmoji(p), greet, p.mood)}
+    ${guided() ? teach("review") : ""}
+    <div class="vp-stage" id="arrivalStage" data-reveal="${MODE}"></div>`;
+
+  // The room runs its own frame loop for the hygiene clock, so its cleanup
+  // has to go with the encounter's — same slot renderCollect uses.
+  if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+  const stop = runArrivalRoom(c, $("arrivalStage"), ()=>{
+    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+    /* `reqChoice` used to be the answer to a quiz. It is now what the learner
+       actually DID about a flawed order: held it, or did not. deriveChoices()
+       reads it for the score screen's "your answer / best answer" card, which
+       therefore contains a decision rather than a guess. */
+    ENC.reqChoice = p.reqIssue ? !!c.reqHeld : !c.reqHeld;
+    (ENC.answers = ENC.answers || {}).requisition = {
+      your: c.reqHeld ? "Held the draw to clarify the order." : "Read the order and proceeded.",
+      correct: p.reqIssue
+        ? `${p.reqIssue.catch} Hold and clarify before drawing.`
+        : "The order is complete and matches — proceed.",
+    };
+    afterRequisition();
+  });
+  ENC._collectCleanup = stop;
 }
 
 /* ---------- into the draw ------------------------------------------------------ */
@@ -382,13 +381,23 @@ function renderSite(){
   }
 }
 
+/**
+ * The encounter's procedure state, built once.
+ *
+ * The tubes this draw NEEDS come from the requisition. Which tubes the learner
+ * actually picks up, and the order they rack them in, is the supply cart's job
+ * — it is the one place that question is asked now.
+ */
+function ensureProcedureState(){
+  if(!ENC.collect){
+    ENC.collect = createProcedureState(ENC.p.reqSet, { patient: ENC.p, handedness: SS.handedness });
+  }
+  return ENC.collect;
+}
+
 /* ---------- collect: the venipuncture procedure (2D fallback) ------------------ */
 function renderCollect(){
-  // The tubes this draw NEEDS come from the requisition. Which tubes the
-  // learner actually picks up, and the order they rack them in, is the supply
-  // cart's job — it is the one place that question is asked now.
-  if(!ENC.collect){ ENC.collect = createProcedureState(ENC.p.reqSet, { patient: ENC.p, handedness: SS.handedness }); }
-  const c=ENC.collect;
+  const c = ensureProcedureState();
   // A complication the learner answered by stopping really did stop the
   // draw: there is no next step to render, and the report is built from what
   // was actually collected before it.

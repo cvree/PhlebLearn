@@ -74,7 +74,17 @@ export function renderCurrentStep(c, stage, hooks){
      complication and the section replay all get it for free — each of those
      leaves by a different door. */
   clearAutoAdvance();
-  const fn = PHYSICAL_STEPS[id] || VP_STEPS[id] || VP_STEPS.introduce;
+  /* No fallback-of-last-resort any more. It used to be VP_STEPS.introduce,
+     which was reachable only if the step id was unknown — and rendering the
+     introduction for an unknown step is a silent wrong answer. There is no
+     introduction step at all now (see procedureState.js), so an unknown id is
+     a bug and says so instead of quietly drawing a sink. */
+  const fn = PHYSICAL_STEPS[id] || VP_STEPS[id];
+  if(!fn){
+    console.error(`[venipuncture] no implementation for step "${id}"`);
+    if(stage) stage.innerHTML = `<div class="stg-msg block">This step is missing an implementation.</div>`;
+    return { id, info: VP_TIPS[id], icon: VP_ICON[id] };
+  }
   const advance = (stayOnStep)=>{
     if(hooks.onCleanup) hooks.onCleanup();
     if(stayOnStep){ hooks.rerender(); return; }

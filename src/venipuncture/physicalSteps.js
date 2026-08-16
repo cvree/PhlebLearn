@@ -21,13 +21,13 @@ import {
 import { createComplicationState } from "./complications/complicationState.js";
 import { VP_TIPS } from "./questions.js";
 import { reportStepReady } from "./autoAdvance.js";
-import { evaluateIntroduction } from "./introduction/introductionRules.js";
+import { evaluateIntroduction, mayStartDraw } from "./introduction/introductionRules.js";
 import {
   createIntroductionState, say, beginScrub, scrubFor, endScrub, scrubBout,
   dryFor, chooseGloves, reglove, finish as finishIntroduction,
 } from "./introduction/introductionState.js";
 import { measureIntroduction, applyIntroductionOutcome } from "./introduction/introductionScoring.js";
-import { renderIntroductionCoach } from "./introduction/introductionCoach.js";
+import { renderArrivalRoom } from "./introduction/arrivalRoom.js";
 import { getRenderer } from "../rendering/renderer.js";
 import { drawArmFor, difficultyVeinKeys } from "../game/encounter.js";
 import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
@@ -676,73 +676,95 @@ export function ensurePalpationSession(c){
   return c.palpation;
 }
 
-export const PHYSICAL_STEPS = {
-  /* -----------------------------------------------------------------------
-     INTRODUCE — the one step conducted in speech rather than in objects.
+/* =========================================================================
+   THE ARRIVAL ROOM — meeting the patient, before the procedure starts.
 
-     There is no `introductionRuntime.js` and no scene: what the learner
-     manipulates is a conversation and a sink, and there is nothing to
-     raycast against. The rule that matters is unchanged — every technique
-     is a pure helper in `introductionState.js`, and both the held rub and
-     the "rub for 20 seconds" control call the same ones.
-     ----------------------------------------------------------------------- */
-  introduce(c, stage, advance){
-    const session = ensureIntroductionSession(c);
-    let disposed = false, raf = 0, last = 0, rubbing = false;
+   This used to be `PHYSICAL_STEPS.introduce`: step 1 of 16, with a progress
+   bar and five fieldsets holding thirteen written sentences. Meeting somebody
+   is not a screen in a procedure, so it is not one — see
+   introduction/arrivalRoom.js for what replaced it and procedureState.js for
+   why the step list starts at `gather`.
 
-    const evaluate = ()=>evaluateIntroduction(session);
+   Everything about the MODEL is unchanged. Same session, same `say()` write
+   path, same rules, same scoring, same rubric row. What moved is where it
+   happens and what it looks like.
 
-    function draw(){
-      if(disposed) return;
-      renderIntroductionCoach(stage, {
-        state: session,
-        result: evaluate(),
-        guided: guided(), reveal: reveal(), hint: stepHint(c),
-        gate: reveal().gateContinue,
-        handlers: {
-          onAct: (id)=>{ say(session, id); draw(); },
-          onScrub: (secs)=>{ scrubBout(session, secs); draw(); },
-          onGloveMaterial: (m)=>{ chooseGloves(session, m); draw(); },
-          onReglove: ()=>{ reglove(session); draw(); },
-          onRubStart: ()=>{ if(rubbing) return; rubbing = true; beginScrub(session); },
-          onRubEnd: ()=>{ if(!rubbing) return; rubbing = false; endScrub(session); draw(); },
-          onReady: finish,
-        },
-      });
-    }
+   Lives here rather than in ui/panels.js because it owns the session the rest
+   of the encounter reads, and `ensureIntroductionSession` is already here with
+   its nine siblings. `ui/` calls it; `venipuncture/` still knows nothing about
+   screens.
 
-    /* The two clocks that only run while this step is on screen: the rub
-       itself, and the drying that has to happen before gloves go on. Driven
-       from `performance.now()`, not `e.timeStamp` — the latter is not the
-       wall clock for synthesised events, and here the interval IS the
-       measurement. The coach's signature gate turns these frame-by-frame
-       draws into a `[data-live]` patch, so the held button is never
-       destroyed under the hand holding it. */
-    function tick(){
-      if(disposed) return;
-      raf = requestAnimationFrame(tick);
-      const now = performance.now();
-      const dt = Math.min(0.25, (now - last)/1000);
-      last = now;
-      if(rubbing) scrubFor(session, dt);
-      else dryFor(session, dt);
-      draw();
-    }
+   @param {object} c        procedure state
+   @param {HTMLElement} host
+   @param {function} onStart  called when the learner starts the draw
+   @returns {function} cleanup
+   ========================================================================= */
+export function runArrivalRoom(c, host, onStart){
+  const session = ensureIntroductionSession(c);
+  let disposed = false, raf = 0, last = 0, rubbing = false;
 
-    function finish(){
-      const result = evaluate();
-      if(reveal().gateContinue && !result.ready) return;
-      finishIntroduction(session);
-      applyIntroductionOutcome(c, measureIntroduction(session, result));
-      advance();
-    }
+  const evaluate = ()=>evaluateIntroduction(session);
 
-    draw();
-    last = performance.now();
+  function draw(){
+    if(disposed) return;
+    renderArrivalRoom(host, {
+      state: session,
+      patient: c.patient,
+      result: evaluate(),
+      guided: guided(),
+      held: !!c.reqHeld,
+      handlers: {
+        onAct: (id)=>{ say(session, id); draw(); },
+        onScrub: (secs)=>{ scrubBout(session, secs); draw(); },
+        onGloveMaterial: (m)=>{ chooseGloves(session, m); draw(); },
+        onReglove: ()=>{ reglove(session); draw(); },
+        onRubStart: ()=>{ if(rubbing) return; rubbing = true; beginScrub(session); },
+        onRubEnd: ()=>{ if(!rubbing) return; rubbing = false; endScrub(session); draw(); },
+        /* Holding the draw to clarify a bad requisition. The old screen asked
+           "is this requisition ready to use?" and offered three sentences to
+           pick between; the order is either complete or it is not, the learner
+           can read it, and the only decision that matters is whether they
+           stop. So that is the only control. */
+        onHold: ()=>{ c.reqHeld = !c.reqHeld; draw(); },
+        onStart: finish,
+      },
+    });
+  }
+
+  /* The two clocks that only run while this room is on screen: the rub
+     itself, and the drying that has to happen before gloves go on. Driven
+     from `performance.now()`, not `e.timeStamp` — the latter is not the
+     wall clock for synthesised events, and here the interval IS the
+     measurement. The room's signature gate turns these frame-by-frame draws
+     into a `[data-live]` patch, so the held button is never destroyed under
+     the hand holding it. */
+  function tick(){
+    if(disposed) return;
     raf = requestAnimationFrame(tick);
-    return ()=>{ disposed = true; if(raf) cancelAnimationFrame(raf); };
-  },
+    const now = performance.now();
+    const dt = Math.min(0.25, (now - last)/1000);
+    last = now;
+    if(rubbing) scrubFor(session, dt);
+    else dryFor(session, dt);
+    draw();
+  }
 
+  function finish(){
+    const result = evaluate();
+    // The one gate: two identifiers. Everything else is recorded, not blocked.
+    if(!mayStartDraw(session)) return;
+    finishIntroduction(session);
+    applyIntroductionOutcome(c, measureIntroduction(session, result));
+    if(onStart) onStart();
+  }
+
+  draw();
+  last = performance.now();
+  raf = requestAnimationFrame(tick);
+  return ()=>{ disposed = true; if(raf) cancelAnimationFrame(raf); };
+}
+
+export const PHYSICAL_STEPS = {
   gather(c, stage, advance){
     const session = ensureSupplySession(c);
     const canRender3d = !!getRenderer();

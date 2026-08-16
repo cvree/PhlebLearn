@@ -176,3 +176,46 @@ body[data-reduced="on"] .vp-pip,body[data-reduced="on"] .vp-vein{transition:none
   box-shadow:none;font-size:13px;padding:8px 14px;opacity:.72;
 }
 .btn.vp-tap.quiet:hover{opacity:1;color:var(--plum);border-color:var(--plum)}
+
+/* ---------- the arrival room ---------------------------------------------
+   Where the patient is met. Not a step: no counter, no progress bar. Things
+   you can pick up — the requisition, the band, the sink, the gloves — and
+   two or three live things to say at any moment rather than thirteen. */
+.arrival{display:flex;flex-direction:column;gap:10px}
+
+.arr-said{border-left:3px solid var(--line);padding:2px 0 2px 10px}
+.arr-said p{margin:0 0 2px;font-size:13.5px;line-height:1.4}
+.arr-you{font-weight:800;color:var(--ink)}
+.arr-them{font-weight:700;color:var(--ink-soft)}
+.arr-them::before{content:"↳ ";opacity:.5}
+
+.arr-state{display:flex;flex-wrap:wrap;gap:5px}
+.arr-chip{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink-soft)}
+.arr-chip.good{background:#e7f8f0;border-color:var(--mint);color:#1c7a52}
+.arr-chip.bad{background:#fdecec;border-color:#f0b4b4;color:#a33}
+.arr-chip.wait{background:#fdf5e6;border-color:#eed9a8;color:#8a6a1e}
+
+.arr-acts{display:flex;flex-direction:column;gap:5px}
+.arr-act{text-align:left}
+/* A leading question sits beside its open twin on purpose: choosing wrongly
+   has to be as easy as choosing rightly, or the trap teaches nothing. It is
+   NOT marked as wrong — that would be the answer. */
+.arr-act.leading{}
+
+.arr-things{display:flex;flex-wrap:wrap;gap:8px}
+.arr-card{flex:1 1 190px;border:1px solid var(--line);border-radius:12px;
+  padding:9px 11px;background:var(--card);font-size:12.5px}
+.arr-card.bad{border-color:#f0b4b4;background:#fdf4f4}
+.arr-card-h{font-size:10.5px;font-weight:900;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
+.arr-row{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+.arr-row span{color:var(--ink-soft);font-weight:700}
+.arr-row b{text-align:right}
+.arr-missing{color:var(--bad);font-weight:800}
+.arr-warn{margin:6px 0 0;font-weight:800;color:#a33;font-size:12px}
+.arr-hold{margin-top:8px;width:100%}
+.arr-hold.on{background:#fdf5e6;border-color:#eed9a8;color:#8a6a1e}
+.arr-band{width:100%;text-align:left}
+
+.arr-kit{display:flex;flex-wrap:wrap;gap:5px}

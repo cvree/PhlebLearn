@@ -59,66 +59,63 @@ test("main interaction panel shows Clock In and offers the two modes", async ({ 
   expect(errors).toEqual([]);
 });
 
-test("greeting the patient goes straight to the requisition — identity is the draw's own step", async ({ page }) => {
+test("the patient is met in a room, not on a screen that asks about them", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
 
-  // Saying hello was a screen with one button on it, which is a click rather
-  // than a decision — the patient greets you here, and greeting them back is
-  // an act inside the draw's introduction step. The identity multiple-choice
-  // screen is gone for the same reason. See game/scoring.js's deriveChoices().
+  /* Two screens went, for the same reason: if the draw already makes the
+     learner do the thing, the screen that ASKS them about it is deleted, and
+     the score reads what they did instead.
+
+       "Verify identity", a multiple-choice question — now two identifiers out
+       of the patient's own mouth, checked against a requisition you can read.
+
+       "Is this requisition ready to use?", three sentences to pick between —
+       now a requisition on the counter and one control: hold, or do not. */
   await expect(page.getByRole("heading", { name: /Patient 1 of/i })).toBeVisible({ timeout: 5000 });
   await expect(page.locator(".dlg .bubble").first()).toBeVisible();
-  await expect(page.locator(".req")).toBeVisible();
+  await expect(page.locator(".arrival")).toBeVisible();
+  await expect(page.locator(".arr-req")).toContainText("Requisition");
   await expect(page.getByRole("heading", { name: /Verify identity/i })).toHaveCount(0);
+  await expect(page.locator("#opts")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test("reading the requisition leads into the draw, not into two tube-tapping screens", async ({ page }) => {
+test("the draw cannot be entered until two identifiers are in hand", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
   await page.locator("#modeLearn").click();
-  /* The patient arrives and the requisition lesson comes up with them, on one
-     screen. This used to look for a HEADING named "Check the requisition" and
-     had been failing quietly since the encounter was streamlined: the patient
-     greeting is the heading now, and the requisition lesson is the teaching
-     box beneath it. The claim the test is making is unchanged — reading the
-     requisition is the first thing that happens — so it now asserts against
-     the two things that are actually on the screen. */
-  await expect(page.getByRole("heading", { name: /Patient 1 of/i })).toBeVisible({ timeout: 5000 });
-  await expect(page.locator(".lesson", { hasText: /Check the requisition/i })).toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".arrival")).toBeVisible({ timeout: 5000 });
 
-  // advance the guide's dialogue beats to the option list
-  for(let i=0;i<4;i++){
-    if(await page.locator("#opts .opt").count() > 0) break;
-    const btn = page.locator("#panel button").last();
-    if(!(await btn.count())) break;
-    await btn.click();
-  }
-  const options = page.locator("#opts .opt");
-  await expect(options.first()).toBeVisible({ timeout: 5000 });
-  // Which requisition answer is correct depends on whether this patient's
-  // order was rolled with a flaw, and Learn mode keeps the options up with a
-  // hint after a wrong pick — so try each in turn until the screen moves on.
-  const count = await options.count();
-  for(let i=0;i<count;i++){
-    if(await page.locator("#opts").count() === 0) break;
-    // The list re-renders after each wrong pick, so re-resolve it every time
-    // rather than holding a handle to a node that is about to be replaced.
-    const opt = page.locator("#opts .opt").nth(i);
-    if(!(await opt.count())) break;
-    await opt.click({ timeout: 5000 }).catch(()=>{});
-    await page.waitForTimeout(250);
-  }
-  const cont = page.locator("#panel button", { hasText: /Continue/i });
-  if(await cont.count()) await cont.first().click();
+  // This is the one gate in the room, and it is the most load-bearing rule in
+  // California phlebotomy practice.
+  const start = page.locator("#arrStart");
+  await expect(start).toBeDisabled();
 
-  // Site selection only when this patient's arms pose one; otherwise the draw.
+  /* Say whatever is live until the gate opens. The smoke suite deliberately
+     runs the shipped page with no test seam on it, so this reads the same
+     button the learner reads rather than asking the app about its state.
+
+     Clicking the FIRST live thing is not an arbitrary choice: `liveActs()`
+     ranks them the way the work actually runs, so the top of the list is
+     greet, then the open name ask, then the open date-of-birth ask. A patient
+     who answers with a nickname simply leaves that group live and the next
+     click asks again — which is why this loop needs no special case for it. */
+  for(let i = 0; i < 10; i++){
+    if(await start.isEnabled()) break;
+    const act = page.locator(".arr-act").first();
+    if(!(await act.count())) break;
+    await act.click();
+    await page.waitForTimeout(150);
+  }
+  await expect(start).toBeEnabled();
+
+  await start.click();
+  // …and the draw itself starts at the work area, not at an introduction step.
   await expect(
-    page.getByRole("heading", { name: /Venipuncture|Site selection|says…/i })
+    page.getByRole("heading", { name: /Work-area preparation|Site selection|says…/i })
   ).toBeVisible({ timeout: 8000 });
-  await expect(page.getByRole("heading", { name: /Select the tubes|Order of draw/i })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

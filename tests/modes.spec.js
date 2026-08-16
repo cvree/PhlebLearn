@@ -153,7 +153,6 @@ test("measurementField agrees with the rubric policy's own mapping", () => {
 });
 
 test("a section ends when the next step belongs to a different section", () => {
-  assert.equal(endsSection("introduce", "gather"), true);
   assert.equal(endsSection("gather", "tourniquet"), true);
   assert.equal(endsSection("release", "withdraw"), false);
   assert.equal(endsSection("dispose", "pressure"), true);
@@ -161,6 +160,24 @@ test("a section ends when the next step belongs to a different section", () => {
 
 test("the last step of the draw ends its section", () => {
   assert.equal(endsSection("invert", null), true);
+});
+
+test("the introduction is a section with no step, and nothing can end it", () => {
+  /* Meeting the patient happens in the arrival room, before the procedure
+     starts and outside its step machine. The section keeps its measurement,
+     its session and its rubric row; what it does not have is a screen in the
+     sequence. An empty `steps` is the honest way to say that — sectionForStep
+     never returns it, so no step can end it and no section feedback can fire
+     for a piece of work that no step performed. */
+  const intro = SECTIONS.find(s => s.id === "introduction");
+  assert.deepEqual(intro.steps, []);
+  assert.deepEqual(intro.measurements, ["introduction"]);
+  assert.equal(sectionForStep("introduce"), null, "the step is gone, not renamed");
+  assert.equal(endsSection("introduce", "gather"), false);
+
+  // …and the draw now starts at the work area.
+  assert.equal(buildStepSequence(2)[0], "gather");
+  assert.ok(buildStepSequence(2).indexOf("introduce") < 0);
 });
 
 test("a one-tube draw has no switch step, and collection still ends correctly", () => {

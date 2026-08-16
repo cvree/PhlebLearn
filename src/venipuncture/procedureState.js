@@ -30,8 +30,23 @@ export const PHASES = {
 // the original had dispose last (after pressure+bandage), which contradicts
 // "point of use" disposal and the explicit Phase 0 requirement that pressure
 // and bandaging happen *after* sharps disposal.
+/* WHY THERE IS NO `introduce` STEP.
+
+   There was: step 1 of 16, with a progress bar and five fieldsets holding
+   thirteen written sentences the learner clicked. Meeting a patient is not a
+   screen in a procedure, and a multiple-choice question about a conversation
+   is not a conversation.
+
+   The COMPETENCY did not go anywhere — two-identifier identification is the
+   most load-bearing rule in California phlebotomy and it is a rubric row. It
+   happens in the arrival room now (introduction/arrivalRoom.js), on real
+   objects, before the procedure starts: the patient answers, the requisition
+   is read, the wristband is checked, hands are washed and gloved. Its state,
+   its rules and its scoring are untouched, and the draw cannot be entered
+   until two identifiers match.
+
+   `introOk` therefore arrives already true, set by the arrival room. */
 export const VP_STEP_DEFS = [
-  { id:"introduce",  phase:PHASES.PREP,      trigger:"start",              interaction:"dialogue",      requiredState:{} },
   { id:"gather",     phase:PHASES.PREP,      trigger:"afterIntroduction",  interaction:"tap-collect",   requiredState:{introOk:true} },
   { id:"tourniquet", phase:PHASES.ACCESS,    trigger:"afterGather",        interaction:"drag",          requiredState:{gatherOk:true} },
   { id:"palpate",    phase:PHASES.ACCESS,    trigger:"afterTourniquet",    interaction:"tap-choice",    requiredState:{tourniquetOn:true} },

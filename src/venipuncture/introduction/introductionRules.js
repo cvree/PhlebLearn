@@ -235,3 +235,74 @@ export function nextIssue(result){
   if(!result || !result.issues.length) return null;
   return result.blocking[0] || result.issues[0];
 }
+
+/* =========================================================================
+   WHAT IS LIVE RIGHT NOW — the few things worth saying at this moment.
+
+   The introduction used to render as five fieldsets holding thirteen written
+   sentences, and the learner clicked one. That is a multiple-choice question
+   about a conversation, not a conversation, and it is the single largest
+   reason the step read as a form.
+
+   A real introduction has two or three live moves at any moment: you have not
+   said hello yet, so say hello; you have their name but not their date of
+   birth, so ask for it. This returns exactly those, in the order the step's
+   own `nextAction()` already ranks them.
+
+   ONE RULE IS LOAD-BEARING. Where an act has a LEADING variant — reading the
+   name off the requisition for the patient to agree with, rather than asking
+   them to state it — the two are returned TOGETHER, always. Choosing wrongly
+   has to be as easy as choosing rightly, or the trap teaches nothing; a
+   patient will agree to a name that is not theirs, and that is the entire
+   lesson. Hiding the leading variant would be the game refusing to let the
+   learner make the mistake it exists to warn them about.
+
+   Pure. The arrival room renders what this returns; it decides nothing.
+   ========================================================================= */
+
+/** Acts that are never "next" — they are objects in the room, not moves. */
+const NOT_A_MOVE = [ACT.HAND_HYGIENE, ACT.GLOVE, ACT.TOUCH_PHONE, ACT.TOUCH_DOOR];
+
+export function liveActs(state, limit){
+  const n = limit == null ? 3 : limit;
+  const s = state || {};
+  const done = s.done || {};
+  const ids = s.identifiers || {};
+  const asked = s.asked || {};
+
+  /* Ranked the way the work actually runs. Each entry is a group, and a group
+     is kept whole — which is how an open ask and its leading twin stay side
+     by side however few slots are left. */
+  const groups = [];
+  if(!s.greeted) groups.push([ACT.GREET]);
+  if(!ids[IDENTIFIER.NAME]) groups.push([ACT.ASK_NAME_OPEN, ACT.ASK_NAME_LEADING]);
+  if(!ids[IDENTIFIER.DOB]) groups.push([ACT.ASK_DOB_OPEN, ACT.ASK_DOB_LEADING]);
+  if(!ids[IDENTIFIER.ID]) groups.push([ACT.CHECK_WRISTBAND]);
+  if(!s.orderConfirmed) groups.push([ACT.CONFIRM_ORDER]);
+  if(!s.explained) groups.push([ACT.EXPLAIN]);
+  if(!asked.allergies) groups.push([ACT.ASK_ALLERGIES]);
+  if(!asked.fainting) groups.push([ACT.ASK_FAINTING]);
+  if(!s.positioned) groups.push([ACT.POSITION]);
+
+  const out = [];
+  for(const g of groups){
+    const fresh = g.filter(id => !done[id] && NOT_A_MOVE.indexOf(id) < 0);
+    if(!fresh.length) continue;
+    // A group is taken whole or not at all, so the pair never splits.
+    if(out.length && out.length + fresh.length > n) break;
+    out.push(...fresh);
+    if(out.length >= n) break;
+  }
+  return out;
+}
+
+/**
+ * True once the learner has everything they need to start touching the
+ * patient: two identifiers, from the patient's own mouth or their band.
+ *
+ * This is the ONE gate the arrival room enforces. Everything else it measures
+ * — the leading question, the missing allergy ask, the ungloved hands — is
+ * recorded and reported rather than blocked, because the draw has to be able
+ * to go wrong for the report to mean anything.
+ */
+export function mayStartDraw(state){ return identified(state); }
