@@ -65,13 +65,17 @@ Identification, tube selection and order of draw are not questions you answer
 before the draw; they are things you do inside it, at the patient and at the
 cart. Nothing asks you twice.
 
-## Three ways to work
+## Two ways to work
 
 | Mode | What it tells you |
 |---|---|
-| 🎓 **Learn** | Full teaching. Names the specific error, tells you the correct next action, and will not let you continue until the step is right. |
-| 🔁 **Practice** | A standing reminder of what each step is *for*, and nothing about what is currently wrong with it. Measurements arrive at the end of each section, which you may then replay. |
-| 📋 **Final Practical** | Silence, then a rubric report: 0–4 per row against configurable thresholds, automatic-failure events, and a replay of the session built from the steps' own logs. |
+| 🎓 **Learn** | Full teaching. Names the specific error, tells you the correct next action, and will not let you continue until the step is right. Each section's own measurements arrive when it ends, and you may replay it. |
+| 🩸 **Play** | Nothing. No instruction, no hint, no verdict, no step counter, and no button between one step and the next — the action that ends a step ends it. Then a rubric report: 0–4 per row against configurable thresholds, automatic-failure events, and a replay built from the steps' own logs. |
+
+There used to be four, which is four answers to the two questions a learner
+actually arrives with. Practice's two good ideas — feedback at the end of a
+section, and being allowed to replay it — are teaching rather than testing, so
+they live in Learn now.
 
 Bests are tracked per mode, because a 26/28 with the coach talking is not the
 same achievement as one scored in silence.
