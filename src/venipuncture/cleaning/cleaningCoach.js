@@ -90,21 +90,19 @@ export function renderCleaningCoach(host, o){
                       : esc(nextAction(state, result))}
           </div>
           <p class="tq-next">${esc(nextAction(state, result))}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Prep the site and carry on when you judge it ready. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
-      ${listView ? controlsHTML(state) : `<p class="stg-help">
+      ${listView ? controlsHTML(state) : `${guided ? `<p class="stg-help">
         ${!state.swabOpen
           ? `<b>Open the alcohol pad first.</b>`
           : `<b>Scrub from the puncture point outward, in widening circles.</b> The wet patch on the arm is exactly the skin
              you have disinfected — cover the whole marked field. Going back inward drags the dirty edge over skin you just
              cleaned. Then <b>take your hands off and let it air-dry</b>: do not fan it, blot it, or re-palpate it.`}
-      </p>`}
+      </p>` : ""}`}
 
       ${!listView && !state.swabOpen ? `<button class="btn ghost vp-tap" id="clnOpen">Open the alcohol pad</button>` : ""}
 
-      <button class="btn vp-tap" id="clnReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="clnReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Site prepped — assemble the needle ▶" : "Not ready yet") : "Carry on ▶"}
       </button>
     </div>`;

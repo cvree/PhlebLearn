@@ -166,3 +166,13 @@ body[data-reduced="on"] .vp-pip,body[data-reduced="on"] .vp-vein{transition:none
 .plp-trace-dot[data-feel="flattened"]{background:#4c6f88}
 .plp-trace-dot[data-feel="soft"],
 .plp-trace-dot[data-feel="nothing"]{background:#9aa3ac}
+
+/* A step in Play advances because the action that ends it happened, so the
+   confirm button is a fallback rather than the way through — it stays, because
+   a step the model thinks is unfinished still needs an exit, but it is not the
+   loudest thing on the screen. */
+.btn.vp-tap.quiet{
+  background:transparent;color:var(--ink-soft);border:1.5px solid var(--line);
+  box-shadow:none;font-size:13px;padding:8px 14px;opacity:.72;
+}
+.btn.vp-tap.quiet:hover{opacity:1;color:var(--plum);border-color:var(--plum)}

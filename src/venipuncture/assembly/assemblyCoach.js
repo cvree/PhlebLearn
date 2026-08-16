@@ -21,9 +21,12 @@ function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":
 
 function msgBlock(guided, ready, issue, action, readyText, hint){
   if(!guided){
-    return `<div class="stg-msg neutral" role="status" aria-live="polite">
-      ${hint ? `<b>Reminder.</b> ${esc(hint)}` : `Build the unit and carry on when you judge it right. Your technique is assessed after the patient.`}
-    </div>`;
+    // Play says nothing at all until the report. A standing note explaining
+    // that your technique is being assessed is still being told something,
+    // and a trained phlebotomist does not need to be told it twice.
+    return hint
+      ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(hint)}</div>`
+      : "";
   }
   return `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
       ${ready ? readyText
@@ -126,15 +129,15 @@ export function renderAssemblyCoach(host, o){
       ${msgBlock(guided, ready, issue, nextAssemblyAction(state),
         `<b>Threaded and finger-tight.</b> ${state.turns.toFixed(1)} turns, square on the hub. Leave the sheath on until you are ready to stick.`, o.hint)}
 
-      ${listView ? assembleControlsHTML(state) : `<p class="stg-help">
+      ${listView ? assembleControlsHTML(state) : `${guided ? `<p class="stg-help">
         ${!state.pouchOpen
           ? `<b>Peel the pouch open along its seam.</b> Drag from the notch and stay on the seam — tearing across the film sheds onto the needle you are about to pull through it.`
           : !state.needleInHand
             ? `<b>Take the needle out by its coloured sheath.</b> The grey sleeved end is what goes inside the holder and into every tube — fingers do not go on it.`
             : `<b>Carry the needle onto the hub and keep pushing along the hub's own axis.</b> It turns as it goes. More than ${CROSS_THREAD_DEG}° off the axis and it cross-threads: it will feel like it is going on, bind, and never seat. You will feel it stop at finger-tight.`}
-      </p>`}
+      </p>` : ""}`}
 
-      <button class="btn vp-tap" id="asmReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="asmReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Unit built — uncap it ▶" : "Not ready yet") : "Carry on ▶"}
       </button>
     </div>`;
@@ -261,17 +264,17 @@ export function renderUncapCoach(host, o){
       ${msgBlock(guided, ready, issue, nextUncapAction(state),
         `<b>Bevel up, needle intact.</b> The sheath is clear of the field and the patient has been told. Go in.`, o.hint)}
 
-      ${listView ? uncapControlsHTML(state) : `<p class="stg-help">
+      ${listView ? uncapControlsHTML(state) : `${guided ? `<p class="stg-help">
         ${state.capOn
           ? `<b>Pull the sheath straight off, along the needle.</b> Levering it sideways bends the shaft and rolls the cutting edge over — and a barbed needle drags going in and shreds the sample.`
           : `<b>Where the bevel points was decided by where your threading stopped.</b> Drag the holder toward or away from you to roll it until the opening faces straight up. Hold still on the holder to lean in and check the edge. Then put the sheath down clear of the prepped field — never back on the needle.`}
-      </p>`}
+      </p>` : ""}`}
 
       ${!listView ? `<div class="asm-inline">
         <button class="btn ghost vp-tap ${state.warnedAt ? "on" : ""}" id="uncWarn">${state.warnedAt ? "✔ Patient warned" : "Tell the patient: “small poke coming”"}</button>
       </div>` : ""}
 
-      <button class="btn vp-tap" id="uncReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="uncReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Ready — go in ▶" : "Not ready yet") : "Carry on ▶"}
       </button>
     </div>`;

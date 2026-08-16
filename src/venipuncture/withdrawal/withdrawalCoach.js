@@ -218,15 +218,13 @@ export function renderWithdrawalCoach(host, o){
               : issue ? `<b>${issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now."}</b> ${esc(issue.message)}`
                       : esc(nextAction(state, { tourniquetReleased: live.tourniquetReleased }, mode))}
           </div>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Finish the draw and make the sharp safe. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${listView
         ? controlsHTML(state, { tourniquetReleased: live.tourniquetReleased })
-        : `<p class="stg-help">${helpHTML(state, { tourniquetReleased: live.tourniquetReleased })}</p>`}
+        : `${guided ? `<p class="stg-help">${helpHTML(state, { tourniquetReleased: live.tourniquetReleased })}</p>` : ""}`}
 
-      <button class="btn vp-tap" id="wdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="wdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? esc(READY_LABELS[mode] || "Continue ▶") : "Not finished yet") : "Carry on ▶"}
       </button>
     </div>`;

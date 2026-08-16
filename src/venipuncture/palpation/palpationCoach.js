@@ -137,7 +137,7 @@ const CHOOSABLE = ["vein", "rolling", "flattened"];
 function tracesHTML(state){
   const traces = state.traces || [];
   if(!traces.length){
-    return `<div class="plp-traces"><p class="stg-help">Nothing felt yet. Press a spot above.</p></div>`;
+    return `<div class="plp-traces">${guided ? `<p class="stg-help">Nothing felt yet. Press a spot above.</p>` : ""}</div>`;
   }
   return `<div class="plp-traces">
     <span class="plp-traces-lab">What you have felt, and where</span>
@@ -202,19 +202,17 @@ export function renderPalpationCoach(host, o){
                       : esc(nextAction(state))}
           </div>
           <p class="tq-next">${esc(nextAction(state))}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Feel for the vein yourself. What you chose, and whether you actually palpated it, is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
-      ${listView ? controlsHTML(state, guided, o.vessels) : `<p class="stg-help">
+      ${listView ? controlsHTML(state, guided, o.vessels) : `${guided ? `<p class="stg-help">
         <b>Press a fingertip into the arm and search.</b> Pressure builds while you keep still and eases off as you
         slide, so a sweep finds shallow veins and lingering reveals what is deeper. A vein gives and comes back.
         Something that pushes back rhythmically is an artery — never draw from it. Something hard that will not move
         is a tendon. <b>Every spot you press is marked on the skin.</b>
         <b>Hold on one of your own marks to draw from it.</b>
-      </p>`}
+      </p>` : ""}`}
 
-      <button class="btn vp-tap" id="plpReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="plpReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Site chosen — clean it ▶" : "Find a vein first") : "Carry on ▶"}
       </button>
     </div>`;

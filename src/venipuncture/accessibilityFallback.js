@@ -24,6 +24,7 @@ import { createEncounterState } from "./encounterState.js";
 import { createComplicationState } from "./complications/complicationState.js";
 import { difficultyLevel } from "../game/saveSystem.js";
 import { VP_TIPS, VP_ICON } from "./questions.js";
+import { clearAutoAdvance } from "./autoAdvance.js";
 
 // Fresh procedure state for one encounter's draw. `opts.patient` seeds the
 // persistent encounter object every physical step reads and writes.
@@ -68,6 +69,11 @@ export function isPhysicalStep(id){
 // one) that the caller should invoke before re-rendering.
 export function renderCurrentStep(c, stage, hooks){
   const id = c.steps[c.step];
+  /* Whatever the last step was waiting on, it is not this step's business.
+     Cleared on entry rather than on exit, so the abandoned draw, the mid-draw
+     complication and the section replay all get it for free — each of those
+     leaves by a different door. */
+  clearAutoAdvance();
   const fn = PHYSICAL_STEPS[id] || VP_STEPS[id] || VP_STEPS.introduce;
   const advance = (stayOnStep)=>{
     if(hooks.onCleanup) hooks.onCleanup();

@@ -34,6 +34,9 @@ import { activeStepRuntime } from "./venipuncture/stepRuntimes.js";
 // The one branch that is not a step: it runs across all of them, ticked here
 // because the composition root owns the frame. See complicationRuntime.js.
 import { tickComplications } from "./venipuncture/complications/complicationRuntime.js";
+// Same reason: in Play a step ends because the action that ends it happened,
+// and the settle it waits out does not belong to whichever screen is up.
+import { tickAutoAdvance, autoAdvanceState } from "./venipuncture/autoAdvance.js";
 // Nothing in this game integrates forces; every object moves along an authored
 // curve. One flat tween list, ticked here because the composition root owns the
 // frame. See bench/motion.js.
@@ -198,6 +201,9 @@ function animate(){
   // The patient's body carries on regardless of which screen is up, so the
   // complication watch is ticked before any of the early returns below.
   tickComplications(dt);
+  // Advancing re-renders the panel and may tear the current scene down, so it
+  // happens before anything below reads the active runtime.
+  if(tickAutoAdvance()) return;
 
   // While the learner is working a close-up — the supply cart, or the
   // patient's arm — the canvas shows that instead of the room. Same renderer,
@@ -769,6 +775,26 @@ function installTestSeam(){
       return trackRadiusAt(x);
     },
     /** The fingers' record and what they are finding right now. */
+    /**
+     * Presses a named vessel, through the same pure helpers the fingertip
+     * writes through — so it leaves the same mark on the skin and the grader
+     * cannot tell the two apart.
+     */
+    async palpateVessel(id, press){
+      const rt = await import("./venipuncture/palpation/palpationRuntime.js");
+      return !!rt.palpateVesselById(id, press == null ? 0.62 : press);
+    },
+    /**
+     * Commits to one of the learner's own traces, by index.
+     *
+     * There is no "mark this spot" button in either input path any more: a
+     * site is chosen from somewhere you actually pressed, which is the only
+     * thing you have any basis for choosing.
+     */
+    async chooseTrace(i){
+      const rt = await import("./venipuncture/palpation/palpationRuntime.js");
+      return !!rt.chooseTraceById(i || 0);
+    },
     async palpationSnapshot(){
       const { ENC } = await import("./game/gameState.js");
       const s = ENC && ENC.collect && ENC.collect.palpation;
@@ -958,6 +984,10 @@ function installTestSeam(){
     async threadTravelPerTurn(){
       const { TURN_TRAVEL_M } = await import("./bench/seating.js");
       return TURN_TRAVEL_M;
+    },
+    /** What the draw is currently waiting to advance past, if anything. */
+    async autoAdvance(){
+      return autoAdvanceState();
     },
     async hubScreenPoint(){
       const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");

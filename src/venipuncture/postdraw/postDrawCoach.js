@@ -203,15 +203,13 @@ export function renderPostDrawCoach(host, o){
                       : esc(nextAction(state, mode))}
           </div>
           ${state.anticoagulated ? `<p class="tq-next">This patient is on anticoagulants — this puncture needs about ${Math.round(state.holdSeconds)}s of firm pressure, not the usual half-minute.</p>` : ""}`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Control the bleeding and dress the site. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${listView
         ? controlsHTML(state)
-        : `<p class="stg-help">${helpHTML(state, mode)}</p>`}
+        : `${guided ? `<p class="stg-help">${helpHTML(state, mode)}</p>` : ""}`}
 
-      <button class="btn vp-tap" id="pdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="pdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? esc(READY_LABELS[mode] || "Continue ▶") : "Not finished yet") : "Carry on ▶"}
       </button>
     </div>`;

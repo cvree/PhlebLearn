@@ -149,25 +149,23 @@ export function renderInsertCoach(host, o){
                       : esc(nextAction(state, result))}
           </div>
           <p class="tq-next">${esc(nextAction(state, result))}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Anchor, then go in. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${isButterfly && bf ? wingControlsHTML(bf) : ""}
 
       ${listView
         ? (phase === "anchor" ? anchorControlsHTML(anchorBand) : insertControlsHTML(state, result, angleBand))
-        : `<p class="stg-help">
+        : `${guided ? `<p class="stg-help">
             ${phase === "anchor"
               ? `<b>Press below the marked site and drag further away from it</b> to pull the skin taut. Let go to lock it in.`
               : state.entryX == null
                 ? `<b>Bring the needle down onto the skin at a shallow angle.</b> ${angleWindow} is the window — much flatter skates over the vein, much steeper drives through it.`
                 : `<b>Keep dragging the same way to advance; the other way to ease back.</b> The depth is what you cannot see from here either way — watch for the flash.`}
-          </p>`}
+          </p>` : ""}`}
 
       ${isButterfly && bf ? postEntryControlsHTML(bf) : ""}
 
-      <button class="btn vp-tap" id="insReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="insReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "In the vein — hold ▶" : "Not ready yet") : "Carry on ▶"}
       </button>
     </div>`;

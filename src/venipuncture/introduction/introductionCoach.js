@@ -136,14 +136,12 @@ export function renderIntroductionCoach(host, o){
                       : esc(nextAction(state))}
           </div>
           <p class="tq-next">${esc(nextAction(state))}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Meet the patient and get yourself ready. What you asked, and how you asked it, is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${actsHTML(state)}
       ${handsHTML(state)}
 
-      <button class="btn vp-tap" id="introReady" ${(o.gate && !ready) ? "disabled" : ""} style="${(o.gate && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="introReady" ${(o.gate && !ready) ? "disabled" : ""} style="${(o.gate && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Ready — prepare your tray ▶" : "Not ready yet") : "Carry on ▶"}
       </button>
     </div>`;

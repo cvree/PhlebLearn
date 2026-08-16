@@ -35,6 +35,7 @@ import { getScene } from "../rendering/scene.js";
 import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
 import { tubeMeshes, resetTubeSelection } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
+import { clearAutoAdvance } from "../venipuncture/autoAdvance.js";
 import { ensureArmSession } from "../venipuncture/physicalSteps.js";
 import { closeBench } from "../bench/benchSession.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
@@ -652,6 +653,7 @@ function wireLeaveDraw(){
       return;
     }
     sfx("bad");
+    clearAutoAdvance();
     if(ENC._collectCleanup) ENC._collectCleanup();
     ENC.drawAbandoned=true;
     // capture whatever preparation was done before they walked away
@@ -694,6 +696,7 @@ function recapChips(c){
 }
 
 function vpFinish(){
+  clearAutoAdvance();
   const c=ENC.collect;
   // The draw is over: close the complication watch and let the laboratory
   // look at what came out of it. Both are idempotent — vpFinish() is

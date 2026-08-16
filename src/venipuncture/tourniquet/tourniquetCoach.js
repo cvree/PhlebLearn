@@ -263,18 +263,16 @@ export function renderTourniquetCoach(host, o){
                       : esc(nextAction(state))}
           </div>
           <p class="tq-next">${esc(nextAction(state))}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Apply the band and carry on whenever you judge it right. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
-      ${listView ? controlsHTML(state, o.site && o.site.x, o.site && o.site.ideal) : `<p class="stg-help">
+      ${listView ? controlsHTML(state, o.site && o.site.x, o.site && o.site.ideal) : `${guided ? `<p class="stg-help">
         <b>Take an end of the tourniquet and drag it round the arm</b> — underneath and up the far side, about a hand's width above the bend.
         Then <b>pull that end away from the arm</b> to tighten it, <b>sweep it across</b> the other end, and
         <b>push a loop back under the band, pointing up the arm</b>. Let go before the loop is under and it will spring off.
         Watch the veins fill as you pull: enough to raise them, not so much that the hand goes pale.
-      </p>`}
+      </p>` : ""}`}
 
-      <button class="btn vp-tap" id="tqReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="tqReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided
           ? (ready ? "Band on — find the vein ▶" : (secured ? "Fix the band first" : "Band not on yet"))
           : "Carry on ▶"}

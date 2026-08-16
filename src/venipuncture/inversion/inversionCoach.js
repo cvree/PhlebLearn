@@ -164,15 +164,13 @@ export function renderInversionCoach(host, o){
             const spec = inversionsFor(k);
             return `${esc(tubeName(k))} ${spec.mustNotMix ? "none" : spec.ideal + "×"}`;
           }).join(" · ")}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Mix each tube as its additive requires. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${listView
         ? controlsHTML(state, result)
-        : `<p class="stg-help">${helpHTML(state, result)}</p>`}
+        : `${guided ? `<p class="stg-help">${helpHTML(state, result)}</p>` : ""}`}
 
-      <button class="btn vp-tap" id="invReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="invReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Specimens mixed ▶" : "Not finished yet") : "Carry on ▶"}
       </button>
     </div>`;

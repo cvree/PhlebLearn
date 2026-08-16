@@ -206,17 +206,15 @@ export function renderStagingCoach(host, o){
               : issue ? `<b>${issue.severity==='block'?'Not ready yet.':'Worth fixing.'}</b> ${esc(issue.message)}`
                       : "Stage the equipment this draw needs."}
           </div>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Stage what this draw needs, then continue whenever you're satisfied. Your preparation is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
-      ${listView ? listHTML(state, catalog) : `<p class="stg-help">
+      ${listView ? listHTML(state, catalog) : `${guided ? `<p class="stg-help">
         Drag an item from the cart onto the tray, and drag the tray itself to move your whole work area.
         <b>Tap an item to turn it over</b> and read its label; <b>double-tap it</b> to send it straight to the tray.
         Tubes seat into the numbered rack. The sharps container goes on the marked pad beside the chair.
-      </p>`}
+      </p>` : ""}`}
 
-      <button class="btn vp-tap" id="stgReady" ${(guided && !ready)?"disabled":""} style="${(guided && !ready)?"opacity:.5":""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="stgReady" ${(guided && !ready)?"disabled":""} style="${(guided && !ready)?"opacity:.5":""}">
         ${guided ? (ready ? "Tray ready ▶" : "Tray not ready yet") : "I'm ready — begin the draw ▶"}
       </button>
     </div>`;

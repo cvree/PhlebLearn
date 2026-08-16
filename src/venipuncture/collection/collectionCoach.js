@@ -192,17 +192,15 @@ export function renderCollectionCoach(host, o){
                       : esc(nextAction(state, result))}
           </div>
           <p class="tq-next">Order of draw: ${order.map(k=>esc(tubeName(k))).join(" → ")}</p>`
-        : `<div class="stg-msg neutral" role="status" aria-live="polite">
-            ${o.hint ? `<b>Reminder.</b> ${esc(o.hint)}` : `Fill each tube and change them over. Your technique is assessed after the patient.`}
-          </div>`}
+        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${listView
         ? controlsHTML(state, result)
-        : `<p class="stg-help">${helpHTML(state, result)}</p>`}
+        : `${guided ? `<p class="stg-help">${helpHTML(state, result)}</p>` : ""}`}
 
       ${bf ? postEntryControlsHTML(bf) : ""}
 
-      <button class="btn vp-tap" id="colReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
+      <button class="btn vp-tap${guided ? "" : " quiet"}" id="colReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? esc(o.readyLabel || "All tubes collected ▶") : "Not finished yet") : "Carry on ▶"}
       </button>
     </div>`;

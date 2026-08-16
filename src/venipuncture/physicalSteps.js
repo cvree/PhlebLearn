@@ -20,6 +20,7 @@ import {
 } from "../game/progression.js";
 import { createComplicationState } from "./complications/complicationState.js";
 import { VP_TIPS } from "./questions.js";
+import { reportStepReady } from "./autoAdvance.js";
 import { evaluateIntroduction } from "./introduction/introductionRules.js";
 import {
   createIntroductionState, say, beginScrub, scrubFor, endScrub, scrubBout,
@@ -753,6 +754,10 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      /* NO AUTO-ADVANCE HERE. Preparing a work area has no completing action —
+         nothing happens that means "my tray is ready". The learner decides
+         they are satisfied and says so, in every mode. Same for the
+         introduction. See venipuncture/autoAdvance.js. */
       renderStagingCoach(stage, {
         state: session.state,
         catalog: session.catalog,
@@ -885,9 +890,11 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      const r = result || liveResult();
+      reportStepReady("tourniquet", !!(r && r.ready), finish);
       renderTourniquetCoach(stage, {
         state: tqState,
-        result: result || liveResult(),
+        result: r,
         gesture: isTourniquetActive() ? currentGesture() : null,
         site: arm.site,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
@@ -1022,9 +1029,11 @@ export const PHYSICAL_STEPS = {
     function draw(result, live){
       if(disposed) return;
       if(live !== undefined) touch = live;
+      const r = result || evaluate();
+      reportStepReady("palpate", !!(r && r.ready), finish);
       renderPalpationCoach(stage, {
         state: palp,
-        result: result || evaluate(),
+        result: r,
         touch: touch || (isPalpationActive() ? currentTouch() : null),
         vessels: c.armVessels,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
@@ -1136,9 +1145,11 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      const r = result || evaluate();
+      reportStepReady("clean", !!(r && r.ready), finish);
       renderCleaningCoach(stage, {
         state: clean,
-        result: result || evaluate(),
+        result: r,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
@@ -1230,9 +1241,11 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      const r = result || evaluate();
+      reportStepReady("assemble", !!(r && r.ready), finish);
       renderAssemblyCoach(stage, {
         state: unit,
-        result: result || evaluate(),
+        result: r,
         unit: isAssemblyActive() ? currentUnit() : null,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
@@ -1351,9 +1364,11 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      const r = result || evaluate();
+      reportStepReady("uncap", !!(r && r.ready), finish);
       renderUncapCoach(stage, {
         state: unit,
-        result: result || evaluate(),
+        result: r,
         unit: isAssemblyActive() ? currentUnit() : null,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
@@ -1481,9 +1496,11 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      const r = result || evaluate();
+      reportStepReady("insert", !!(r && r.ready), finish);
       renderInsertCoach(stage, {
         state: ins,
-        result: result || evaluate(),
+        result: r,
         bevelDeg: bevelDeg(),
         angleBand: procedure.angle, anchorBand: procedure.anchor,
         device: procedure.device, butterfly: bf,
@@ -1713,9 +1730,11 @@ export const PHYSICAL_STEPS = {
 
     function draw(result){
       if(disposed) return;
+      const r = result || evaluate();
+      reportStepReady("invert", !!(r && r.ready), finish);
       renderInversionCoach(stage, {
         state: inv,
-        result: result || evaluate(),
+        result: r,
         guided: guided(), reveal: reveal(), hint: stepHint(c),
         listView, canRender3d,
         handlers: {
@@ -1841,6 +1860,7 @@ function runWithdrawal(c, stage, advance, mode){
   function draw(result){
     if(disposed) return;
     const lc = liveCtx();
+    reportStepReady(`withdrawal:${mode}`, withdrawalModeReady(wd, lc, mode), finish);
     renderWithdrawalCoach(stage, {
       state: wd,
       result: result || evaluate(),
@@ -2048,6 +2068,7 @@ function runCollection(c, stage, advance, mode){
   function draw(result){
     if(disposed) return;
     const r = result || evaluate();
+    reportStepReady(`collection:${mode}`, stepReady(r), finish);
     renderCollectionCoach(stage, {
       state: col,
       result: r,
@@ -2211,6 +2232,7 @@ function runPostDraw(c, stage, advance, mode){
 
   function draw(result){
     if(disposed) return;
+    reportStepReady(`postDraw:${mode}`, postDrawModeReady(pd, mode), finish);
     renderPostDrawCoach(stage, {
       state: pd,
       result: result || evaluate(),
