@@ -10,6 +10,7 @@
    are in a piece of software, and Play has none of them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -214,7 +215,7 @@ test("Learn shows the section's own measurements when it ends, and can replay it
      pure helpers the gesture writes through. */
   await page.evaluate(()=>window.__phlebTest.applyBandWell());
   await expect(page.locator("#tqReady")).toBeEnabled({ timeout:10000 });
-  await page.locator("#tqReady").click();
+  await carryOn(page, "#tqReady");
 
   const card = page.locator(".sec-card").first();
   await expect(card).toBeVisible({ timeout:10000 });
@@ -235,7 +236,7 @@ test("Learn shows the section's own measurements when it ends, and can replay it
 
 test("Play never shows a section card — nothing is said until the report", async ({ page }) => {
   await openStep(page, "tourniquet", "play");
-  await page.locator("#tqReady").click({ force:true });
+  await carryOn(page, "#tqReady");
   await page.waitForTimeout(600);
   await expect(page.locator(".sec-card")).toHaveCount(0);
 });

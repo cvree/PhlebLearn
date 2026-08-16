@@ -12,6 +12,7 @@
    staging mechanic broke, not that a different patient got rolled.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -243,7 +244,7 @@ test("Tray ready stays locked until every condition is met, then advances the pr
   expect(ready.ready).toBe(true);
   await expect(page.locator("#stgReady")).toBeEnabled();
 
-  await page.locator("#stgReady").click();
+  await carryOn(page, "#stgReady");
   // the next procedure step takes over the panel
   await expect(page.locator(".stg-coach")).toHaveCount(0, { timeout:5000 });
   await expect(page.locator(".vp-stage")).toBeVisible();

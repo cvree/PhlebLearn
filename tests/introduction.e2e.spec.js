@@ -9,6 +9,7 @@
    that what the patient discloses comes from data on the patient.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -237,7 +238,7 @@ test("a complete introduction unlocks the step and feeds the rubric row", async 
   expect(s.ready).toBe(true);
   await expect(page.locator("#introReady")).toBeEnabled();
 
-  await page.locator("#introReady").click();
+  await carryOn(page, "#introReady");
   // the next step is the supply cart, and the row now has a measurement
   await expect(page.locator("#vpStage")).not.toContainText("Nothing has been said yet", { timeout:10000 });
   const report = await page.evaluate(async ()=>{

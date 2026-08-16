@@ -17,6 +17,7 @@
    would use them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -127,7 +128,7 @@ test("the hand vessel set survives the tourniquet step, not silently swapped bac
   await openAs(page, "tourniquet", "final", "butterfly-hand");
   const before = await procedure(page);
   await page.locator("#tqApply").click();
-  await page.locator("#tqReady").click();
+  await carryOn(page, "#tqReady");
   await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
   const after = await procedure(page);
   expect(after.armVessels.sort()).toEqual(before.armVessels.sort());
@@ -152,7 +153,7 @@ test("choosing a hand vein sets the site the rest of the draw inherits", async (
   // Choosing is an action on one of the learner's own traces now — there is
   // no way to commit to a spot that was never pressed.
   await page.locator("[data-choose-trace]").first().click();
-  await page.locator("#plpReady").click();
+  await carryOn(page, "#plpReady");
   await expect(page.locator(".cln-coach")).toBeVisible({ timeout:10000 });   // cleaning's coach
 });
 
@@ -239,7 +240,7 @@ test("a taped-down line barely moves the tip through ordinary tube changes", asy
   await openAs(page, "insert", "final", "butterfly-hand");
   await enterAndSecure(page);
   await page.locator('[data-wing="secure"]').click();
-  await page.locator("#insReady").click();
+  await carryOn(page, "#insReady");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });   // collection's coach
 
   await page.locator('[data-col^="take:"]').first().click();
@@ -256,7 +257,7 @@ test("a loose, unsecured line transmits far more of the same tube changes", asyn
   await openAs(page, "insert", "final", "butterfly-hand");
   await enterAndSecure(page);
   // deliberately never taped down
-  await page.locator("#insReady").click();
+  await carryOn(page, "#insReady");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
 
   await page.locator('[data-col^="take:"]').first().click();
@@ -279,14 +280,14 @@ test("a butterfly-hand attempt's report names the device and site it actually us
   await openAs(page, "insert", "final", "butterfly-hand");
   await enterAndSecure(page);
   await page.locator('[data-wing="secure"]').click();
-  await page.locator("#insReady").click();
+  await carryOn(page, "#insReady");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
 
   await page.locator('[data-col^="take:"]').first().click();
   await page.locator('[data-col="push-braced"]').click();
   for(let i = 0; i < 8; i++){ await page.locator('[data-col="wait"]').click(); await page.waitForTimeout(60); }
   await page.locator('[data-col="remove-braced"]').click();
-  await page.locator("#colReady").click();
+  await carryOn(page, "#colReady");
 
   // release -> withdraw -> safety -> dispose -> pressure -> bandage -> invert,
   // via the generic "Carry on" the Final Practical always shows
@@ -313,7 +314,7 @@ test("a straight-needle attempt's technique row never mentions the winged set", 
   await page.locator("#insView").click();   // 3D is available and default here; switch to controls
   await page.locator('[data-ins="anchor-ideal"]').click();
   await page.locator('[data-ins="insert-ideal"]').click();
-  await page.locator("#insReady").click();
+  await carryOn(page, "#insReady");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.evaluate(()=>window.__phlebTest.finishDraw());
   const report = await page.evaluate(()=>window.__phlebTest.practicalReport());

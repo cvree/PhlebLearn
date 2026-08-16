@@ -9,7 +9,7 @@
    ends up inside a real container — or is refused by the trash.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -297,7 +297,7 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   const errors = attachDiagnostics(page);
   await open(page, "teach", "release");
   await pullTail(page);
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   // withdraw inherits the released band
   await expect(page.locator(".asm-coach")).toBeVisible();
@@ -306,21 +306,21 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   expect(snap.bandOnPatient).toBe(false);
   await gauzeToSite(page);
   await withdrawDrag(page, 30);
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   // safety inherits the withdrawn needle
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
   snap = await snapshot(page);
   expect(snap.withdrawn).toBe(true);
   await shieldSlide(page, 40);
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   // dispose inherits the locked shield
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
   snap = await snapshot(page);
   expect(snap.safetyLocked).toBe(true);
   await carryUnitTo(page, "sharps");
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   // and it hands straight on to the pressure step, which inherits the puncture
   // this sequence just left — and knows the band was off before the needle was
@@ -396,7 +396,7 @@ test("the controls path runs the whole sequence through the same rules", async (
   let snap = await snapshot(page);
   expect(snap.bandOnPatient).toBe(false);
   expect(snap.fistRelaxed).toBe(true);
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await useControls(page);
@@ -406,14 +406,14 @@ test("the controls path runs the whole sequence through the same rules", async (
   snap = await snapshot(page);
   expect(snap.withdrawn).toBe(true);
   expect(snap.gauzeReadyAtWithdraw).toBe(true);
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   await useControls(page);
   await page.locator('[data-wd="safety-hand"]').click();
   snap = await snapshot(page);
   expect(snap.safetyLocked).toBe(true);
   expect(snap.surfaceActivated).toBe(false);
-  await page.locator("#wdReady").click();
+  await carryOn(page, "#wdReady");
 
   await useControls(page);
   await page.locator('[data-wd="dispose-sharps"]').click();

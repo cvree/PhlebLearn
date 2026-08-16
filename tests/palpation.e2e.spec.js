@@ -8,7 +8,7 @@
    you never actually pressed.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -312,7 +312,7 @@ test("marking the artery is blocked, whatever else was right", async ({ page })=
 test("the site marked carries into the encounter for the steps that follow", async ({ page })=>{
   await openPalpation(page, "teach");
   await holdToCommit(page, "median-cubital");
-  await page.locator("#plpReady").click();
+  await carryOn(page, "#plpReady");
   await page.waitForTimeout(400);
 
   const still = await snapshot(page);

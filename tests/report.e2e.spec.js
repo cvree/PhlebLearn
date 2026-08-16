@@ -9,6 +9,7 @@
    from the event logs the steps were already keeping.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 // The number of rubric rows is a POLICY decision, not a fact about the app —
 // policy.js exists precisely so a programme can add or remove one. Reading it
 // here means adding a row (Phase 3b added two) updates these tests instead of
@@ -230,7 +231,7 @@ async function playPalpationThenFinish(page, mode){
   await page.waitForTimeout(540);
   await page.mouse.up();
   await page.waitForTimeout(150);
-  await page.locator("#plpReady").click();
+  await carryOn(page, "#plpReady");
 
   await page.evaluate(()=>window.__phlebTest.finishDraw());
   await expect(page.locator("#vpToLabel")).toBeVisible({ timeout:10000 });

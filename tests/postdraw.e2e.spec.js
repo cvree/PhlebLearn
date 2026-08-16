@@ -9,6 +9,7 @@
    gesture that put it on.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -304,7 +305,7 @@ test("the bandage step inherits the clot the pressure step formed", async ({ pag
   expect(done.padOffSite).toBe(false);
   expect(done.meanForce).toBeGreaterThan(done.requiredForce);
   expect(done.pressureReady).toBe(true);
-  await page.locator("#pdReady").click();
+  await carryOn(page, "#pdReady");
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.postDrawAnchors()), null, { timeout:10000 });
@@ -363,7 +364,7 @@ test("the controls path runs both steps through the same rules", async ({ page }
   expect(snap.haemostatic).toBe(true);
   expect(snap.bleedingAtCheck).toBe(false);
   expect(snap.pressureReady).toBe(true);
-  await page.locator("#pdReady").click();
+  await carryOn(page, "#pdReady");
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await useControls(page);

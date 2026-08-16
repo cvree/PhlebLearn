@@ -8,6 +8,7 @@
    its own count rather than a global six.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -377,7 +378,7 @@ test("finishing a section pays out there and then, scaled by how well it went", 
     await page.locator('[data-inv="rack"]').click();
   }
   await expect(page.locator("#invReady")).toBeEnabled();
-  await page.locator("#invReady").click();
+  await carryOn(page, "#invReady");
 
   const after = await page.evaluate(()=>window.__phlebTest.rewardSnapshot());
   // the step tick alone is 2 XP; a section mixed to every tube's own count is

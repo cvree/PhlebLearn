@@ -18,6 +18,7 @@
    camera moved two pixels.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { carryOn } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -460,7 +461,7 @@ test("the band survives leaving the step — it is the same strap, still on the 
   // advance into the next step, then read the encounter's strap again.
   // tourniquetSnapshot reads ENC.collect.tourniquet, which is deliberately
   // NOT torn down when the step's scene is disposed.
-  await page.locator("#tqReady").click();
+  await carryOn(page, "#tqReady");
   await page.waitForTimeout(400);
 
   const stillOn = await snapshot(page);

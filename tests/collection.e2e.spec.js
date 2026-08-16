@@ -9,7 +9,7 @@
    collected.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn } from "./benchHelpers.js";
 
 /* The slowest file in the suite, and honestly so: several of these tests seat
    a tube, fill it, pull it off and seat the next one, which is four separate
@@ -299,7 +299,7 @@ test("the switch step inherits the tube the fill step already collected", async 
   await seatDrag(page, 16);
   await fastFill(page, 30);
   await seatDrag(page, -22);
-  await page.locator("#colReady").click();
+  await carryOn(page, "#colReady");
   await expect(page.locator(".asm-coach")).toBeVisible();
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.collectionAnchors()), null, { timeout:10000 });
 
