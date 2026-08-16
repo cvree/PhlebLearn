@@ -9,7 +9,7 @@ const STEPS = ["gather", "tourniquet", "palpate", "assemble", "insert", "fill", 
 
 const browser = await chromium.launch({
   executablePath: process.env.PW_CHROMIUM_PATH || undefined,
-  args: ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"],
+  args: ["--enable-unsafe-swiftshader"],
 });
 
 let bad = 0;

@@ -12,7 +12,7 @@ const PORT = process.env.SHOT_PORT || 4175;
 
 const browser = await chromium.launch({
   executablePath: process.env.PW_CHROMIUM_PATH || undefined,
-  args: ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"],
+  args: ["--enable-unsafe-swiftshader"],
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.goto(`http://localhost:${PORT}/PhlebLearn/?e2e=1`);

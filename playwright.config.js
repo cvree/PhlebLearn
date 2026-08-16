@@ -36,11 +36,16 @@ export default defineConfig({
     // environment variable rather than a committed path — see docs/TESTING.md.
     launchOptions: {
       ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
-      /* A runner with no GPU still has to produce a real WebGL context: every
-         test here drives one, and a Chromium that silently refuses falls back
-         to the accessible controls path, which looks exactly like a broken
-         3D gesture and is not one. */
-      args: ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"],
+      /* Permit a software WebGL context on a runner with no GPU — without one
+         every step falls back to its accessible controls path, which looks
+         exactly like a broken 3D gesture and is not one.
+
+         PERMIT, not force. Adding `--use-gl=angle --use-angle=swiftshader`
+         here made the tourniquet's one-stroke wrap fail on a build where it
+         passes three times out of three, because forcing that backend changes
+         the projection these gestures are measured against. Let Chromium
+         choose its own backend. */
+      args: ["--enable-unsafe-swiftshader"],
     },
   },
   webServer: {

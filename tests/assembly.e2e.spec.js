@@ -171,7 +171,10 @@ async function carryToHub(page, lineUp){
   await page.mouse.move(screen[1].x, screen[1].y, { steps: 8 });
   await page.mouse.move(screen[2].x, screen[2].y, { steps: 10 });
   await page.waitForTimeout(60);
-  return screen[2];
+  // Where the HAND is, in bench metres. A push continues from here; jumping
+  // the pointer somewhere else first would be a hand that teleported, which
+  // seating.js's frame clamp exists to refuse.
+  return { x: target[0], z: target[1] };
 }
 
 /** Puts the pointer on a known circle round the hub before turning it. */
@@ -181,40 +184,49 @@ async function carryToHub(page, lineUp){
  * It used to circle the pointer round the hub — eight chords a revolution, two
  * and a half revolutions. That corresponded to nothing a hand does: in life,
  * pushing a needle onto a hub and turning it are one motion. So this is one
- * straight drag along the hub's own axis (+x), at the rate seating.js maps
- * travel to turns, and the resistance curve does the rest.
+ * straight drag along the hub's own axis (+x), and seating.js's resistance
+ * curve does the rest.
  *
- * The pointer is left DOWN, exactly as `turnAround` left it, so the tests
- * that push and then push back still read as one continuous gesture.
+ * Two things it has to account for, and both are real rather than artefacts:
+ *
+ *   THE LEAD-IN. Engagement fires when the tip comes within ENGAGE_R of the
+ *   hub mouth, about a centimetre before the hand stops — and the hand kept
+ *   moving, so about a turn is already in before any "push" starts. It is
+ *   counted, not subtracted, so the helper asks for a TOTAL and pushes the
+ *   difference.
+ *
+ *   THE WALL. Past finger-tight the same travel moves it a fraction as far.
+ *   That is the point of the gesture, so reaching further needs
+ *   disproportionately more drag.
+ *
+ * Takes and returns where the hand is, and leaves the pointer DOWN, so a test
+ * that pushes and then pushes back reads as one continuous gesture.
  */
-async function pushIn(page, turns){
-  const from = await page.evaluate(()=>window.__phlebTest.assemblyPointer());
+async function pushTo(page, at, totalTurns){
   const perTurn = await page.evaluate(()=>window.__phlebTest.threadTravelPerTurn());
-  const a = await anchors(page);
-  // Enough travel to reach `turns` THROUGH the resistance curve: past
-  // finger-tight the same push moves it a fraction as far, so asking for more
-  // than 2.5 turns needs disproportionately more drag — which is the point.
-  const target = { x: from.x + perTurn*turns*(turns > 2.4 ? 3.2 : 1), z: from.z };
-  const screen = await onBench(page, [[from.x, from.z], [target.x, target.z]]);
-  await page.mouse.move(screen[0].x, screen[0].y);
-  await page.mouse.down();
-  await page.mouse.move(screen[1].x, screen[1].y, { steps: Math.max(10, Math.round(Math.abs(turns)*14)) });
+  const now = (await snapshot(page)).turns;
+  const want = totalTurns - now;
+  if(Math.abs(want) < 0.02) return at;
+  const reach = totalTurns > 2.4 ? 3.4 : 1;
+  const to = { x: at.x + perTurn*want*reach, z: at.z };
+  const [p] = await onBench(page, [[to.x, to.z]]);
+  await page.mouse.move(p.x, p.y, { steps: Math.max(14, Math.round(Math.abs(want)*20)) });
   await page.waitForTimeout(60);
-  return a;
+  return to;
 }
 
 test("lining the needle up with the hub threads it; turning it in is real turning", async ({ page })=>{
   test.slow();
   const errors = attachDiagnostics(page);
   await open(page, "assemble", "teach");
-  await carryToHub(page, true);
+  const hand = await carryToHub(page, true);
 
   let snap = await snapshot(page);
   expect(snap.engaged).toBe(true);
   expect(snap.crossThreaded).toBe(false);
   expect(snap.engageMisalignDeg).toBeLessThan(12);
 
-  await pushIn(page, 2.6);
+  await pushTo(page, hand, 2.6);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
@@ -228,8 +240,8 @@ test("lining the needle up with the hub threads it; turning it in is real turnin
 test("one turn is not finger-tight, and the step says so", async ({ page })=>{
   test.slow();
   await open(page, "assemble", "teach");
-  await carryToHub(page, true);
-  await pushIn(page, 1.3);
+  const hand = await carryToHub(page, true);
+  await pushTo(page, hand, 1.3);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
@@ -244,12 +256,12 @@ test("one turn is not finger-tight, and the step says so", async ({ page })=>{
 test("turning the wrong way takes it back off", async ({ page })=>{
   test.slow();
   await open(page, "assemble", "teach");
-  await carryToHub(page, true);
-  await pushIn(page, 2.5);
+  const hand = await carryToHub(page, true);
+  const at = await pushTo(page, hand, 2.5);
   const mid = await snapshot(page);
   expect(mid.turns).toBeGreaterThan(2);
 
-  await pushIn(page, -1.2);
+  await pushTo(page, at, 1.3);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
@@ -261,14 +273,14 @@ test("turning the wrong way takes it back off", async ({ page })=>{
 test("coming at the hub crooked cross-threads it, and forcing it gets nowhere", async ({ page })=>{
   test.slow();
   await open(page, "assemble", "teach");
-  await carryToHub(page, false);
+  const hand = await carryToHub(page, false);
 
   let snap = await snapshot(page);
   expect(snap.engaged).toBe(true);
   expect(snap.crossThreaded).toBe(true);
   expect(snap.engageMisalignDeg).toBeGreaterThan(12);
 
-  await pushIn(page, 3);
+  await pushTo(page, hand, 3);
   await page.mouse.up();
   await page.waitForTimeout(150);
 
