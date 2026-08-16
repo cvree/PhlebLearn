@@ -30,7 +30,9 @@ import { createOrbitControls } from "./input/cameraControls.js";
 import { createArrangeDragHandlers } from "./input/pointerInput.js";
 // Every converted step exposes the same five hooks; the table that maps them
 // lives next to the steps themselves. See venipuncture/stepRuntimes.js.
-import { activeStepRuntime } from "./venipuncture/stepRuntimes.js";
+import {
+  activeStepRuntime, beginGesture, gestureMove, endGesture,
+} from "./venipuncture/stepRuntimes.js";
 // The composition root is the one place that already knows when a gesture
 // starts and ends, so it is where the camera is told to hold still.
 import { benchHandDown, benchHandUp } from "./bench/benchSession.js";
@@ -46,7 +48,7 @@ import { tickAutoAdvance, autoAdvanceState } from "./venipuncture/autoAdvance.js
 import { tickMotion } from "./bench/motion.js";
 import { startRoomTone, stopRoomTone, roomToneRunning } from "./audio/procedural.js";
 
-import { SS, DARK, REDUCED, state, saveSS } from "./game/gameState.js";
+import { SS, DARK, REDUCED, state, saveSS, playMode } from "./game/gameState.js";
 import { migrateSave } from "./game/saveSystem.js";
 import { sfx } from "./audio/audioManager.js";
 import { updateMusicBtn, setMusicVol, playLobby, armAudioUnlock } from "./audio/audioManager.js";
@@ -101,23 +103,37 @@ function setupInput(canvasEl){
   // Physical supply staging owns the canvas outright while it is running:
   // its own scene, its own camera, its own drag semantics. Orbit and arrange
   // are suppressed so a pick-up gesture can never be read as a camera drag.
+  /* A bench gesture belongs to the runtime that TOOK it, from down to up,
+     whatever the step machine decides in between — see stepRuntimes.js. The
+     old code re-asked "who is active?" on every event, which is why an
+     implicitly-advanced step could swallow its own pointerup and leave the
+     camera waiting forever for a hand that was already off the glass.
+
+     In Play the pointer is offered to every live runtime and the first to
+     claim it wins: reach for a tube while the band is still on, and the tube
+     answers. Learn is offered only the active step, permanently. */
   canvasEl.addEventListener("pointerdown", e=>{
-    const step = activeStepRuntime();
-    // The camera holds still for as long as a hand is down — see
-    // bench/handFraming.js for why that is correctness rather than polish.
-    if(step){ benchHandDown(); step.down(e, canvasEl); return; }
+    /* The hand goes down BEFORE the runtime is offered the event, not after.
+       A runtime's own pointerdown may ask for a framing — picking a tube up
+       is a `collect` push-in — and the camera has to already know a finger is
+       on the glass, or it eases during the gesture and drags the contact
+       point across the arm. See bench/handFraming.js.
+
+       Released again when nobody was there to take it, so an idle canvas
+       cannot leave the camera latched. */
+    benchHandDown();
+    if(beginGesture(e, canvasEl, { reach: playMode() })) return;
+    benchHandUp();
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
   canvasEl.addEventListener("pointermove", e=>{
-    const step = activeStepRuntime();
-    if(step){ step.move(e, canvasEl); return; }
+    if(gestureMove(e, canvasEl)) return;
     if(arrangeDrag.onMove(e)) return;
     orbitControls.onPointerMove(e);
   });
   canvasEl.addEventListener("pointerup", e=>{
-    const step = activeStepRuntime();
-    if(step){ step.up(e, canvasEl); benchHandUp(); return; }
+    if(endGesture("up", e, canvasEl)){ benchHandUp(); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -125,8 +141,7 @@ function setupInput(canvasEl){
     if(wasDragging && !moved && !arrangeIsOpen()) handlePick(e, canvasEl);
   });
   canvasEl.addEventListener("pointercancel", e=>{
-    const step = activeStepRuntime();
-    if(step){ step.cancel(e, canvasEl); benchHandUp(); }
+    if(endGesture("cancel", e, canvasEl)) benchHandUp();
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();

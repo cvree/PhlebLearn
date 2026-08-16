@@ -425,6 +425,33 @@ composes: arrange-drag gets first refusal on a pointerdown, orbit-drag
 handles everything else, and a plain click-with-no-movement falls through to
 `handlePick()`.
 
+### A bench gesture belongs to whoever took it
+
+While a step runtime is live it gets first refusal on everything, ahead of
+both of those. Which runtime, and for how long, is `bench/gestureDispatch.js`:
+
+* **The down latches an owner**, and the matching move / up / cancel go there
+  regardless of what the step machine decides in between. This is a
+  correctness rule, not tidiness. A step in Play ends *by itself*, on the
+  up-stroke of the action that completed it; re-asking "who is active?" at
+  that moment finds the next step or nothing, and when it finds nothing the
+  pointerup falls through to orbit, `benchHandUp()` is never called, and the
+  hand camera holds every framing for the rest of the draw waiting for a
+  finger that is already off the glass.
+* **The offer is the claim.** Each runtime's `down` already returns false when
+  the pointer missed everything of theirs. In Play (`reach: true`) the event is
+  offered to each live runtime in table order and the first to answer takes it;
+  in Learn only the active step is asked, permanently. A separate
+  `claims(pick)` predicate would be a second copy of a hit test that lives
+  inside the runtime's private state, and the two would drift.
+* **A miss is still the bench's.** Pressing bare counter mid-step is a miss,
+  not a request to orbit the room out from under the work, so the running
+  runtime keeps the gesture and gets the up it is entitled to.
+
+With one runtime live this is identical to the dispatch it replaced. It stops
+being identical when two are live at once, which the lease protocol permits
+and `tests/bench.spec.js` pins down.
+
 ## UI flow
 
 `ui/panels.js` is the screen-flow dispatcher: `go(state)` sets the game state

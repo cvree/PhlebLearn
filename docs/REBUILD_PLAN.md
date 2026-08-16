@@ -374,6 +374,44 @@ do. Mitigation: build it behind a flag, keep Learn on the current
 one-step-at-a-time dispatch permanently, and extend `tests/bench.spec.js` with a
 two-lease case before any runtime is touched.
 
+> **What was built, and what a `claims(pick)` turned out to be.**
+>
+> The two-lease case went in first, as required, and found two things
+> (`tests/bench.spec.js`): the bench stored a single `mode`, so the newer of
+> two overlapping leases ending left it naming a mode nobody was in; that is
+> now derived from the live leases, oldest first. Everything else in the lease
+> protocol already held.
+>
+> The dispatch itself is `bench/gestureDispatch.js`, with `reach` as the flag
+> — true in Play, false in Learn permanently.
+>
+> **`claims(pickResult)` was not built, deliberately.** Every runtime's `down`
+> already answers exactly that question, against its own scene and its own
+> private state, and returns false on a miss. A parallel predicate would be a
+> second copy of that hit test living where it cannot see the state it needs,
+> and the two would drift the first time one of them learned about a new
+> object. So the offer *is* the claim: the pointer is offered to each live
+> runtime in table order and the first to answer takes it. Same inversion, no
+> new hit-testing, nothing to keep in sync.
+>
+> Latching the owner for the life of the gesture came with it, and paid for
+> itself immediately: a step that ends on its own up-stroke — which is what
+> (a) made normal — used to leave that pointerup with nobody to deliver it to,
+> and the hand camera would then hold every framing for the rest of the draw
+> waiting for a finger already off the glass.
+>
+> **Still outstanding, and it is the larger half.** Reaching only reaches what
+> is in the scene, and each runtime still builds its own objects inside its own
+> lease. For "the whole kit is live at once" the band, the swab, the needle
+> unit, the rack and the sharps container have to become bench props built at
+> the start of the encounter (`benchProp`, which already outlives modes), and
+> each runtime needs its per-frame `tick` split from its `render` so two live
+> runtimes tick but only one draws. Until then `reach: true` is a dispatch that
+> would work if two runtimes were live, and one is. The machine-jump —
+> grabbing something from a step the machine has not reached, recorded as a
+> `sequenceViolation` rather than blocked — belongs with that work, since there
+> is nothing to grab early until the kit is on the bench.
+
 **(c) The panel becomes a HUD.** During a Play draw the panel is not a panel. It
 is a small, translucent strip that never covers the arm:
 

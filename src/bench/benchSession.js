@@ -67,8 +67,11 @@ function open(arm){
     view, props, persist,
     key: benchKey(arm),
     condition: (arm || {}).condition || null,
+    /* Insertion-ordered on purpose. Two modes may hold the bench at once — a
+       tube in the hand while the band is still on the arm — and when the newer
+       one ends the bench has to go back to naming the one that is still here,
+       not to naming nobody. See `liveMode()`. */
     leases: new Set(),
-    mode: null,
     /* One camera for the encounter, not one per lease. It carries what is in
        the hand and whether a gesture is in progress, both of which outlive any
        single mode — and a stale one would be exactly the sort of bug that only
@@ -76,6 +79,23 @@ function open(arm){
     camera: createHandCamera(view),
   };
   return bench;
+}
+
+/** Every mode holding the bench right now, oldest first. */
+function liveModes(){
+  return bench ? [...bench.leases].map(l => l.mode).filter(m => m != null) : [];
+}
+
+/**
+ * The mode the bench is "in", which is the most recent one to take it.
+ *
+ * Derived rather than stored. A stored field is right until two modes overlap,
+ * and then the newer one ending leaves the bench claiming to be in a mode that
+ * nobody is in — which the framing table and every diagnostic then read.
+ */
+function liveMode(){
+  const m = liveModes();
+  return m.length ? m[m.length - 1] : null;
 }
 
 /** True when a bench exists for this encounter already. */
@@ -131,7 +151,6 @@ export function leaseBenchView(o){
 
   const lease = { group, mode: opt.mode || null, released: false };
   b.leases.add(lease);
-  b.mode = lease.mode;
 
   /* Entering a mode is the one moment the STEP still gets to say where the
      camera looks, because the hand is empty and there is nothing else to ask.
@@ -232,10 +251,10 @@ export function closeBench(){
 export function benchStats(){
   return bench
     ? {
-        open: true, key: bench.key, mode: bench.mode,
+        open: true, key: bench.key, mode: liveMode(), modes: liveModes(),
         leases: bench.leases.size, props: [...bench.props.keys()],
         /** has the camera finished easing? see armScene's cameraSettled */
         settled: !!bench.view.cameraSettled,
       }
-    : { open: false, key: null, mode: null, leases: 0, props: [], settled: false };
+    : { open: false, key: null, mode: null, modes: [], leases: 0, props: [], settled: false };
 }
