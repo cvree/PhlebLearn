@@ -797,6 +797,15 @@ function installTestSeam(){
         dwell: t ? t.dwell : 0,
         sweptM: t ? t.sweptM : 0,
         finger: ctx && ctx.finderPos ? { x:ctx.finderPos.x, z:ctx.finderPos.z, theta:ctx.finderPos.theta } : null,
+        /* The map the learner drew for themselves. Every press leaves one, and
+           choosing a site is an action on one of them — there is no "mark this
+           spot" button in either input path any more. */
+        traces: (s.traces || []).map(t=>({
+          feel: t.feel, vesselId: t.vesselId, presses: t.presses,
+          x: Math.round(t.x*10000)/10000, z: Math.round(t.z*10000)/10000,
+          peakPress: Math.round(t.peakPress*100)/100,
+        })),
+        holdingOn: ctx && ctx.holdOn ? Math.round(ctx.holdOn.secs*10)/10 : 0,
       };
     },
     /** Where a vessel actually is, to compare against where the finger landed. */

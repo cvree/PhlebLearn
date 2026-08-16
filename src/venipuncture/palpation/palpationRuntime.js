@@ -41,9 +41,10 @@ import {
 } from "./palpationRules.js";
 import {
   createPalpationState, recordFeel, chooseVessel, clearChoice, markArteryRecognised,
+  traceNear,
 } from "./palpationState.js";
 import { measureObstruction, viewportAspect } from "../viewport.js";
-import { feelVoice } from "../../audio/procedural.js";
+import { feelVoice, veinPop } from "../../audio/procedural.js";
 import { assistLevel } from "../../bench/assist.js";
 import { tapHaptic, seatHaptic } from "../../bench/haptics.js";
 
@@ -105,9 +106,18 @@ export async function startPalpation(opts){
   marker.group.visible = false;
   view.root.add(marker.group);
 
+  /* Everywhere the learner has pressed, drawn on the skin. Its own group so
+     the whole map goes with the lease and nothing else does. */
+  const traceGroup = new THREE.Group();
+  traceGroup.name = "palpationTraces";
+  view.root.add(traceGroup);
+
   ctx = {
     ...o,
-    view, state, finger, marker, halo,
+    view, state, finger, marker, halo, traceGroup,
+    traceSprites: new Map(),
+    holdOn: null,
+    tracePulse: 0,
     press: 0,
     finderPos: null,
     lastPos: null,
@@ -251,6 +261,86 @@ function buildMarker(){
   return { group, ink };
 }
 
+/* =========================================================================
+   THE TRACES ON THE SKIN
+
+   One sprite per spot the learner has actually pressed, coloured by what was
+   under the finger there. Two seconds of holding on one commits to it.
+
+   The colours are not decoration and they are not a verdict: they are what
+   the FINGER reported, which the learner already knows because they just felt
+   it. Withholding them in Play would be withholding the sense of touch, not
+   withholding a judgement — modes.css suppresses judgement colour, and these
+   are deliberately outside that system.
+   ========================================================================= */
+const TRACE_INK = {
+  [FEEL.VEIN]:      0x3f7f6d,   // gave, and came back
+  [FEEL.ROLLING]:   0x6f9a5e,   // slid away under the finger
+  [FEEL.ARTERY]:    0xb2543f,   // pushed back, rhythmically
+  [FEEL.TENDON]:    0x7a7469,   // hard, and did not move
+  [FEEL.NERVE]:     0xa8446e,   // that hurt
+  [FEEL.FLATTENED]: 0x4c6f88,   // pressed flat
+  [FEEL.SOFT]:      0x9aa3ac,   // nothing under here
+  [FEEL.NOTHING]:   0x9aa3ac,
+};
+
+/** Two seconds on a spot you have already felt is a decision. */
+const COMMIT_HOLD_S = 2.0;
+
+/** Only something you could actually draw from can be committed to. */
+function isChoosable(feel){
+  return feel === FEEL.VEIN || feel === FEEL.ROLLING || feel === FEEL.FLATTENED;
+}
+
+/** Drops a mark where a press happened, or brightens the one already there. */
+function paintTrace(trace){
+  if(!ctx) return;
+  let sprite = ctx.traceSprites.get(trace);
+  if(!sprite){
+    const m = new THREE.MeshBasicMaterial({
+      map: softDot(), color: TRACE_INK[trace.feel] || TRACE_INK[FEEL.SOFT],
+      transparent: true, opacity: 0.0, depthWrite: false,
+    });
+    m.userData.perInstance = true;
+    sprite = new THREE.Mesh(new THREE.PlaneGeometry(0.0105, 0.0105), m);
+    sprite.renderOrder = 3;
+    ctx.traceGroup.add(sprite);
+    ctx.traceSprites.set(trace, sprite);
+  }
+  sprite.material.color.setHex(TRACE_INK[trace.feel] || TRACE_INK[FEEL.SOFT]);
+  // Deeper and more repeated presses read stronger, so a spot the learner
+  // really interrogated looks different from one they brushed past.
+  sprite.material.opacity = Math.min(0.85, 0.38 + trace.presses*0.02 + trace.peakPress*0.30);
+  const r = limbRadius(trace.x) + 0.0007;
+  sprite.position.copy(ctx.view.limbToWorld(trace.x, trace.theta, r));
+  sprite.rotation.set(0, 0, -trace.theta);
+  sprite.rotateX(-Math.PI/2);
+}
+
+/** The artery keeps pulsing under the finger that found it. */
+function tickTraces(dt){
+  if(!ctx) return;
+  ctx.tracePulse = (ctx.tracePulse || 0) + dt;
+  ctx.traceSprites.forEach((sprite, trace)=>{
+    if(trace.feel !== FEEL.ARTERY) return;
+    const beat = 0.5 + 0.5*Math.sin(ctx.tracePulse*7.2);
+    sprite.scale.setScalar(1 + beat*0.22);
+  });
+}
+
+/** Commits to a trace as the draw site. The only way a site gets chosen. */
+function commitTrace(trace){
+  // the chosen mark brightens and holds, so the site reads at a glance among
+  // everywhere else the learner looked
+  const sprite = ctx.traceSprites.get(trace);
+  if(sprite){ sprite.material.opacity = 0.9; sprite.scale.setScalar(1.3); }
+  chooseVessel(ctx.state, trace.vesselId, { x: trace.x, z: trace.z });
+  showMark({ x: trace.x, theta: trace.theta, z: trace.z });
+  seatHaptic();
+  veinPop();
+  notify();
+}
+
 /* ---------- pointer ---------------------------------------------------------- */
 
 function limbRadius(x){ return ctx.view.arm.radiusAt(x); }
@@ -357,6 +447,7 @@ export function renderPalpation(renderer, dt){
   }
 
   tickFeel(step);
+  tickTraces(step);
   // Holding the hand on the arm eases the camera in and narrows the frame.
   // The cheapest way to make examining feel like examining.
   ctx.view.setLean(ctx.down ? Math.min(1, ctx.dwell/0.9) : 0);
@@ -408,13 +499,38 @@ function tickFeel(dt){
     ctx.view.arm.vessels, ctx.finderPos.x, ctx.finderPos.z, ctx.press, reachBonus()
   );
   ctx.found = found;
-  if(ctx.press > CONTACT_PRESS) recordFeel(ctx.state, found, ctx.press, dt*1000);
+  if(ctx.press > CONTACT_PRESS){
+    /* EVERY PRESS LEAVES A MARK. The learner's own vein map builds up under
+       their hand as they search, and it is what they choose from afterwards.
+       Nothing is remembered for them and nothing needs a button. */
+    recordFeel(ctx.state, found, ctx.press, dt*1000, ctx.finderPos);
+    if(ctx.state.lastTrace) paintTrace(ctx.state.lastTrace);
+  }
 
-  // Remember the last thing actually felt, and where — marking a site works
-  // the way it does in life: feel it, take the hand off, mark the spot.
+  // Where the finger last was, for the press-and-hold that commits a site.
   if(found.vessel && ctx.press > CONTACT_PRESS){
     ctx.lastFound = found;
     ctx.lastPos = { x: ctx.finderPos.x, theta: ctx.finderPos.theta, z: ctx.finderPos.z };
+  }
+
+  /* PRESS AND HOLD ON A TRACE TO COMMIT TO IT. Two seconds on a spot you have
+     already felt is a decision, and it is the only way a site gets chosen —
+     there is no Mark button any more, in either input path. Holding on a
+     different trace moves the site to it. */
+  if(ctx.down && ctx.press > CONTACT_PRESS && ctx.finderPos){
+    const on = traceNear(ctx.state, ctx.finderPos);
+    if(on && on.vesselId && isChoosable(on.feel)){
+      ctx.holdOn = (ctx.holdOn && ctx.holdOn.trace === on)
+        ? { trace: on, secs: ctx.holdOn.secs + dt }
+        : { trace: on, secs: dt };
+      if(ctx.holdOn.secs >= COMMIT_HOLD_S && ctx.state.chosenId !== on.vesselId){
+        commitTrace(on);
+      }
+    }else{
+      ctx.holdOn = null;
+    }
+  }else if(!ctx.down){
+    ctx.holdOn = null;
   }
 
   ctx.arteryProximity = arteryProximity();
@@ -558,15 +674,20 @@ function restoreVessels(){
 
 /* ---------- committing ------------------------------------------------------- */
 
-/** Marks the spot the finger last actually felt something at. */
-export function markCurrentSite(){
+/**
+ * Commits to one of the learner's own traces, by index.
+ *
+ * The 3D path reaches this by pressing and holding on a mark; the accessible
+ * path reaches it from the same map rendered as a list. There is no way in
+ * either to commit to a spot that was never felt, which is what the old
+ * "Mark this spot" button allowed — it marked wherever the finger happened to
+ * have been last, whether the learner had assessed it or not.
+ */
+export function chooseTraceById(i){
   if(!ctx) return null;
-  const found = (ctx.found && ctx.found.vessel) ? ctx.found : ctx.lastFound;
-  const pos = (ctx.found && ctx.found.vessel) ? ctx.finderPos : ctx.lastPos;
-  if(!found || !found.vessel || !pos) return null;
-  chooseVessel(ctx.state, found.vessel.id, { x: pos.x, z: pos.z });
-  showMark(pos);
-  seatHaptic();
+  const t = (ctx.state.traces || [])[i];
+  if(!t || !t.vesselId) return null;
+  commitTrace(t);
   return notify();
 }
 
@@ -582,6 +703,7 @@ export function unmarkSite(){
   if(!ctx) return null;
   clearChoice(ctx.state);
   ctx.marker.group.visible = false;
+  ctx.holdOn = null;
   return notify();
 }
 
@@ -600,19 +722,9 @@ export function palpateVesselById(id, press){
   const found = feelAt(ctx.view.arm.vessels, mid.x, mid.z, ctx.press);
   ctx.found = found;
   if(found.vessel){ ctx.lastFound = found; ctx.lastPos = Object.assign({}, ctx.finderPos); }
-  recordFeel(ctx.state, found, ctx.press, 260);
+  recordFeel(ctx.state, found, ctx.press, 260, ctx.finderPos);
+  if(ctx.state.lastTrace) paintTrace(ctx.state.lastTrace);
   placeFinger({ x: mid.x, theta: ctx.finderPos.theta });
-  return notify();
-}
-
-export function chooseVesselById(id){
-  if(!ctx) return null;
-  const v = ctx.view.arm.vessels.find(x=>x.id === id);
-  if(!v) return null;
-  const mid = v.path[Math.floor(v.path.length/2)];
-  chooseVessel(ctx.state, id, { x: mid.x, z: mid.z });
-  const theta = Math.asin(Math.max(-1, Math.min(1, mid.z/limbRadius(mid.x))));
-  showMark({ x: mid.x, theta, z: mid.z });
   return notify();
 }
 

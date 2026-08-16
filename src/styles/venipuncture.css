@@ -141,3 +141,28 @@ body[data-reduced="on"] .vp-caparrow{animation:none}
 .vp-invlbl{font-size:10px;color:var(--ink-soft)}
 .vp-invn{font-size:11px;font-weight:900;color:var(--plum)}
 body[data-reduced="on"] .vp-pip,body[data-reduced="on"] .vp-vein{transition:none}
+
+/* ---------- palpation traces: the map the learner draws themselves --------
+   The pointer path paints these on the skin; this is the same map as a list,
+   for the accessible path. The colours are what the FINGER reported, not a
+   verdict — so they are deliberately outside modes.css's judgement-colour
+   suppression. Withholding them in Play would be withholding the sense of
+   touch, not withholding an opinion. */
+.plp-traces{margin:10px 0 6px}
+.plp-traces-lab{display:block;font-size:11px;font-weight:900;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
+.plp-tracelist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.plp-trace{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;
+  padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.plp-trace.on{border-color:var(--plum);box-shadow:inset 0 0 0 1px var(--plum)}
+.plp-trace-said{flex:1;color:var(--ink-soft)}
+.plp-trace-no{font-size:11px;opacity:.6}
+.plp-trace-dot{width:11px;height:11px;border-radius:50%;flex:none}
+.plp-trace-dot[data-feel="vein"]{background:#3f7f6d}
+.plp-trace-dot[data-feel="rolling"]{background:#6f9a5e}
+.plp-trace-dot[data-feel="artery"]{background:#b2543f}
+.plp-trace-dot[data-feel="tendon"]{background:#7a7469}
+.plp-trace-dot[data-feel="nerve"]{background:#a8446e}
+.plp-trace-dot[data-feel="flattened"]{background:#4c6f88}
+.plp-trace-dot[data-feel="soft"],
+.plp-trace-dot[data-feel="nothing"]{background:#9aa3ac}

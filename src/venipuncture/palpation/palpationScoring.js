@@ -4,7 +4,7 @@
    Pure maths.
    ========================================================================= */
 import { VESSEL_KIND, isDrawableVein } from "../arm/armAnatomy.js";
-import { feltCount } from "./palpationState.js";
+import { feltCount, distinctSpots, choseWhatTheyFelt } from "./palpationState.js";
 
 function round(v, dp){ const m = Math.pow(10, dp || 0); return Math.round(v*m)/m; }
 
@@ -18,11 +18,31 @@ export function measurePalpation(state, result, vessels){
   const feltChosen = !!chosen && !!state.felt[chosen.id];
   const hazardsFound = hazards.filter(id=>state.felt[id]);
 
+  /* =====================================================================
+     WHAT THE TRACES MADE MEASURABLE.
+
+     `felt` only ever recorded which VESSELS were touched, so palpating one
+     vein at forty pressures and palpating four different places along the
+     fossa were indistinguishable. The traces record WHERE the learner
+     actually looked, so the search itself can be assessed:
+
+       spotsAssessed   distinct places pressed. One is not palpation; it is a
+                       guess that happened to land on something.
+       choseFromFelt   the committed site is one of their own traces, rather
+                       than the right vessel found somewhere they never
+                       touched. Stricter than `feltChosen`, which a single
+                       press anywhere along a vein satisfied.
+     ===================================================================== */
+  const spotsAssessed = distinctSpots(state);
+  const choseFromFelt = choseWhatTheyFelt(state);
+
   const mistakes = [];
   if(!chosen) mistakes.push({ code:"noChoice", message:"No vein was ever chosen." });
   else if(!choseVein) mistakes.push({ code:"notAVein", message:`The site chosen was not a vein — it was ${chosen.label}.` });
   else if(!isDrawableVein(chosen)) mistakes.push({ code:"tooDeep", message:"The vein chosen sits too deep to reach safely from the surface." });
   if(chosen && !feltChosen) mistakes.push({ code:"neverFelt", message:"The site was picked by eye — that vein was never actually palpated." });
+  else if(chosen && !choseFromFelt) mistakes.push({ code:"markedElsewhere", message:"The vein was palpated, but the site marked is not one of the places actually felt." });
+  if(chosen && spotsAssessed <= 1) mistakes.push({ code:"noSearch", message:"Only one spot was ever pressed. Nothing was compared against anything." });
   if(state.arteryPressed && !state.arteryRecognised) mistakes.push({ code:"missedArtery", message:"A pulsing structure was pressed and not recognised as the artery." });
   if(state.nerveHurt) mistakes.push({ code:"hurtPatient", message:"The median nerve was pressed hard enough for the patient to feel it." });
   if(chosen && chosen.id === "basilic") mistakes.push({ code:"basilic", message:"The basilic was chosen, which runs over the brachial artery and the median nerve." });
@@ -34,17 +54,21 @@ export function measurePalpation(state, result, vessels){
   else if(chosen.id === "basilic") score -= 16;
   else if(!choseIdeal) score -= 6;
   if(chosen && !feltChosen) score -= 20;
+  else if(chosen && !choseFromFelt) score -= 8;
+  if(chosen && spotsAssessed <= 1) score -= 10;
   if(state.arteryPressed && !state.arteryRecognised) score -= 12;
   if(state.nerveHurt) score -= 10;
-  // credit for actually exploring rather than jabbing one spot
+  // credit for genuinely searching rather than pressing one spot
   if(feltCount(state) >= 3) score += 4;
+  if(spotsAssessed >= 4) score += 3;
   score = Math.max(0, Math.min(100, Math.round(score)));
 
   return {
     score,
     chosenId: chosen ? chosen.id : null,
     chosenLabel: chosen ? chosen.label : null,
-    choseVein, choseIdeal, feltChosen,
+    choseVein, choseIdeal, feltChosen, choseFromFelt,
+    spotsAssessed,
     structuresFelt: feltCount(state),
     hazardsIdentified: hazardsFound.length,
     arteryRecognised: !!state.arteryRecognised,
@@ -52,7 +76,7 @@ export function measurePalpation(state, result, vessels){
     peakPress: round(state.peakPress, 3),
     contactSeconds: round(state.contactMs/1000, 1),
     mistakes,
-    narrative: narrate({ chosen, choseIdeal, feltChosen, state, felt: feltCount(state) }),
+    narrative: narrate({ chosen, choseIdeal, feltChosen, choseFromFelt, state, felt: feltCount(state), spots: spotsAssessed }),
   };
 }
 
@@ -62,7 +86,10 @@ function narrate(m){
   bits.push(m.choseIdeal
     ? "Chose the median cubital, the first-choice vein"
     : `Chose ${m.chosen.label}`);
-  bits.push(m.feltChosen ? "having actually palpated it" : "without palpating it first");
+  bits.push(m.feltChosen
+    ? (m.choseFromFelt ? "having actually palpated that spot" : "having palpated the vein, though marked elsewhere along it")
+    : "without palpating it first");
+  bits.push(`${m.spots} spot${m.spots === 1 ? "" : "s"} assessed`);
   bits.push(`${m.felt} structure${m.felt === 1 ? "" : "s"} felt`);
   if(m.state.arteryPressed) bits.push(m.state.arteryRecognised ? "artery found and left alone" : "pressed the artery without recognising it");
   if(m.state.nerveHurt) bits.push("pressed hard enough to hurt");

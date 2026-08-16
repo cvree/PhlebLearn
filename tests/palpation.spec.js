@@ -136,10 +136,27 @@ test("contact time and peak pressure are accumulated", ()=>{
 
 /* ---------- judging the choice ------------------------------------------------ */
 
-function felt(id, press){
-  const s = createPalpationState();
+/**
+ * Presses a named vessel, exactly as both real input paths do — including
+ * leaving the trace, because a press and the mark it leaves are one event
+ * and `recordFeel` is the one write path for both.
+ */
+function press(s, id, at){
   const p = mid(id);
-  recordFeel(s, feelAt(V, p.x, p.z, press == null ? FIRM : press), press == null ? FIRM : press, 400);
+  const f = at == null ? FIRM : at;
+  recordFeel(s, feelAt(V, p.x, p.z, f), f, 400, { x: p.x, z: p.z, theta: 0 });
+  return s;
+}
+
+function felt(id, at){
+  return press(createPalpationState(), id, at);
+}
+
+/** A real search: several distinct spots, the way an arm is actually read. */
+function searched(id, at){
+  const s = felt(id, at);
+  press(s, "cephalic");
+  press(s, "biceps-tendon");
   return s;
 }
 
@@ -223,7 +240,7 @@ test("un-marking a site puts the decision back", ()=>{
 /* ---------- measurement -------------------------------------------------------- */
 
 test("measurements report what was felt, not just what was picked", ()=>{
-  const s = felt("median-cubital");
+  const s = searched("median-cubital");
   const a = mid("brachial-artery");
   recordFeel(s, feelAt(V, a.x, a.z, 0.95), 0.95, 200);
   markArteryRecognised(s);
@@ -242,7 +259,7 @@ test("guessing scores far worse than feeling, even for the same vein", ()=>{
   chooseVessel(guessed, "median-cubital", mid("median-cubital"));
   const g = measurePalpation(guessed, evaluatePalpation(guessed, V), V);
 
-  const s = felt("median-cubital");
+  const s = searched("median-cubital");
   chooseVessel(s, "median-cubital", mid("median-cubital"));
   const f = measurePalpation(s, evaluatePalpation(s, V), V);
 
@@ -265,7 +282,8 @@ test("the narrative reads as technique feedback, not a score", ()=>{
   chooseVessel(s, "median-cubital", mid("median-cubital"));
   const m = measurePalpation(s, evaluatePalpation(s, V), V);
   assert.match(m.narrative, /median cubital/);
-  assert.match(m.narrative, /palpated it/);
+  assert.match(m.narrative, /palpated that spot/);
+  assert.match(m.narrative, /spot assessed/, "the search itself is now part of the evidence");
   assert.doesNotMatch(m.narrative, /\d+\/100/);
 });
 
@@ -281,4 +299,117 @@ test("the outcome feeds the encounter's vein chip honestly", ()=>{
   const c2 = {};
   applyPalpationOutcome(c2, measurePalpation(guessed, evaluatePalpation(guessed, V), V));
   assert.equal(c2.veinOk, false, "right vein, but never felt — not a pass");
+});
+
+/* -------------------------------------------------------------------------
+   THE TRACES
+
+   Palpating used to leave nothing behind. The runtime held the LAST thing
+   felt, and a separate "Mark this spot" button committed to wherever that
+   happened to be — so the marking was divorced from the palpating, the arm
+   looked identical after a thorough search and after none, and a learner
+   could commit to a spot they had never assessed.
+
+   Every press leaves a mark now, and choosing a site is an action on one of
+   the learner's own marks.
+   ------------------------------------------------------------------------- */
+import {
+  recordTrace, traceNear, distinctSpots, choseWhatTheyFelt, TRACE_MERGE_M,
+} from "../src/venipuncture/palpation/palpationState.js";
+
+test("every press leaves a mark, and the mark says what was under the finger", ()=>{
+  const s = createPalpationState();
+  press(s, "median-cubital");
+  assert.equal(distinctSpots(s), 1);
+  assert.equal(s.traces[0].feel, FEEL.VEIN);
+  assert.equal(s.traces[0].vesselId, "median-cubital");
+
+  press(s, "brachial-artery", 0.95);
+  assert.equal(distinctSpots(s), 2);
+  assert.ok(s.traces.some(t => t.feel === FEEL.ARTERY),
+    "an artery found is an artery marked — the learner already felt it");
+});
+
+test("pressing around one spot is one spot, not a smear of forty", ()=>{
+  // A slow drag across the skin fires every frame. Without merging, the map
+  // would be a smear rather than a record of where the learner chose to look.
+  const s = createPalpationState();
+  const p = mid("median-cubital");
+  for(let i = 0; i < 40; i++){
+    const at = { x: p.x + i*0.0001, z: p.z, theta: 0 };
+    recordFeel(s, feelAt(V, at.x, p.z, FIRM), FIRM, 16, at);
+  }
+  assert.equal(distinctSpots(s), 1, "one spot pressed forty times is one spot");
+  assert.equal(s.traces[0].presses, 40, "but how hard it was interrogated is kept");
+});
+
+test("two spots a finger's width apart are two spots", ()=>{
+  const s = createPalpationState();
+  const p = mid("median-cubital");
+  recordFeel(s, feelAt(V, p.x, p.z, FIRM), FIRM, 100, { x:p.x, z:p.z, theta:0 });
+  recordFeel(s, feelAt(V, p.x + TRACE_MERGE_M*1.5, p.z, FIRM), FIRM, 100,
+    { x: p.x + TRACE_MERGE_M*1.5, z: p.z, theta: 0 });
+  assert.equal(distinctSpots(s), 2);
+});
+
+test("the deepest press wins, because a light touch feels nothing over a deep vein", ()=>{
+  const s = createPalpationState();
+  const p = mid("median-cubital");
+  // a feather touch first...
+  recordFeel(s, feelAt(V, p.x, p.z, 0.14), 0.14, 100, { x:p.x, z:p.z, theta:0 });
+  const light = s.traces[0].feel;
+  // ...then a real one on the same spot
+  recordFeel(s, feelAt(V, p.x, p.z, FIRM), FIRM, 100, { x:p.x, z:p.z, theta:0 });
+  assert.equal(distinctSpots(s), 1);
+  assert.equal(s.traces[0].feel, FEEL.VEIN,
+    `the honest reading is the deepest one, not the first (was ${light})`);
+});
+
+test("a trace can be found again by reaching back to it", ()=>{
+  const s = createPalpationState();
+  press(s, "median-cubital");
+  const p = mid("median-cubital");
+  assert.ok(traceNear(s, { x:p.x, z:p.z }), "the spot just pressed is right there");
+  assert.equal(traceNear(s, { x:p.x + 0.06, z:p.z }), null, "and nowhere else is");
+});
+
+test("choosing a site you actually felt is distinguishable from choosing a vein you didn't", ()=>{
+  // Stricter than `feltChosen`, which one press anywhere along a vein
+  // satisfied — a learner could palpate the median cubital at the elbow and
+  // mark it ten centimetres away.
+  const s = createPalpationState();
+  press(s, "median-cubital");
+  const p = mid("median-cubital");
+
+  chooseVessel(s, "median-cubital", { x: p.x, z: p.z });
+  assert.equal(choseWhatTheyFelt(s), true);
+
+  chooseVessel(s, "median-cubital", { x: p.x + 0.08, z: p.z });
+  assert.equal(choseWhatTheyFelt(s), false, "the same vein, somewhere never felt");
+});
+
+test("a search is graded better than a single press that happened to land right", ()=>{
+  const oneStab = felt("median-cubital");
+  chooseVessel(oneStab, "median-cubital", mid("median-cubital"));
+  const a = measurePalpation(oneStab, evaluatePalpation(oneStab, V), V);
+
+  const real = searched("median-cubital");
+  chooseVessel(real, "median-cubital", mid("median-cubital"));
+  const b = measurePalpation(real, evaluatePalpation(real, V), V);
+
+  assert.equal(a.spotsAssessed, 1);
+  assert.ok(b.spotsAssessed >= 3);
+  assert.ok(b.score > a.score, "comparing sites is the skill; one lucky press is not");
+  assert.ok(a.mistakes.some(m => m.code === "noSearch"));
+  assert.ok(!b.mistakes.some(m => m.code === "noSearch"));
+});
+
+test("a press with nowhere attached records the feel but leaves no mark", ()=>{
+  // There is no such caller today. This pins the degradation so that adding
+  // one cannot silently make every learner look like they never searched.
+  const s = createPalpationState();
+  const p = mid("median-cubital");
+  recordFeel(s, feelAt(V, p.x, p.z, FIRM), FIRM, 200);
+  assert.equal(s.felt["median-cubital"], true);
+  assert.equal(distinctSpots(s), 0);
 });

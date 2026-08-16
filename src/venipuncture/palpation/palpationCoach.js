@@ -105,12 +105,57 @@ function controlsHTML(state, guided, vessels){
         </select>
       </label>
     </fieldset>
-    <div class="plp-commit">
-      <span>Mark the one you will draw from:</span>
-      ${spots.map(s=>`<button class="stg-mini ${state.chosenId === s.id ? "on" : ""}" data-choose="${s.id}"
-        ${state.felt[s.id] ? "" : "disabled title='Press it first'"}>${esc(s.label.split(",")[0])}</button>`).join("")}
-      ${state.chosenId ? `<button class="stg-mini ghost" id="plpClear">Unmark</button>` : ""}
-    </div>
+    ${tracesHTML(state)}
+  </div>`;
+}
+
+/* =========================================================================
+   WHAT THE LEARNER HAS FELT, AND WHERE — the accessible half of the traces.
+
+   The pointer path draws the map on the skin; this is the same map as a list,
+   built from the same `state.traces`, and choosing a site is an action on a
+   ROW of it. Both paths therefore commit through `chooseVessel()` with a
+   trace's own position, so the grader cannot tell them apart — which is the
+   rule this codebase runs on.
+
+   There is no "Mark this spot" button in either path any more. You choose
+   from what you have already felt, because that is the only thing you have
+   any basis for choosing.
+   ========================================================================= */
+const FEEL_SAID = {
+  vein:      "gave, and came back",
+  rolling:   "slid away under the finger",
+  artery:    "pushed back, rhythmically",
+  tendon:    "hard, and did not move",
+  nerve:     "that hurt",
+  flattened: "pressed flat — ease off",
+  soft:      "nothing under here",
+  nothing:   "nothing under here",
+};
+const CHOOSABLE = ["vein", "rolling", "flattened"];
+
+function tracesHTML(state){
+  const traces = state.traces || [];
+  if(!traces.length){
+    return `<div class="plp-traces"><p class="stg-help">Nothing felt yet. Press a spot above.</p></div>`;
+  }
+  return `<div class="plp-traces">
+    <span class="plp-traces-lab">What you have felt, and where</span>
+    <ul class="plp-tracelist">
+      ${traces.map((t, i)=>{
+        const chosen = state.chosenId === t.vesselId && state.mark
+          && Math.abs(state.mark.x - t.x) < 0.001 && Math.abs(state.mark.z - t.z) < 0.001;
+        const can = CHOOSABLE.indexOf(t.feel) >= 0 && t.vesselId;
+        return `<li class="plp-trace ${chosen ? "on" : ""}">
+          <span class="plp-trace-dot" data-feel="${t.feel}"></span>
+          <span class="plp-trace-said">${esc(FEEL_SAID[t.feel] || t.feel)}</span>
+          ${can
+            ? `<button class="stg-mini" data-choose-trace="${i}">${chosen ? "✓ drawing from here" : "Draw from here"}</button>`
+            : `<span class="plp-trace-no">not a draw site</span>`}
+        </li>`;
+      }).join("")}
+    </ul>
+    ${state.chosenId ? `<button class="stg-mini ghost" id="plpClear">Unmark</button>` : ""}
   </div>`;
 }
 
@@ -128,6 +173,8 @@ export function renderPalpationCoach(host, o){
     issue ? issue.code : "-",
     touch ? `${touch.feel}:${touch.vesselId || "-"}:${touch.markable}:${touch.occluding}` : "-",
     Object.keys(state.felt).sort().join(","),
+    (state.traces || []).length,
+    (state.traces || []).map(t=>t.feel).join(""),
   ].join("|");
 
   if(host.dataset.plpSig === signature){
@@ -160,15 +207,12 @@ export function renderPalpationCoach(host, o){
           </div>`}
 
       ${listView ? controlsHTML(state, guided, o.vessels) : `<p class="stg-help">
-        <b>Press a fingertip into the arm and hold.</b> Pressure builds while you keep still and eases off as you slide,
-        so feel one spot at a time. A vein gives and comes back. Something that pushes back rhythmically is an artery —
-        never draw from it. Something hard that will not move is a tendon.
-        When you find the one you want, <b>mark it</b>.
+        <b>Press a fingertip into the arm and search.</b> Pressure builds while you keep still and eases off as you
+        slide, so a sweep finds shallow veins and lingering reveals what is deeper. A vein gives and comes back.
+        Something that pushes back rhythmically is an artery — never draw from it. Something hard that will not move
+        is a tendon. <b>Every spot you press is marked on the skin.</b>
+        <b>Hold on one of your own marks to draw from it.</b>
       </p>`}
-
-      ${!listView ? `<button class="btn ghost vp-tap" id="plpMark" ${touch && touch.markable ? "" : "disabled style='opacity:.5'"}>
-        ${state.chosenId ? "Mark here instead" : "Mark this spot"}
-      </button>` : ""}
 
       <button class="btn vp-tap" id="plpReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Site chosen — clean it ▶" : "Find a vein first") : "Carry on ▶"}
@@ -178,8 +222,10 @@ export function renderPalpationCoach(host, o){
   const h = o.handlers || {};
   const bind = (id, fn)=>{ const el = host.querySelector("#"+id); if(el && fn) el.onclick = fn; };
   bind("plpView", h.onToggleView);
-  bind("plpMark", h.onMark);
   bind("plpClear", h.onUnmark);
+  host.querySelectorAll("[data-choose-trace]").forEach(b=>{
+    b.onclick = ()=>h.onChooseTrace && h.onChooseTrace(Number(b.dataset.chooseTrace));
+  });
   bind("plpReady", ()=>{ if((!guided || ready) && h.onReady) h.onReady(); });
 
   const pressVal = ()=>{

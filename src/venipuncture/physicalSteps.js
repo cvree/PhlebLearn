@@ -71,7 +71,7 @@ import { measurePalpation, applyPalpationOutcome } from "./palpation/palpationSc
 import { renderPalpationCoach } from "./palpation/palpationCoach.js";
 import {
   startPalpation, stopPalpation, isPalpationActive, currentTouch,
-  markCurrentSite, unmarkSite, palpateVesselById, chooseVesselById,
+  unmarkSite, palpateVesselById, chooseTraceById,
 } from "./palpation/palpationRuntime.js";
 import { createCleaningState, openSwab, applySpiral, applyBackAndForth, markRetouched } from "./cleaning/cleaningState.js";
 import { secondsDrying } from "./cleaning/cleaningRules.js";
@@ -1032,10 +1032,9 @@ export const PHYSICAL_STEPS = {
         handlers: {
           onReady: finish,
           onToggleView: toggleView,
-          onMark: ()=>draw(markCurrentSite() || evaluate()),
           onUnmark: ()=>draw(unmarkSite() || evaluate()),
           onPress: (id, press)=>draw(doPress(id, press)),
-          onChoose: (id)=>draw(doChoose(id)),
+          onChooseTrace: (i)=>draw(doChooseTrace(i)),
         },
       });
     }
@@ -1053,14 +1052,23 @@ export const PHYSICAL_STEPS = {
       const hit = vesselMid(id);
       if(!hit) return evaluate();
       const p = press == null ? 0.62 : press;
-      recordFeel(palp, feelAt(c.armVessels, hit.m.x, hit.m.z, p), p, 260);
+      // The controls leave the same map on the arm as the fingertip does, and
+      // it is the same map the learner then chooses a site from — one call,
+      // because a press and the mark it leaves are one event.
+      recordFeel(palp, feelAt(c.armVessels, hit.m.x, hit.m.z, p), p, 260,
+        { x: hit.m.x, z: hit.m.z, theta: 0 });
       return evaluate();
     }
-    function doChoose(id){
-      if(isPalpationActive()) return chooseVesselById(id) || evaluate();
-      const hit = vesselMid(id);
-      if(!hit) return evaluate();
-      chooseVessel(palp, id, { x: hit.m.x, z: hit.m.z });
+    /**
+     * Choosing is an action on a TRACE — somewhere the learner has actually
+     * pressed — in both input paths. There is no way to commit to a site you
+     * have not felt, which is the whole point of the step.
+     */
+    function doChooseTrace(i){
+      const t = (palp.traces || [])[i];
+      if(!t || !t.vesselId) return evaluate();
+      if(isPalpationActive()) return chooseTraceById(i) || evaluate();
+      chooseVessel(palp, t.vesselId, { x: t.x, z: t.z });
       return evaluate();
     }
 

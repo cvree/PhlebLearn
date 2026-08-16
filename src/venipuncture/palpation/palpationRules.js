@@ -184,7 +184,7 @@ export function nextIssue(result){
 /** What to do next, phrased as an action on the arm. */
 export function nextAction(state){
   if(!state.everPressed) return "Press your fingertip into the arm and move it about — feel for a vein, do not look for one.";
-  if(!state.chosenId) return "Keep feeling. When something gives under the finger and springs back, hold there and mark it.";
+  if(!state.chosenId) return "Keep feeling. Every spot you press is marked. When one gives under the finger and springs back, hold on that mark to draw from it.";
   return "Site marked. Clean it next.";
 }
 
