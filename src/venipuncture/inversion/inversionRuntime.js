@@ -400,6 +400,9 @@ export function inversionPointerCancel(){
 
 export function renderInversion(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: a filled tube, while it is being turned end over end.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold(ctx.state.heldKey ? "filledTube" : "none");
   const aspect = viewportAspect(renderer);
   ctx.frame++;
   // Not while a hand is turning a tube: the tilt is read against the pivot's

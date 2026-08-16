@@ -575,6 +575,9 @@ export function postDrawPointerCancel(){
 
 export function renderPostDraw(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: the gauze held on the puncture, until the dressing goes on.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold((ctx.state.bandagedAt ? "none" : "gauze"));
   const aspect = viewportAspect(renderer);
   ctx.frame++;
   // Never re-frame while a hand is on the arm: the force is read against a

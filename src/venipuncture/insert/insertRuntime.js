@@ -876,6 +876,9 @@ export function redirectsLeft(){
 
 export function renderInsert(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: the needle at the skin — this whole step is millimetre work.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold("tip");
   let step = dt || 0.016;
   ctx.frame++;
 

@@ -725,6 +725,9 @@ function settleCap(p){
 
 export function renderAssembly(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: the needle while it is being carried, the unit once it is threaded.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold((ctx.mode === "uncap" ? "holder" : (ctx.state.needleInHand && !ctx.state.engaged ? "needle" : "holder")));
   const aspect = viewportAspect(renderer);
   ctx.frame++;
   if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){

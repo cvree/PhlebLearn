@@ -598,6 +598,9 @@ export function collectionPointerCancel(){
 
 export function renderCollection(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: a tube, from the moment it comes off the rack until it goes back.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold(ctx.state.currentKey ? "tube" : "none");
   const aspect = viewportAspect(renderer);
   ctx.frame++;
   if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){

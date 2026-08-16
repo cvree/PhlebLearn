@@ -31,6 +31,9 @@ import { createArrangeDragHandlers } from "./input/pointerInput.js";
 // Every converted step exposes the same five hooks; the table that maps them
 // lives next to the steps themselves. See venipuncture/stepRuntimes.js.
 import { activeStepRuntime } from "./venipuncture/stepRuntimes.js";
+// The composition root is the one place that already knows when a gesture
+// starts and ends, so it is where the camera is told to hold still.
+import { benchHandDown, benchHandUp } from "./bench/benchSession.js";
 // The one branch that is not a step: it runs across all of them, ticked here
 // because the composition root owns the frame. See complicationRuntime.js.
 import { tickComplications } from "./venipuncture/complications/complicationRuntime.js";
@@ -100,7 +103,9 @@ function setupInput(canvasEl){
   // are suppressed so a pick-up gesture can never be read as a camera drag.
   canvasEl.addEventListener("pointerdown", e=>{
     const step = activeStepRuntime();
-    if(step){ step.down(e, canvasEl); return; }
+    // The camera holds still for as long as a hand is down — see
+    // bench/handFraming.js for why that is correctness rather than polish.
+    if(step){ benchHandDown(); step.down(e, canvasEl); return; }
     if(arrangeIsOpen() && arrangeDrag.tryGrab(e)) return;
     orbitControls.onPointerDown(e);
   });
@@ -112,7 +117,7 @@ function setupInput(canvasEl){
   });
   canvasEl.addEventListener("pointerup", e=>{
     const step = activeStepRuntime();
-    if(step){ step.up(e, canvasEl); return; }
+    if(step){ step.up(e, canvasEl); benchHandUp(); return; }
     if(arrangeDrag.onUp(e)) return;
     const wasDragging = orbitControls.dragState.dragging;
     const moved = orbitControls.dragState.moved;
@@ -121,7 +126,7 @@ function setupInput(canvasEl){
   });
   canvasEl.addEventListener("pointercancel", e=>{
     const step = activeStepRuntime();
-    if(step) step.cancel(e, canvasEl);
+    if(step){ step.cancel(e, canvasEl); benchHandUp(); }
   });
 
   const pt=document.getElementById("panelToggle"); if(pt) pt.onclick=()=>togglePanel();

@@ -836,6 +836,9 @@ function doRelease(){
 
 export function renderWithdrawal(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: the gauze, once it has been picked up.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold((ctx.state.gauzeTakenAt && !ctx.state.disposedAt ? "gauze" : "none"));
   const aspect = viewportAspect(renderer);
   ctx.frame++;
   if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){

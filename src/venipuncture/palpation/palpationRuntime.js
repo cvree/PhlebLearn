@@ -449,6 +449,9 @@ function placeFinger(s){
 
 export function renderPalpation(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: the fingertips, while they are on the arm.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold(ctx.down ? "finger" : "none");
   const step = dt || 0.016;
   const aspect = viewportAspect(renderer);
   ctx.frame++;

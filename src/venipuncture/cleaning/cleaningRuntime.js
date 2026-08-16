@@ -354,19 +354,32 @@ export function renderCleaning(renderer, dt){
      cuts, so this reads as the operator leaning in and sitting up again.
 
      The push-in is live from the FIRST frame rather than triggered by the hand
-     going down, and it is held for a moment between strokes. The skin position
-     under the pointer is solved against the live camera, so a camera easing
-     while a hand is on the arm would drag the pad across the skin on its own:
-     the move has to be finished before any scrubbing starts, and must not
-     start again between one stroke and the next. */
+     going down, and it is held for a moment between strokes so the camera does
+     not bob in and out while the learner works.
+
+     WHAT USED TO BE HERE AS WELL. This step also enforced, locally, that the
+     camera must not ease while a hand is on the arm — because the skin point
+     under the pointer is solved against the live camera, so the move would
+     drag the pad across the skin on its own. That is not a cleaning problem;
+     it is a property of the pointer solve, and every gesture in the game has
+     it. It is bench/handFraming.js's job now, for all of them, which is why
+     this asks through `frameFor` rather than calling fitCamera itself: the
+     runtime decides WHAT to look at, the hand camera decides WHEN it may
+     move. */
+  ctx.view.hold(ctx.down ? "swab" : "none");
   if(ctx.down) ctx.liftedAt = 0;
   else if(!ctx.liftedAt) ctx.liftedAt = ctx.frame;
   const settling = ctx.liftedAt && (ctx.frame - ctx.liftedAt) < 45;
   const want = (ctx.down || settling || !ctx.state.strokes) ? "scrub" : "prep";
-  if(want !== ctx.beat || Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){
+  if(want !== ctx.beat){
     ctx.beat = want;
+    ctx.view.frameFor(want === "scrub" ? scrubFraming(ctx.site) : "prep");
+  }
+  if(Math.abs(aspect - ctx.lastAspect) > 0.01 || ctx.frame % 30 === 0){
+    // A resize or a panel re-layout is not a beat change: re-fit the framing
+    // that is already current, rather than asking for a new one.
     ctx.view.fitCamera(aspect, measureObstruction(renderer),
-      want === "scrub" ? scrubFraming(ctx.site) : "prep");
+      ctx.beat === "scrub" ? scrubFraming(ctx.site) : "prep");
     ctx.lastAspect = aspect;
   }
   // everything the pointer marked dirty since the last frame, once

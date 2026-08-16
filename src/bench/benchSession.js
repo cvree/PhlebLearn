@@ -33,6 +33,7 @@
 import * as THREE from "three";
 import { buildArmScene } from "../venipuncture/arm/armScene.js";
 import { FRAMING_FOR_MODE } from "../venipuncture/arm/benchFramings.js";
+import { createHandCamera } from "./handFraming.js";
 
 let bench = null;
 
@@ -68,6 +69,11 @@ function open(arm){
     condition: (arm || {}).condition || null,
     leases: new Set(),
     mode: null,
+    /* One camera for the encounter, not one per lease. It carries what is in
+       the hand and whether a gesture is in progress, both of which outlive any
+       single mode — and a stale one would be exactly the sort of bug that only
+       shows up on the second patient. See bench/handFraming.js. */
+    camera: createHandCamera(view),
   };
   return bench;
 }
@@ -77,6 +83,21 @@ export function benchIsOpen(){ return !!bench; }
 
 /** The live bench view, or null. For code that must not create one. */
 export function peekBench(){ return bench ? bench.view : null; }
+
+/* =========================================================================
+   THE HAND, AS THE COMPOSITION ROOT SEES IT.
+
+   `armScene.js` re-solves the skin point under the pointer against the LIVE
+   camera every frame, so a camera that eases while a finger is pressed drags
+   that finger across the arm — the hand does not move, the world moves under
+   it, and the stroke is recorded somewhere the learner never touched.
+
+   Rather than asking ten runtimes each to remember that, the one place that
+   already knows when a gesture starts and ends says so: main.js's canvas
+   pointer wiring. A framing requested in between is held until the hand is up.
+   ========================================================================= */
+export function benchHandDown(){ if(bench) bench.camera.down(); }
+export function benchHandUp(){ if(bench) bench.camera.up(); }
 
 /**
  * Takes a lease on the encounter's bench, building it if this is the first
@@ -112,11 +133,15 @@ export function leaseBenchView(o){
   b.leases.add(lease);
   b.mode = lease.mode;
 
-  // The beat framing is a property of the MODE, declared once in
-  // benchFramings.js — and it is requested, not applied, so the camera eases
-  // there over half a second instead of cutting.
+  /* Entering a mode is the one moment the STEP still gets to say where the
+     camera looks, because the hand is empty and there is nothing else to ask.
+     From then on it is whatever the learner picks up — see handFraming.js.
+
+     Requested through the hand camera rather than applied directly, so a mode
+     that opens while a finger is still down (a section replay, a complication
+     answered mid-stroke) cannot yank the frame out from under it. */
   const framing = FRAMING_FOR_MODE[lease.mode];
-  if(framing) b.view.frameBeat(framing);
+  if(framing) b.camera.request(framing);
 
   /* The proxy. Prototype delegation rather than a copy, so armScene can grow
      a method without this file needing to know about it, and so its getters
@@ -128,6 +153,12 @@ export function leaseBenchView(o){
   proxy.benchProp = function(propKey, factory){ return benchProp(propKey, factory); };
   proxy.getBenchProp = function(propKey){ return b.props.has(propKey) ? b.props.get(propKey).value : null; };
   proxy.dropBenchProp = function(propKey){ dropBenchProp(propKey); };
+  /* What is in the hand, and therefore what the camera is watching. Every
+     runtime reaches it through its own view, so none of them needs to know
+     the bench exists. */
+  proxy.hold = function(tool){ b.camera.hold(tool); };
+  proxy.frameFor = function(name){ b.camera.request(name); };
+  Object.defineProperty(proxy, "handCamera", { value: b.camera, enumerable: false });
   return proxy;
 }
 

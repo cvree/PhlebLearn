@@ -916,6 +916,9 @@ export function adjustTension(delta){
 
 export function renderTourniquet(renderer, dt){
   if(!ctx) return false;
+  // What the camera is following: the band, while an end of it is being carried round the arm.
+  // See bench/handFraming.js — idempotent, so this is free per frame.
+  ctx.view.hold(ctx.drag ? "band" : "none");
   const step = dt || 0.016;
   const aspect = viewportAspect(renderer);
   ctx.frame++;

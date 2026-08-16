@@ -621,9 +621,14 @@ export function buildArmScene(o){
    * makes the encounter feel like one continuous session rather than a
    * sequence of screens.
    */
-  function frameBeat(name){
-    const f = FRAMINGS[name];
-    if(!f || f === rig.framing) return;
+  function frameBeat(focus){
+    /* A named beat, or a framing computed on the spot — the scrub's is
+       site-specific and cannot be a constant (see benchFramings' scrubFraming).
+       A name that is already current is a no-op; a computed framing is a fresh
+       object every call, so its caller owns the dedupe. */
+    const f = typeof focus === "string" ? FRAMINGS[focus] : focus;
+    if(!f) return;
+    if(typeof focus === "string" && f === rig.framing) return;
     rig.framing = f;
     fitCamera(rig.lastAspect, rig.lastOb, f);
   }
