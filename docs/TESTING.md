@@ -436,6 +436,21 @@ npm run build && npx vite preview --port 4175 --base /PhlebLearn/ &
 PW_CHROMIUM_PATH=... node scripts/playDraw.mjs /tmp/play
 ```
 
+### `scripts/checkSteps.mjs` — every step, every mode
+
+Opens all seventeen steps in both modes for both procedures — sixty-eight
+combinations — toggles each step's view, and fails on any page error or any
+stage that rendered nothing.
+
+It exists because a template literal referencing an out-of-scope variable threw
+inside one coach's render, took the whole panel with it, and left the stage
+empty. The build does not catch that (the code is valid) and the unit suite
+does not render the coaches, so it surfaced as eleven failures across two
+unrelated browser suites — a long way from the one-word cause. This finds it in
+about a minute.
+
+Run it after any change that touches a `*Coach.js` template.
+
 ### `scripts/checkOverflow.mjs` — the layout scan
 
 Five viewport sizes × eight screens, asserting nothing escapes the panel
