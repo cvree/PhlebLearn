@@ -105,7 +105,7 @@ function controlsHTML(state, guided, vessels){
         </select>
       </label>
     </fieldset>
-    ${tracesHTML(state)}
+    ${tracesHTML(state, guided)}
   </div>`;
 }
 
@@ -138,7 +138,7 @@ const FEEL_SAID = {
    never teaches it. See palpationRuntime.js's isChoosable(). */
 const CHOOSABLE = ["vein", "rolling", "flattened", "artery", "tendon", "nerve"];
 
-function tracesHTML(state){
+function tracesHTML(state, guided){
   const traces = state.traces || [];
   if(!traces.length){
     return `<div class="plp-traces">${guided ? `<p class="stg-help">Nothing felt yet. Press a spot above.</p>` : ""}</div>`;
