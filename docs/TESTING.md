@@ -470,6 +470,14 @@ projection.
 Do not treat that set as a regression without re-checking it the same way. Do
 treat a SEVENTH failure as real.
 
+**The crash signature.** When a Playwright assertion reports
+`Received: undefined` for a locator that plainly exists, the PAGE has gone,
+not the app: the software rasteriser is spinning one core at 300% and the
+renderer process has died under it. `butterfly.e2e`'s tourniquet test does
+this reliably here while the same interaction, driven by hand through the same
+seams, completes in under two seconds. Re-run it on a machine with a GPU
+before believing it.
+
 `tests/bench.e2e.spec.js` is flaky here in both directions — a run at `6c2f18d`
 failed two tests, a run of this build failed one, and they were not the same
 tests. Re-run it before believing any single result.
