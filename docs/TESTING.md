@@ -445,17 +445,29 @@ were crops rather than a layout bug.
 
 ## Known-bad on this machine
 
-`tests/assembly.e2e.spec.js` fails ten of its nineteen tests here, and failed
-**the identical ten** at the commit before the assembly rewrite — verified by
-stashing and re-running the whole file. They are environmental: this runner has
-no GPU, the software rasteriser renders this scene at about three frames a
-second, and the tests that fail are the ones whose assertions depend on precise
-screen↔bench projection.
+`tests/assembly.e2e.spec.js` fails **six** of its nineteen tests here — all six
+in the `uncap` group — and fails the identical six at `6c2f18d`, the commit
+before any of the rebuild. Verified by checking out that commit and running the
+whole file under the same config. They are environmental: this runner has no
+GPU, and the six are the ones whose assertions depend on precise screen↔bench
+projection.
 
 Do not treat that set as a regression without re-checking it the same way. Do
-treat any ELEVENTH failure as real.
+treat a SEVENTH failure as real.
 
-`playwright.config.js` passes `--enable-unsafe-swiftshader --use-gl=angle
---use-angle=swiftshader`, without which Chromium here silently refuses a WebGL
-context and every step falls back to its accessible controls path — which looks
-exactly like a broken 3D gesture and is not one.
+`tests/bench.e2e.spec.js` is flaky here in both directions — a run at `6c2f18d`
+failed two tests, a run of this build failed one, and they were not the same
+tests. Re-run it before believing any single result.
+
+### The flag that lied
+
+`playwright.config.js` passes `--enable-unsafe-swiftshader` and nothing else.
+That flag PERMITS a software WebGL context on a GPU-less runner; without it,
+Chromium refuses one and every step falls back to its accessible controls path,
+which looks exactly like a broken 3D gesture and is not one.
+
+**Do not add `--use-gl=angle --use-angle=swiftshader`.** Forcing that backend
+changes the projection the gestures are measured against: the tourniquet's
+one-stroke wrap went from three passes out of three to three failures out of
+three on an unchanged build, and assembly's known-bad count went from six to
+ten. The first version of this document recorded ten for exactly that reason.
