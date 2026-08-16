@@ -413,3 +413,20 @@ test("a press with nowhere attached records the feel but leaves no mark", ()=>{
   assert.equal(s.felt["median-cubital"], true);
   assert.equal(distinctSpots(s), 0);
 });
+
+test("the artery can be committed to, because that lesson has to be reachable", ()=>{
+  // palpationRules.js has a blocking `choseArtery` issue precisely so a
+  // learner who marks a pulsing vessel is TOLD, in words, why that is the one
+  // thing you must never do. An interaction that makes the mistake unreachable
+  // never delivers it — and this game's rule is that the unsafe action is
+  // equally available and equally easy, then recorded.
+  const s = felt("brachial-artery", 0.95);
+  assert.equal(s.traces.length, 1);
+  assert.equal(s.traces[0].feel, FEEL.ARTERY);
+  assert.equal(s.traces[0].vesselId, "brachial-artery");
+
+  chooseVessel(s, s.traces[0].vesselId, { x: s.traces[0].x, z: s.traces[0].z });
+  const r = evaluatePalpation(s, V);
+  assert.equal(r.ready, false, "and it is blocked, loudly");
+  assert.ok(r.blocking.some(i => i.code === "choseArtery"));
+});

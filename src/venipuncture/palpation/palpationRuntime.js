@@ -287,9 +287,21 @@ const TRACE_INK = {
 /** Two seconds on a spot you have already felt is a decision. */
 const COMMIT_HOLD_S = 2.0;
 
-/** Only something you could actually draw from can be committed to. */
+/**
+ * Anything the finger identified as a STRUCTURE can be committed to —
+ * including the artery, and including the tendon.
+ *
+ * The first version of this gated commitment to veins only, which quietly
+ * deleted the most important lesson in the step: `palpationRules.js` has a
+ * blocking `choseArtery` issue precisely so that a learner who marks a pulsing
+ * vessel is told, in words, why that is the one thing you must never do. An
+ * interaction that makes the mistake unreachable never delivers it.
+ *
+ * It is also the rule the whole game runs on. The unsafe action is equally
+ * available and equally easy; nothing is blocked, everything is recorded.
+ */
 function isChoosable(feel){
-  return feel === FEEL.VEIN || feel === FEEL.ROLLING || feel === FEEL.FLATTENED;
+  return feel !== FEEL.NOTHING && feel !== FEEL.SOFT;
 }
 
 /** Drops a mark where a press happened, or brightens the one already there. */

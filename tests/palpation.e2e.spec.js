@@ -74,6 +74,35 @@ async function liftOff(page){
 }
 
 /**
+ * Commits to a site by PRESSING AND HOLDING on one of the learner's own
+ * traces, which is the only way a site is chosen now.
+ *
+ * There is no "Mark this spot" button any more, in either input path. The old
+ * one committed to wherever the finger had last happened to be, whether the
+ * learner had assessed it or not — which is exactly the divorce between
+ * palpating and marking that the step was rebuilt to remove.
+ *
+ * The hold runs on the SCENE's clock, which a software renderer runs slower
+ * than the wall, so this waits on the state rather than on a fixed duration.
+ */
+async function holdToCommit(page, id){
+  const p = await overVessel(page, id);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  for(let i = 0; i < 60; i++){
+    // a hair of movement each tick: a finger resting on skin is never still,
+    // and it keeps the runtime's own dwell/press model running
+    await page.mouse.move(p.x + (i % 2 ? 0.4 : -0.4), p.y);
+    await page.waitForTimeout(120);
+    const s = await snapshot(page);
+    if(s.chosenId) break;
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  return p;
+}
+
+/**
  * Presses until the touch reaches a given depth, rather than for a given
  * number of milliseconds.
  *
@@ -254,10 +283,7 @@ test("marking the vein you felt passes, and teaching mode then lets the draw on"
   const ready = page.locator("#plpReady");
   await expect(ready).toBeDisabled();
 
-  await pressOver(page, "median-cubital");
-  await liftOff(page);
-  await page.locator("#plpMark").click();
-  await page.waitForTimeout(150);
+  await holdToCommit(page, "median-cubital");
 
   const snap = await snapshot(page);
   expect(snap.chosenId).toBe("median-cubital");
@@ -268,10 +294,13 @@ test("marking the vein you felt passes, and teaching mode then lets the draw on"
 
 test("marking the artery is blocked, whatever else was right", async ({ page })=>{
   await openPalpation(page, "teach");
+  /* The artery must stay REACHABLE. The rules have a blocking `choseArtery`
+     issue precisely so a learner who marks a pulsing vessel is told why that
+     is the one thing never to do; an interaction that made the mistake
+     impossible would never deliver the lesson. */
   await pressOverUntil(page, "brachial-artery", 0.68);
   await liftOff(page);
-  await page.locator("#plpMark").click();
-  await page.waitForTimeout(150);
+  await holdToCommit(page, "brachial-artery");
 
   const snap = await snapshot(page);
   expect(snap.chosenId).toBe("brachial-artery");
@@ -282,10 +311,7 @@ test("marking the artery is blocked, whatever else was right", async ({ page })=
 
 test("the site marked carries into the encounter for the steps that follow", async ({ page })=>{
   await openPalpation(page, "teach");
-  await pressOver(page, "median-cubital");
-  await liftOff(page);
-  await page.locator("#plpMark").click();
-  await page.waitForTimeout(150);
+  await holdToCommit(page, "median-cubital");
   await page.locator("#plpReady").click();
   await page.waitForTimeout(400);
 
@@ -301,18 +327,23 @@ test("the controls path presses real places and cannot skip feeling either", asy
   await page.locator("#plpView").click();
   await expect(page.locator(".plp-controls")).toBeVisible();
 
-  // you cannot commit to something you have not pressed
-  await expect(page.locator('[data-choose="median-cubital"]')).toBeDisabled();
+  /* There is nothing to commit to until something has been felt. The old
+     controls listed every vessel with a disabled Choose button beside it,
+     which told you the answer before you had looked; the list is now built
+     from the learner's own traces, so before the first press there are none. */
+  await expect(page.locator("[data-choose-trace]")).toHaveCount(0);
 
   await page.locator('[data-press="median-cubital"]').click();
   await page.waitForTimeout(200);
-  await expect(page.locator('[data-choose="median-cubital"]')).toBeEnabled();
+  const choose = page.locator("[data-choose-trace]").first();
+  await expect(choose).toBeVisible();
 
-  await page.locator('[data-choose="median-cubital"]').click();
+  await choose.click();
   await page.waitForTimeout(200);
 
   const snap = await snapshot(page);
   expect(snap.felt).toContain("median-cubital");
+  expect(snap.traces.length).toBeGreaterThan(0);
   expect(snap.ready).toBe(true);
   await expect(page.locator("#plpReady")).toBeEnabled();
 });
@@ -344,8 +375,7 @@ test("a scored shift lets a bad site through and carries it forward", async ({ p
   await openPalpation(page, "play");
   await pressOverUntil(page, "biceps-tendon", 0.68);
   await liftOff(page);
-  await page.locator("#plpMark").click();
-  await page.waitForTimeout(150);
+  await holdToCommit(page, "biceps-tendon");
 
   const ready = page.locator("#plpReady");
   await expect(ready).toBeEnabled();

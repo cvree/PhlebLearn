@@ -132,7 +132,11 @@ const FEEL_SAID = {
   soft:      "nothing under here",
   nothing:   "nothing under here",
 };
-const CHOOSABLE = ["vein", "rolling", "flattened"];
+/* Anything the finger identified as a structure, artery and tendon included.
+   The rules have a blocking `choseArtery` issue so that marking a pulsing
+   vessel is TOLD to the learner; a control that makes the mistake unreachable
+   never teaches it. See palpationRuntime.js's isChoosable(). */
+const CHOOSABLE = ["vein", "rolling", "flattened", "artery", "tendon", "nerve"];
 
 function tracesHTML(state){
   const traces = state.traces || [];
@@ -151,7 +155,7 @@ function tracesHTML(state){
           <span class="plp-trace-said">${esc(FEEL_SAID[t.feel] || t.feel)}</span>
           ${can
             ? `<button class="stg-mini" data-choose-trace="${i}">${chosen ? "✓ drawing from here" : "Draw from here"}</button>`
-            : `<span class="plp-trace-no">not a draw site</span>`}
+            : `<span class="plp-trace-no">nothing under here</span>`}
         </li>`;
       }).join("")}
     </ul>

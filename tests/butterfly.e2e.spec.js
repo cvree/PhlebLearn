@@ -149,7 +149,9 @@ test("palpation offers the dorsal-hand spots, not the antecubital ones", async (
 test("choosing a hand vein sets the site the rest of the draw inherits", async ({ page }) => {
   await openAs(page, "palpate", "final", "butterfly-hand");
   await page.locator('[data-press="dorsal-metacarpal-3"]').click();
-  await page.locator('[data-choose="dorsal-metacarpal-3"]').click();
+  // Choosing is an action on one of the learner's own traces now — there is
+  // no way to commit to a spot that was never pressed.
+  await page.locator("[data-choose-trace]").first().click();
   await page.locator("#plpReady").click();
   await expect(page.locator(".cln-coach")).toBeVisible({ timeout:10000 });   // cleaning's coach
 });
