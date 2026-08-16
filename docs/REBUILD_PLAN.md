@@ -1,11 +1,36 @@
 # The Continuous Draw — rebuild plan
 
-**Status:** design only. Nothing in this document has been implemented. No
-source file was changed to produce it.
-
 **What it covers:** the nine changes asked for after the first playable review,
 worked back to root causes in the current code, and turned into a sequenced
 build with acceptance criteria that can be failed.
+
+## Status — what has been built
+
+| # | Item | State |
+|---|---|---|
+| 1 | Tray resting heights, tray-drag, staging camera | **shipped** |
+| 2 | Patient body: spine, neck, face on the skull, hair | **shipped** |
+| 3 | Modes → Learn / Play; Bench mode deleted; save migration | **shipped** |
+| 4 | Clock-in redesign; "Make it harder" into Settings | **shipped** |
+| 5 | Collection 3D by default; the toggle unpersisted | **shipped** |
+| 6 | The gesture grammar — `bench/seating.js` | **shipped** |
+| 7 | Assembly rebuilt on the axial-drag grammar | **shipped** |
+| 8 | Palpation traces replace the Mark button | **shipped** |
+| 9 | The HUD, and implicit advancement in Play | **shipped** |
+| 10 | Camera follows what is in the hand | not started |
+| 11 | The whole kit live at once — dispatcher inversion | not started |
+| 12 | Step 1 deleted; the arrival room | not started |
+| — | Butterfly in 3D | deferred, as planned |
+
+Items 10–12 are the three largest and riskiest in the plan and remain as
+written below. Item 11 in particular should still be built behind a flag, with
+the two-lease bench test written first.
+
+Three things were found while building that this plan did not predict, and all
+three are in the commit log rather than here: the "use controls" toggle was
+persisted to the save by **eleven** steps rather than one; the face's fixed ink
+made a dark-skinned patient faceless; and gating the chrome above the stage
+left every step's own coach still printing its gesture how-to underneath it.
 
 Read `docs/ARCHITECTURE.md` first — this plan assumes the module layering, the
 bench lease protocol, and the five-file shape of a step directory, and it is

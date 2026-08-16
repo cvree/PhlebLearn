@@ -18,8 +18,8 @@ game/  (gameState, saveSystem, progression, encounter, scoring, dialogue,
         │
 audio/  (audioManager, procedural — depend only on game/gameState)
         │
-bench/  (benchSession, assist, motion, haptics — the feel layer; depends on
-        game/ + rendering/ + venipuncture/arm only)
+bench/  (benchSession, assist, motion, haptics, seating — the feel layer;
+        depends on game/ + rendering/ + venipuncture/arm only)
         │
 rendering/  (scene, renderer, lighting, camera, materials, assetLoader, modelRegistry)
         │
@@ -30,6 +30,7 @@ venipuncture/  (procedureState, questions, clinicalRules, steps,
                encounterState, sections, viewport = the shared canvas
                measurement every runtime frames its camera from,
                stepRuntimes = the table main.js dispatches through,
+               autoAdvance = what ends a step in Play,
                one directory per converted step —
                staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
                assembly/*, insert/*, collection/*, withdrawal/*, postdraw/*,
@@ -517,3 +518,131 @@ introduced by this branch) and non-functional:
 
 Both are allowlisted explicitly in `tests/smoke.spec.js` with a comment
 pointing back here.
+
+
+## Two modes, and what each one is allowed to say
+
+The game shipped with four — Learn, Practice, Final Practical and the Bench —
+which is four answers to the two questions a learner actually arrives with:
+*teach me* and *test me*. `game/gameState.js`'s `MODES` is now `{LEARN, PLAY}`,
+and `reveal()` is still the single descriptor every coach and panel reads.
+
+Practice's two good ideas moved into Learn rather than being deleted: section
+feedback and section replay are TEACHING, not testing, so they belong where the
+teaching is. `resetFromSection()` and `sections.js` are unchanged and now serve
+Learn only.
+
+**`src/bench/` is not the Bench.** The mode is gone; that directory is the
+scene-lease layer (`benchSession.js`) and the feel layer (`assist`, `motion`,
+`haptics`, `seating`) that one-scene-per-encounter is built on. Deleting it
+would rebuild the patient's arm between every step again, which is the exact
+problem the redesign exists to have fixed.
+
+`reveal()` gained one channel, `stepChrome`, and the two modes are now
+opposites on every channel it describes — `tests/modes.spec.js` asserts that
+directly, so a channel both modes open is a channel that distinguishes nothing
+and belongs in neither descriptor.
+
+### Play has nothing to read
+
+`stepChrome:false` removes the heading, the step counter, the progress bar and
+the teaching box, and `ui/panels.js`'s `hudHTML()` puts a four-value strip
+there instead: who this is, how many tubes are done, whichever clock is
+clinically live, and what is currently flowing. Each appears only while it
+means something.
+
+That was not sufficient on its own, and the way it failed is worth recording:
+gating the chrome ABOVE the stage left every step's own coach still printing
+its five-line gesture how-to underneath it. With two modes, `guided` fully
+determines the mode, so the non-guided branch of every `*Coach.js` **is** Play
+— the how-to renders only in Learn, and the standing "assessed after the
+patient" note is gone entirely.
+
+`scripts/playDraw.mjs` is the acceptance check, and it asserts the WHOLE panel
+rather than the chrome, for exactly that reason.
+
+## What ends a step
+
+`venipuncture/autoAdvance.js`. In Learn a step ends when the learner presses a
+button; in Play it ends because the action that ends it happened.
+
+Steps report, the module decides — the same division every other layer runs on.
+Each step's own `draw()` calls `reportStepReady(key, ready, finish)` at the
+point readiness is already known, `main.js`'s `animate()` ticks it next to the
+complication watcher (for the same reason: what it is watching does not belong
+to whichever screen is up), and `renderCurrentStep()` clears it on entry so the
+abandoned draw, the mid-draw complication and the section replay all get that
+for free.
+
+Three invariants, each of which is a bug in a game that tried this without them
+— see `tests/autoAdvance.spec.js`:
+
+- **Completion is not permission.** It asks whether the ending action happened,
+  never whether it was done well. A step done badly advances and is graded
+  badly. A mode that refused to move on until you got it right would be Learn
+  with the teaching removed.
+- **It settles first.** A band is "secured" the instant the loop goes under,
+  while the strap is still springing into place.
+- **It never fires on the frame a step opens.** A one-tube draw has no tube to
+  switch to. A step skipped without ever being seen is indistinguishable from a
+  broken one.
+
+Two steps deliberately keep their control in every mode — the introduction and
+preparing the work area. Nothing happens that means "my tray is ready"; that is
+a judgement, not an event.
+
+## One gesture for every seating action
+
+`bench/seating.js`. Three steps used three unrelated gestures for the same
+physical act, the worst of which asked the learner to CIRCLE the pointer around
+a hub two and a half times — which corresponds to nothing a hand does, since
+pushing a needle onto a hub and turning it are one motion.
+
+> Pick it up. Bring it to where it goes. Push it home along its own axis.
+
+Metres of axial drag in, turns out, through an authored resistance curve: free
+until nearly secure, stiffening to finger-tight, then a wall that takes about
+seven times the travel to pass. Backing out is deliberately free — undoing a
+mistake must never be harder than making it, or the one recovery from a
+cross-thread becomes a dead end.
+
+`bench/motion.js`'s prohibition holds: no dynamic rigid-body simulation, ever.
+This is a curve, which is why the feel of the game's central gesture is
+unit-testable rather than a thing only a person can judge.
+
+**The model is untouched.** `turn()` still takes turns; every threshold, the
+bevel derivation and the cross-thread bind are the same. Only what feeds
+`turn()` changed. And assist may help a learner hit what they meant but never
+decides what they meant, so the approach ANGLE stays entirely theirs.
+
+## Where things rest
+
+`staging/stagingLayout.js`'s `supportHeight()` and `restingY()`, plus a
+`restOffset` measured once from each model's own bounding box at registration.
+
+This exists because the first playable had four separate write paths placing
+items at `COUNTER_Y` (0) while `buildTray()` builds a floor whose top surface
+is 12 mm up — so everything staged on the tray sat 12 mm inside it, and
+anything flatter than that vanished completely. The rack escaped only because
+one of the four paths hardcoded `y: 0.018` for it, which is the shape of the
+defect: four writers, one of whom knew about one surface.
+
+The offset is SIGNED: a model authored with its geometry above its own origin
+(the coiled tourniquet is 4.35 mm up) is seated lower so it touches. Deriving
+it from the mesh rather than tabulating it means a GLB that later replaces a
+procedural builder is seated correctly with no code change.
+
+## Headless geometry
+
+`rendering/labelTexture.js` and `patientBody.js`'s `softDotTexture()` degrade
+when there is no `document`, returning a blank texture instead of throwing.
+
+That is not a convenience. Every equipment model builds its printed markings
+through that file, so without it the whole supply catalog fails to build under
+`npm test` and the game's REAL geometry — how tall a tube is, how deep a tray's
+floor is, where a face feature sits on a skull — was permanently out of reach
+of anything but a screenshot. Which is why the 12 mm bug above could only ever
+have been found by looking at one.
+
+`tests/patientBody.spec.js` and `tests/staging.spec.js` now assert against the
+actual meshes.

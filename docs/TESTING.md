@@ -406,3 +406,56 @@ The difficulty tests assert that levels 0 and 1 are ordinary arms, that the
 keys difficulty adds are exactly keys `applyPatientVariation()` already
 understands, and that each one demonstrably changes the limb — a rolling vein
 really is more compliant, a small one really is narrower.
+
+
+## The two acceptance scripts
+
+Neither is part of `npm test` or `npm run test:e2e`. Both drive the real
+production build and answer a question a unit test cannot.
+
+### `scripts/playDraw.mjs` — the no-instructions test
+
+> A CPT-1 who has never seen this game completes a full Play draw, correctly,
+> having read zero words of instruction.
+
+Walks a Play draw doing only things to OBJECTS — no confirm button pressed, no
+step counter read — and asserts:
+
+- the panel carries a HUD, not the chrome of a lesson;
+- **the whole panel**, not just the part above the stage, stays under 140
+  characters with no gesture instructions in it;
+- the draw advances because the action happened: the band goes on and the draw
+  moves to palpation; a vein is committed to and it moves to antisepsis.
+
+The whole-panel check is there because the first version only looked above the
+stage. It passed while the tourniquet coach was still printing five lines on
+how to tie a band, directly underneath.
+
+```
+npm run build && npx vite preview --port 4175 --base /PhlebLearn/ &
+PW_CHROMIUM_PATH=... node scripts/playDraw.mjs /tmp/play
+```
+
+### `scripts/checkOverflow.mjs` — the layout scan
+
+Five viewport sizes × eight screens, asserting nothing escapes the panel
+sideways and the page never scrolls horizontally. Written to chase the clipped
+panels in the review screenshots; it found none, which is how we learned those
+were crops rather than a layout bug.
+
+## Known-bad on this machine
+
+`tests/assembly.e2e.spec.js` fails ten of its nineteen tests here, and failed
+**the identical ten** at the commit before the assembly rewrite — verified by
+stashing and re-running the whole file. They are environmental: this runner has
+no GPU, the software rasteriser renders this scene at about three frames a
+second, and the tests that fail are the ones whose assertions depend on precise
+screen↔bench projection.
+
+Do not treat that set as a regression without re-checking it the same way. Do
+treat any ELEVENTH failure as real.
+
+`playwright.config.js` passes `--enable-unsafe-swiftshader --use-gl=angle
+--use-angle=swiftshader`, without which Chromium here silently refuses a WebGL
+context and every step falls back to its accessible controls path — which looks
+exactly like a broken 3D gesture and is not one.
