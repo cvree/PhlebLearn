@@ -1061,6 +1061,78 @@ Net: eleven screens per patient became five, and the three categories the
 deleted screens used to measure are now scored from real technique — see
 `deriveChoices()` in `game/scoring.js`. 14 unit tests.
 
+## Finalisation pass ✅ complete (`claude/product-polish-refinement-c0s2rs`)
+
+A "make it feel finished" pass. It found two faults that made the browser
+suite lie about the product, three the product itself was committing at the
+player, and a set of first-impression gaps.
+
+### The suite was not testing what it said it was
+
+`tests/assembly.e2e.spec.js` went from **2 of 19 passing to 19 of 19** with
+nothing about assembly changed. Two independent faults, one symptom — a drag
+that runs, moves no camera, throws nothing, and leaves the state untouched:
+
+- **`gotoProcedureStep` never released step 0's lease.** `renderCurrentStep`
+  runs a step's cleanup from `advance()` and nowhere else, so setting `c.step`
+  by hand and re-rendering left the supply cart's session live behind every
+  step a test opened. Staging is first in `STEP_RUNTIMES`; Learn offers a
+  pointerdown to the first live runtime only; the cart therefore claimed every
+  gesture aimed at anything else, and the claim is exactly why the camera
+  stayed still. `jumpToStep` had always released it first.
+- **`settleBench` never waited.** Its `waitForFunction` predicate was `async`,
+  because every seam function is, and a returned Promise is truthy — so the
+  wait finished on its first poll. It now runs its sampling loop in the page,
+  and waits on the projection of a fixed limb point holding still rather than
+  on `cameraSettled`, which goes true in the window before the coach panel's
+  layout moves the camera's target again: measured at up to **52px** of drift
+  after the flag first went true.
+
+`docs/TESTING.md`'s "known-bad on this machine" recorded six of those as
+environmental, verified by reproducing them at an older commit. The
+reproduction was sound; the conclusion was not. *Reproducing a failure at an
+older commit proves it is not a regression — it does not prove it is
+environmental.* That entry is now corrected.
+
+### What the product was doing at the player
+
+- **A gold medal for a streak of nought.** Every reading beats an unset
+  record, and on a first draw every record is unset, so a first attempt with a
+  rejected tube reached the debrief and was congratulated with "🥇 Longest
+  flawless streak — new personal best" for a streak of zero. A
+  higher-is-better record of zero is not a record. `personalBests.js` had no
+  tests; it has thirteen.
+- **The coach said the same sentence twice.** Six steps build their message
+  block identically, and with nothing wrong and the step not yet ready the
+  status box falls back to the next action — which the line directly below
+  then printed again, verbatim, in a different colour.
+- **Four em dashes had lost their character** and printed `", "`, so a shift
+  with no badges showed a bare comma under the word Badges.
+
+### First impressions
+
+- **Nothing told a new player the arm is a thing you drag**, or that every
+  step can be worked from buttons instead, or which of the two modes to start
+  in. "How this works" is four facts, once, over the clock-in screen, and in
+  Settings after that. Held back under `?e2e=1` for the same reason the seam
+  holds back a random patient.
+- **Play carried the pulsing CTA on an empty save**, walking a beginner into
+  the mode that deliberately says nothing at all. Learn is the call to action
+  until there is something on the save.
+- **Three CDN scripts blocked HTML parsing.** GSAP, Lenis and Vanta are
+  decoration and every one is guarded, but as synchronous scripts nothing
+  painted — not even the loading screen — until three round trips had finished
+  or failed. `defer` keeps their order and stops them standing in front of the
+  first frame.
+- **The tab had no icon** and a shared link had no title. Both are in the head
+  now; the icon is an inline SVG, because a project page under `/PhlebLearn/`
+  is exactly where a file reference gets the base path wrong.
+- **`viewport-fit=cover` was set and no inset was honoured**, so on a notched
+  phone the top bar sat under the status bar and the panel under the home
+  indicator. Every fixed edge adds `env(safe-area-inset-*)` now.
+- **The overlays were modal to a mouse and not to a keyboard.** They take
+  focus, keep Tab inside, and give it back to whatever opened them.
+
 ### Still open
 
 Honest list, so the next branch does not have to rediscover it:
@@ -1073,3 +1145,9 @@ Honest list, so the next branch does not have to rediscover it:
   the light palette in both.
 - **Complication visuals stop at the arm.** The patient's own body in the room
   scene does not slump when they faint; the arm does the whole job.
+- **The bundle is one 800 kB chunk** besides three.js. Vite says so on every
+  build. Nothing in the game is lazy except by accident, and the two dynamic
+  imports it does have are also imported statically, so they never split.
+- **`public/assets/audio/lobby.mp3` still has unverified provenance**, flagged
+  in `docs/THIRD_PARTY_LICENSES.md`. `public/assets/icons` and
+  `public/assets/textures` are empty directories.

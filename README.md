@@ -111,7 +111,7 @@ npm run dev        # http://localhost:5173/
 npm run build      # → dist/
 npm run preview    # serves the production build
 
-npm test           # 600+ unit tests, no browser needed
+npm test           # 800+ unit tests, no browser needed
 npm run test:e2e   # Playwright, against the production build
 npm run verify     # all three, in order — run before merging
 ```

@@ -79,6 +79,14 @@ leaf (like `dom.js`) — it must never import from `panels.js`/`settings.js`/
 `coachLayer.js`, precisely so that `game/`, `world/`, and `venipuncture/`
 modules can call `toast()` for user feedback without an upward import.
 
+**`ui/overlayFocus.js` is the same case, and stricter**: it imports nothing at
+all. It owns what a keyboard sees when one of the four full-screen overlays —
+Settings, the shop, the sticker book, "How this works" — opens and closes:
+focus moves into the card, Tab stays inside it, and closing gives focus back
+to whatever opened it. Any overlay added later gets it by calling
+`overlayOpened()` after showing and `overlayClosed()` after hiding; nothing
+else in the app should be reaching for `document.activeElement`.
+
 ## Physical gameplay: how a step becomes a real interaction
 
 `venipuncture/accessibilityFallback.js` is the **driver**. For each step id in
