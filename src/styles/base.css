@@ -3,6 +3,21 @@
   --ink:#3a2f55; --ink-soft:#6a5f82; --line:#e6dcf3; --card:#fffdfe;
   --plum:#6b5bd2; --pink:#ff9cc0; --blue:#5aa9f0; --mint:#34b27b; --gold:#f3b53c; --bad:#e06a8b;
   --shadow:0 10px 30px rgba(80,60,140,.18);
+
+  /* The viewport meta opts into `viewport-fit=cover`, so on a notched phone
+     the page really does extend under the status bar, the home indicator and
+     (in landscape) the rounded corners. Every fixed edge below adds these,
+     which are 0px on every device that has no such inset. */
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-r:env(safe-area-inset-right,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px);
+
+  /* The floating buttons stack down one edge. One row height, so a button can
+     say which row it is on (--fb-row) and nothing has to hardcode a pixel
+     offset per button. */
+  --fb-top:54px;
+  --fb-step:38px;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;font-family:Nunito,-apple-system,system-ui,"Segoe UI",sans-serif;color:var(--ink);overscroll-behavior:none}
@@ -10,7 +25,8 @@ html,body{margin:0;height:100%;font-family:Nunito,-apple-system,system-ui,"Segoe
 canvas{display:block;width:100%;height:100%;touch-action:none}
 
 .topbar{position:absolute;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;justify-content:space-between;
-  padding:10px 12px;pointer-events:none;z-index:5}
+  padding:calc(10px + var(--safe-t)) calc(12px + var(--safe-r)) 10px calc(12px + var(--safe-l));
+  pointer-events:none;z-index:5}
 .badgechip{pointer-events:auto;background:rgba(255,253,254,.92);border:2px solid var(--line);border-radius:14px;
   padding:6px 10px;font-weight:900;font-size:13px;box-shadow:var(--shadow);display:flex;gap:10px;align-items:center}
 .badgechip span{white-space:nowrap}
@@ -20,14 +36,34 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 #coinChip:hover{transform:translateY(-1px)}
 @media(max-width:560px){.subbrand{display:none}.titlechip{font-size:12.5px}.badgechip{gap:6px;padding:6px 8px}}
 
-.disclaimer{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);z-index:5;
+.disclaimer{position:absolute;bottom:calc(8px + var(--safe-b));left:50%;transform:translateX(-50%);z-index:5;
   background:rgba(255,253,254,.86);border:1px solid var(--line);border-radius:10px;padding:4px 10px;
   font-size:10.5px;font-weight:700;color:var(--ink-soft);max-width:92%;text-align:center;pointer-events:none}
 
 .floatbtn{position:absolute;z-index:6;pointer-events:auto;border:none;background:rgba(255,253,254,.92);border:2px solid var(--line);
-  border-radius:12px;padding:8px 10px;font-weight:900;font-size:12px;box-shadow:var(--shadow);cursor:pointer;color:var(--plum);font-family:inherit}
+  border-radius:12px;padding:8px 10px;font-weight:900;font-size:12px;box-shadow:var(--shadow);cursor:pointer;color:var(--plum);font-family:inherit;
+  top:calc(var(--safe-t) + var(--fb-top) + var(--fb-row,0) * var(--fb-step));transition:transform .08s,box-shadow .15s}
+.floatbtn.fb-right{right:calc(12px + var(--safe-r))}
+/* left edge on purpose: on a tall viewport the panel grows to 80vh and would
+   sit on top of anything stacked with the right-hand buttons. */
+.floatbtn.fb-left{left:calc(12px + var(--safe-l));z-index:7}
+.floatbtn:hover{transform:translateY(-1px);box-shadow:0 12px 32px rgba(80,60,140,.24)}
+.floatbtn:active{transform:translateY(0) scale(.97)}
+.floatbtn:focus-visible,.badgechip:focus-visible{outline:3px solid var(--plum);outline-offset:2px}
+/* A coarse pointer needs a real target: 12px of emoji in an 8px box is a miss
+   waiting to happen, and these five buttons are the game's only global chrome. */
+@media (pointer:coarse){
+  :root{--fb-step:44px}
+  .floatbtn{padding:10px 12px;min-height:40px}
+}
 
-.loading{position:absolute;inset:0;display:grid;place-items:center;z-index:30;background:linear-gradient(160deg,#eaf3ff,#fdf2f8);text-align:center;padding:20px}
+.loading{position:absolute;inset:0;display:grid;place-items:center;z-index:30;background:linear-gradient(160deg,#eaf3ff,#fdf2f8);text-align:center;
+  padding:calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b)) calc(20px + var(--safe-l));
+  opacity:1;transition:opacity .32s ease}
+/* The loading screen used to be switched off with display:none on the frame
+   the room appeared, which reads as a cut rather than an arrival. It fades,
+   and stops taking pointer events the moment the fade starts. */
+.loading.done{opacity:0;pointer-events:none}
 .loading h1{font-size:22px;margin:0 0 6px;color:var(--plum)}
 .loading p{color:var(--ink-soft);font-weight:700;max-width:340px}
 .err{color:var(--bad)}

@@ -1,9 +1,13 @@
 /* ================= PANELS: the bottom-sheet coach layer + its overlays ==== */
 .panel{position:absolute;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:2px solid var(--line);
-  border-radius:20px 20px 0 0;box-shadow:0 -8px 30px rgba(80,60,140,.18);padding:14px 16px 18px;
-  max-height:62vh;overflow:auto}
+  border-radius:20px 20px 0 0;box-shadow:0 -8px 30px rgba(80,60,140,.18);
+  /* As a bottom sheet the panel owns the bottom edge of the screen, so its own
+     padding is what keeps the last button clear of a home indicator. */
+  padding:14px calc(16px + var(--safe-r)) calc(18px + var(--safe-b)) calc(16px + var(--safe-l));
+  max-height:62vh;overflow:auto;overscroll-behavior:contain}
 @media(min-width:760px){
-  .panel{left:auto;right:14px;bottom:14px;width:380px;border-radius:18px;border:2px solid var(--line);max-height:80vh}
+  .panel{left:auto;right:calc(14px + var(--safe-r));bottom:calc(14px + var(--safe-b));width:380px;
+    border-radius:18px;border:2px solid var(--line);max-height:80vh;padding:14px 16px 18px}
 }
 .panel h2{margin:0 0 4px;font-size:18px}
 .panel .sub{margin:0 0 10px;color:var(--ink-soft);font-size:13px;font-weight:700;line-height:1.4}
