@@ -1327,7 +1327,7 @@ function renderSummary(){
     ${teaching?"":`<div class="req"><b>🕒 Turnaround Time (TAT)</b><br>
       <span class="sub">Shift TAT, clock-in to clock-out: ${shiftTAT}</span><br>
       <span class="sub">Avg per-draw TAT, bedside collection to dispatch: ${avgDrawTAT}</span></div>`}
-    <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):", "}</div>
+    <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):`<span class="sub">None yet — they arrive as you finish shifts cleanly.</span>`}</div>
     ${SHIFT.missed&&SHIFT.missed.length?`<div class="req"><b>📚 Queued for Learn Mode (${SHIFT.missed.length})</b><br><span class="sub">These are the steps you missed this shift, now lined up for review: ${SHIFT.missed.join(", ")}</span></div>`:""}
     ${sameAgainHTML(lastMode)}
     <button class="btn alt" id="again">🚪 Back to clock-in</button>
