@@ -33,7 +33,10 @@ function msgBlock(guided, ready, issue, action, readyText, hint){
               : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
                       : esc(action)}
     </div>
-    <p class="tq-next">${esc(action)}</p>`;
+    ${/* Only when the status box above is saying something ELSE. With no issue
+          and not yet ready it falls back to the next action, and printing that
+          action again directly underneath it said the same sentence twice. */
+       (ready || issue) ? `<p class="tq-next">${esc(action)}</p>` : ""}`;
 }
 
 /* =========================================================================

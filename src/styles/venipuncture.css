@@ -1,5 +1,7 @@
 /* ================= REALISTIC VENIPUNCTURE UI ============================ */
-.vp-count{font-size:12px;font-weight:800;color:var(--plum);background:#f3ecfb;border:1px solid var(--line);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:4px}
+/* white-space:nowrap because this is a pill, and a pill that wraps puts
+   "step" on one line and "1/16" on the next, in two halves of one border. */
+.vp-count{font-size:12px;font-weight:800;color:var(--plum);background:#f3ecfb;border:1px solid var(--line);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:4px;white-space:nowrap;display:inline-block}
 .vp-progress{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 2px}
 .vp-pip{width:23px;height:23px;border-radius:8px;display:grid;place-items:center;font-size:12px;background:#f1edf6;border:1.5px solid var(--line);filter:grayscale(.5);opacity:.6;transition:all .25s}
 .vp-pip.done{background:#e7f8f0;border-color:var(--mint);filter:none;opacity:1}
