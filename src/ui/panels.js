@@ -528,7 +528,9 @@ function renderSectionFeedback({ section, readings, done }){
   $("secAgain").onclick=()=>{
     sfx("click");
     const c=ENC.collect;
-    if(ENC._collectCleanup) ENC._collectCleanup();
+    // Released AND forgotten: a lease that has been torn down must not still
+    // be reachable through the slot the next step is about to write into.
+    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
     const index = resetFromSection(c, section.id);
     if(index < 0){ renderCollect(); return; }
     c.step = index;

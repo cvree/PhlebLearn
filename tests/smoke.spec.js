@@ -188,3 +188,32 @@ test("refreshing the page does not leave the application unusable", async ({ pag
   await expect(page.locator("canvas")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("an overlay takes the keyboard and gives it back", async ({ page }) => {
+  const { errors } = attachDiagnostics(page);
+  await page.goto("/");
+  await dismissHelp(page);
+  await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
+
+  /* Settings, the shop, the sticker book and the help card are modal in every
+     respect a mouse notices. Before this they were not modal to a keyboard:
+     opening one left focus on the button behind it, so the first Tab walked
+     into the game underneath. */
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#settings")).toHaveAttribute("aria-modal", "true");
+  const inside = () => page.evaluate(() =>
+    !!document.getElementById("settings").contains(document.activeElement));
+  expect(await inside()).toBe(true);
+
+  // Tab does not leave the card, in either direction
+  for(let i = 0; i < 14; i++) await page.keyboard.press("Tab");
+  expect(await inside()).toBe(true);
+  for(let i = 0; i < 4; i++) await page.keyboard.press("Shift+Tab");
+  expect(await inside()).toBe(true);
+
+  // and closing hands the keyboard back to the control that opened it
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#settings.show")).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe("settingsBtn");
+  expect(errors).toEqual([]);
+});

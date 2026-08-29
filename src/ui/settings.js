@@ -8,6 +8,7 @@ import { SS, DARK, REDUCED, setReduced, saveSS } from "../game/gameState.js";
 import { sfx } from "../audio/audioManager.js";
 import { musicOn, toggleMusic, setMusicVol, musicVolNow, updateMusicBtn } from "../audio/audioManager.js";
 import { toast } from "./notifications.js";
+import { overlayOpened, overlayClosed } from "./overlayFocus.js";
 import {
   hasUpgrade, ownedUpgradeCount, getRoomLevel, roomLevelIndex, nextRoomLevel, upgradeTag, buyUpgrade,
   stickerCount, nextMilestone, stickerTotals
@@ -95,8 +96,8 @@ export function toggleReduced(){ setReduced(!REDUCED); syncSettingsLabels(); sfx
 // sharps reach zone (see venipuncture/staging/stagingLayout.js).
 export function toggleHandedness(){ SS.handedness = SS.handedness==="left"?"right":"left"; saveSS(); syncSettingsLabels(); sfx("tap"); }
 export function toggleAssistedSnapping(){ SS.assistedSnapping = !SS.assistedSnapping; saveSS(); syncSettingsLabels(); sfx("tap"); }
-export function openSettings(){ const o=$("settings"); if(o){ o.classList.add("show"); syncSettingsLabels(); } }
-export function closeSettings(){ const o=$("settings"); if(o) o.classList.remove("show"); refreshIdle(); }
+export function openSettings(){ const o=$("settings"); if(o){ o.classList.add("show"); syncSettingsLabels(); overlayOpened(o, "Settings"); } }
+export function closeSettings(){ const o=$("settings"); if(o){ o.classList.remove("show"); overlayClosed(o); } refreshIdle(); }
 export function toggleSettings(){ const o=$("settings"); if(!o)return; o.classList.contains("show")?closeSettings():openSettings(); }
 export function toggleMusicAndSync(){ toggleMusic(); syncSettingsLabels(); }
 export function toggleThemeAndSync(){ toggleTheme(); syncSettingsLabels(); }
@@ -115,7 +116,7 @@ export function toggleThemeAndSync(){ toggleTheme(); syncSettingsLabels(); }
 export function helpOpen(){ const o=$("helpOverlay"); return !!(o && o.classList.contains("show")); }
 export function closeHelp(){
   const o=$("helpOverlay");
-  if(o) o.classList.remove("show");
+  if(o){ o.classList.remove("show"); overlayClosed(o); }
   /* Marked as seen on the way OUT rather than on the way in, so a player who
      reloads while it is open still gets it. */
   if(!SS.seenHelp){ SS.seenHelp = true; saveSS(); }
@@ -161,6 +162,7 @@ export function openHelp(){
       <span><b>🗔</b> hides the panel</span>
     </div>`;
   o.classList.add("show");
+  overlayOpened(o, "How this works");
   const c=$("helpClose"); if(c) c.onclick=()=>{ sfx("tap"); closeHelp(); };
 }
 
@@ -202,6 +204,7 @@ export function renderUpgradeShop(){
     <button class="shop-next" id="arrangeBtn" style="cursor:pointer;border-color:var(--plum);color:var(--plum)">🧩 Rearrange the room</button>
     <div class="shop-list">${rows}</div>`;
   overlay.classList.add("show");
+  overlayOpened(overlay, "Office upgrades");
   $("shopClose").onclick=()=>{ sfx("tap"); closeUpgradeShop(); };
   const ab=$("arrangeBtn"); if(ab) ab.onclick=()=>{ sfx("tap"); closeUpgradeShop(); arrangeStart(); };
   box.querySelectorAll("[data-buy]").forEach(btn=>btn.onclick=()=>{
@@ -211,12 +214,12 @@ export function renderUpgradeShop(){
     else if(result.reason==="cant-afford"){ sfx("bad"); toast("Need "+result.short+" more coins for "+result.upgrade.name+"."); }
   });
 }
-export function closeUpgradeShop(){ const overlay=$("shopOverlay"); if(overlay)overlay.classList.remove("show"); }
+export function closeUpgradeShop(){ const overlay=$("shopOverlay"); if(overlay){ overlay.classList.remove("show"); overlayClosed(overlay); } }
 
 /* ---------- sticker book ---------------------------------------------------- */
 export function stickerBookOpen(){ const o=$("stickerOverlay"); return !!(o&&o.classList.contains("show")); }
-export function openStickerBook(){ const o=$("stickerOverlay"); if(!o)return; renderStickerBook(); o.classList.add("show"); }
-export function closeStickerBook(){ const o=$("stickerOverlay"); if(o) o.classList.remove("show"); }
+export function openStickerBook(){ const o=$("stickerOverlay"); if(!o)return; renderStickerBook(); o.classList.add("show"); overlayOpened(o, "Sticker book"); }
+export function closeStickerBook(){ const o=$("stickerOverlay"); if(o){ o.classList.remove("show"); overlayClosed(o); } }
 function renderStickerBook(){
   const host=$("stickerContent"); if(!host) return;
   const tot=stickerTotals();
