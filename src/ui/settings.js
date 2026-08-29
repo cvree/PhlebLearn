@@ -142,8 +142,8 @@ export function openHelp(){
     </div>
     <div class="help-row">
       <span class="help-ico">🎛️</span>
-      <div><b>Or use buttons.</b> Every step has a <b>Use controls</b> button.
-      Same work, graded the same.</div>
+      <div><b>Or use buttons.</b> Steps carry a <b>Use controls</b> toggle —
+      <b>Use a list</b> at the supply cart. Same work, graded the same.</div>
     </div>
     <div class="help-row">
       <span class="help-ico">🎓</span>
