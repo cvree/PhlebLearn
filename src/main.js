@@ -153,7 +153,16 @@ function setupInput(canvasEl){
   const sb=document.getElementById("settingsBtn"); if(sb) sb.onclick=()=>{ sfx("tap"); openSettings(); };
   const sh=document.getElementById("shopBtn"); if(sh) sh.onclick=()=>{ sfx("tap"); renderUpgradeShop(); };
   const skb=document.getElementById("stickerBtn"); if(skb) skb.onclick=()=>{ sfx("coin"); openStickerBook(); };
-  const chip=document.getElementById("coinChip"); if(chip) chip.onclick=()=>{ sfx("tap"); renderUpgradeShop(); };
+  /* The XP/coins chip is a shortcut into the shop. It carries role="button"
+     and a tab stop, so it needs the keyboard activation a real <button> would
+     have given it for free — it is a <div> because it is also a live readout
+     that countUp() writes into. */
+  const chip=document.getElementById("coinChip");
+  if(chip){
+    const openShop=()=>{ sfx("tap"); renderUpgradeShop(); };
+    chip.onclick=openShop;
+    chip.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openShop(); } };
+  }
   const st=document.getElementById("setTheme"); if(st) st.onclick=()=>toggleThemeAndSync();
   const sm=document.getElementById("setMotion"); if(sm) sm.onclick=()=>toggleReduced();
   const su=document.getElementById("setMusic"); if(su) su.onclick=()=>toggleMusicAndSync();

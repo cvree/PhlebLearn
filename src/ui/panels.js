@@ -336,9 +336,9 @@ function renderReview(){
 
   // The room runs its own frame loop for the hygiene clock, so its cleanup
   // has to go with the encounter's — same slot renderCollect uses.
-  if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+  releaseStepLease();
   const stop = runArrivalRoom(c, $("arrivalStage"), ()=>{
-    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+    releaseStepLease();
     /* `reqChoice` used to be the answer to a quiz. It is now what the learner
        actually DID about a flawed order: held it, or did not. deriveChoices()
        reads it for the score screen's "your answer / best answer" card, which
@@ -353,6 +353,24 @@ function renderReview(){
     afterRequisition();
   });
   ENC._collectCleanup = stop;
+}
+
+/**
+ * Tears down whatever the current step is holding open, and forgets it.
+ *
+ * RELEASED AND FORGOTTEN, always both. A step's cleanup is stored in one slot
+ * that the next step overwrites, so a cleanup that has been run but not
+ * cleared is still reachable — the next screen to reach for the slot calls a
+ * teardown a second time on a session that no longer exists. The mirror of
+ * that mistake, leaving a lease live because nothing released it, is what let
+ * the supply cart swallow every bench gesture aimed at a later step; see
+ * main.js's gotoProcedureStep. One helper, so no call site can do half of it.
+ */
+function releaseStepLease(){
+  if(!ENC || !ENC._collectCleanup) return;
+  const stop = ENC._collectCleanup;
+  ENC._collectCleanup = null;
+  try{ stop(); }catch(e){ console.warn("step cleanup failed", e); }
 }
 
 /* ---------- into the draw ------------------------------------------------------ */
@@ -475,7 +493,7 @@ function renderCollect(){
     onMidDrawEvent: (resumeStep)=>{ ENC.drawResumeBeat=resumeStep; go("drawresp"); },
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
     onStepFinished: (finishedId, nextId)=> rewardStep(c, finishedId, nextId),
-    onCleanup: ()=>{ if(ENC._collectCleanup) ENC._collectCleanup(); },
+    onCleanup: releaseStepLease,
     // Learn only. The driver asks; the mode decision lives here.
     sectionFeedbackFor: (finishedId, nextId)=>{
       if(!reveal().sectionFeedback) return null;
@@ -528,9 +546,7 @@ function renderSectionFeedback({ section, readings, done }){
   $("secAgain").onclick=()=>{
     sfx("click");
     const c=ENC.collect;
-    // Released AND forgotten: a lease that has been torn down must not still
-    // be reachable through the slot the next step is about to write into.
-    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+    releaseStepLease();
     const index = resetFromSection(c, section.id);
     if(index < 0){ renderCollect(); return; }
     c.step = index;
@@ -646,7 +662,7 @@ function watchComplications(c){
       // Everything the current step was holding open goes, exactly as it does
       // when a draw is abandoned — the difference is that this one was the
       // right call, and the report says so.
-      if(ENC._collectCleanup) ENC._collectCleanup();
+      releaseStepLease();
       captureStagingIfUnmeasured();
       go("collect");
     },
@@ -680,7 +696,7 @@ function wireLeaveDraw(){
     }
     sfx("bad");
     clearAutoAdvance();
-    if(ENC._collectCleanup) ENC._collectCleanup();
+    releaseStepLease();
     ENC.drawAbandoned=true;
     // capture whatever preparation was done before they walked away
     captureStagingIfUnmeasured();
