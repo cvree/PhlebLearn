@@ -65,6 +65,7 @@
       <div class="setrow"><span>🎵 Lobby music</span><button id="setMusic">On</button></div>
       <div class="setrow"><span>🔊 Music volume</span><input type="range" id="setMusicVol" min="0" max="100" value="55" style="flex:1;max-width:140px;accent-color:#ff9cc0"></div>
       <details class="challenges" id="setChallenges"></details>
+      <button class="btn ghost" id="openHelpSettings">❔ How this works</button>
       <button class="btn ghost" id="openShopSettings">🏠 Office upgrades</button>
       <button class="btn closebtn" id="setClose">Done</button>
       <div class="credits">Tiny Vials · a Tiny Clinic game</div>
@@ -75,6 +76,10 @@
     <div class="shop-card">
       <div id="shopContent"></div>
     </div>
+  </div>
+
+  <div class="help-overlay" id="helpOverlay">
+    <div class="help-card" id="helpContent"></div>
   </div>
 
   <div class="sticker-overlay" id="stickerOverlay">

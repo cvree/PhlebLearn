@@ -127,6 +127,16 @@ const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PLAY]:6 };
 
 function renderIdle(){
   const line = m => summaryLine(SS.modeProgress, m);
+  /* WHICH BUTTON GLOWS IS AN ANSWER TO A QUESTION THE PLAYER IS ASKING.
+
+     Play used to be the pulsing one on every save, including a save that had
+     never drawn anything. So the game's own emphasis walked a first-time
+     learner into the mode that deliberately says NOTHING — no instruction, no
+     hint, no verdict — where a beginner cannot tell a mistake from the design.
+     On a save with nothing on it, Learn is the call to action; from the second
+     visit onwards it is Play again, which is right for someone who has already
+     been taught. */
+  const fresh = !SS.shifts && !SS.xp;
   panel.innerHTML=`
     <h2>🩺 Clock in</h2>
     <div class="tubechips">
@@ -138,13 +148,13 @@ function renderIdle(){
       ${equipmentPills()}
     </div>
 
-    <button class="btn alt modecard" id="modeLearn">
+    <button class="btn ${fresh ? "cta-pulse starborder" : "alt"} modecard" id="modeLearn">
       <span class="mc-title">🎓 Learn</span>
       <span class="mc-sub">Talked through, step by step. Replay any section that went badly.</span>
-      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}</span>
+      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}${fresh ? " · start here" : ""}</span>
     </button>
 
-    <button class="btn cta-pulse starborder modecard" id="modePlay">
+    <button class="btn ${fresh ? "alt" : "cta-pulse starborder"} modecard" id="modePlay">
       <span class="mc-title">🩸 Play</span>
       <span class="mc-sub">A real shift. Nothing is said until the report.</span>
       <span class="mc-stat">${line(MODES.PLAY)}</span>
@@ -186,9 +196,14 @@ function masteryLine(){
   const m = normaliseMastery(SS.mastery);
   const worst = weakestTrack(m);
   const stars = TRACKS.map(t => `${t.label} ${"★".repeat(m[t.id].stars)}${"☆".repeat(5 - m[t.id].stars)}`);
-  const head = worst && worst.rec.stars < 5
-    ? `Weakest right now: <b>${worst.track.label}</b>.`
-    : "Every technique at five stars.";
+  /* On a save with no draws behind it every track is at zero, so "weakest
+     right now" would pick one arbitrarily and present a tie as a verdict. */
+  const anyEarned = TRACKS.some(t => m[t.id].stars > 0);
+  const head = !anyEarned
+    ? "Nothing recorded yet — every technique starts at zero stars."
+    : worst && worst.rec.stars < 5
+      ? `Weakest right now: <b>${worst.track.label}</b>.`
+      : "Every technique at five stars.";
   return `${head} <span class="mastery-strip">${stars.join(" · ")}</span>`;
 }
 /* The kit the learner owns, shown on the clock-in screen because it changes

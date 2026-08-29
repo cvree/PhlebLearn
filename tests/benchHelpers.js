@@ -120,3 +120,25 @@ export async function carryOn(page, selector){
   await btn.click({ timeout: 5000 }).catch(()=>{});
   return true;
 }
+
+/**
+ * Closes the first-run "How this works" card if it is up.
+ *
+ * A save that has never played gets it once, over the clock-in screen, which
+ * is exactly the state every test starting from `/` is in. Dismissing it is
+ * what a real player does on their first visit, so the tests do it too rather
+ * than the game hiding itself from them behind the `?e2e=1` seam.
+ *
+ * It waits for the app to boot first: the card is opened at the end of boot(),
+ * so asking for it the instant `goto` resolves would always miss it and leave
+ * an overlay to appear later, over the very button the test is about to press.
+ */
+export async function dismissHelp(page){
+  await page.waitForFunction(() => window.__tinyVialsBooted === true, null, { timeout: 20000 }).catch(()=>{});
+  const overlay = page.locator("#helpOverlay.show");
+  await overlay.waitFor({ state:"visible", timeout: 2500 }).catch(()=>{});
+  if(!(await overlay.count())) return false;                    // a save that has played already
+  await page.locator("#helpClose").click({ timeout: 5000 }).catch(()=>{});
+  await overlay.waitFor({ state:"hidden", timeout: 5000 }).catch(()=>{});
+  return true;
+}

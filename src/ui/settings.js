@@ -101,6 +101,80 @@ export function toggleSettings(){ const o=$("settings"); if(!o)return; o.classLi
 export function toggleMusicAndSync(){ toggleMusic(); syncSettingsLabels(); }
 export function toggleThemeAndSync(){ toggleTheme(); syncSettingsLabels(); }
 
+/* =========================================================================
+   HOW THIS WORKS — the one thing a first-time player was never told.
+
+   This game is a physical simulation wearing a cozy coat, and the clock-in
+   screen used to offer two mode buttons and no way of knowing that the arm on
+   screen is a thing you DRAG, that a step can also be worked entirely from
+   buttons, or which of the two modes a beginner should be in. Everything
+   below is a fact about how to operate the game — not a tutorial, not a tour,
+   and not a wall the player has to click through: it opens once on a fresh
+   save and lives in Settings after that.
+   ========================================================================= */
+export function helpOpen(){ const o=$("helpOverlay"); return !!(o && o.classList.contains("show")); }
+export function closeHelp(){
+  const o=$("helpOverlay");
+  if(o) o.classList.remove("show");
+  /* Marked as seen on the way OUT rather than on the way in, so a player who
+     reloads while it is open still gets it. */
+  if(!SS.seenHelp){ SS.seenHelp = true; saveSS(); }
+  refreshIdle();
+}
+export function openHelp(){
+  const o=$("helpOverlay"), box=$("helpContent");
+  if(!o || !box) return;
+  box.innerHTML = `
+    <div class="help-head">
+      <h3>🩸 How this works</h3>
+      <button class="shop-close" id="helpClose">Got it</button>
+    </div>
+
+    <div class="help-lede">You do the draw — you are not answering questions about
+      it. The band is tied by pulling it, the vein is found with a fingertip, and
+      the angle you enter at is measured in degrees.</div>
+
+    <div class="help-row">
+      <span class="help-ico">🖐️</span>
+      <div><b>Work in the room.</b> Drag on the scene: pick a thing up, bring it
+      where it goes, push it home. Turn an item over to read its label.</div>
+    </div>
+    <div class="help-row">
+      <span class="help-ico">🎛️</span>
+      <div><b>Or use buttons.</b> Every step has a <b>Use controls</b> button.
+      Same work, graded the same.</div>
+    </div>
+    <div class="help-row">
+      <span class="help-ico">🎓</span>
+      <div><b>Start in Learn.</b> It names the error and will not let you past a
+      step until it is right. <b>Play</b> says nothing until the report.</div>
+    </div>
+    <div class="help-row">
+      <span class="help-ico">🩹</span>
+      <div><b>Things go wrong on purpose,</b> because of something you did.
+      Stopping the draw is often the right answer.</div>
+    </div>
+
+    <div class="help-keys">
+      <span><b>Esc</b> settings</span>
+      <span><b>🔄 Recenter</b> puts the camera back</span>
+      <span><b>🗔</b> hides the panel</span>
+    </div>`;
+  o.classList.add("show");
+  const c=$("helpClose"); if(c) c.onclick=()=>{ sfx("tap"); closeHelp(); };
+}
+
+/**
+ * Opens it once, on a save that has never played. Called from the clock-in
+ * screen rather than from boot, so it lands after the room has appeared
+ * instead of over a loading screen.
+ */
+export function maybeOpenHelp(){
+  if(SS.seenHelp || SS.shifts || SS.xp) return false;
+  openHelp();
+  return true;
+}
+
 /* ---------- upgrade shop ---------------------------------------------------- */
 export function renderUpgradeShop(){
   const overlay=$("shopOverlay"), box=$("shopContent"); if(!overlay||!box)return;

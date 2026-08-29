@@ -56,7 +56,8 @@ import { toast, confetti } from "./ui/notifications.js";
 import {
   openSettings, closeSettings, toggleSettings, toggleReduced, toggleThemeAndSync, toggleMusicAndSync,
   toggleHandedness, toggleAssistedSnapping, toggleButtonControls,
-  renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen
+  renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen,
+  openHelp, closeHelp, helpOpen, maybeOpenHelp
 } from "./ui/settings.js";
 import { go, syncTop } from "./ui/panels.js";
 import { initReactBits, initLenis, initVanta, destroyVantaLoad } from "./ui/dynamicEffects.js";
@@ -160,11 +161,13 @@ function setupInput(canvasEl){
   const snp=document.getElementById("setSnap"); if(snp) snp.onclick=()=>toggleAssistedSnapping();
   const dir=document.getElementById("setDirect"); if(dir) dir.onclick=()=>toggleButtonControls();
   const sv=document.getElementById("setMusicVol"); if(sv) sv.oninput=()=>{ setMusicVol((+sv.value||0)/100); };
+  const hs=document.getElementById("openHelpSettings"); if(hs) hs.onclick=()=>{ sfx("tap"); closeSettings(); openHelp(); };
   const ss=document.getElementById("openShopSettings"); if(ss) ss.onclick=()=>{ sfx("tap"); closeSettings(); renderUpgradeShop(); };
   const sc=document.getElementById("setClose"); if(sc) sc.onclick=()=>{ sfx("tap"); closeSettings(); };
   const ov=document.getElementById("settings"); if(ov) ov.addEventListener("click",e=>{ if(e.target===ov) closeSettings(); });
   const shopOv=document.getElementById("shopOverlay"); if(shopOv) shopOv.addEventListener("click",e=>{ if(e.target===shopOv) closeUpgradeShop(); });
   const stickOv=document.getElementById("stickerOverlay"); if(stickOv) stickOv.addEventListener("click",e=>{ if(e.target===stickOv) closeStickerBook(); });
+  const helpOv=document.getElementById("helpOverlay"); if(helpOv) helpOv.addEventListener("click",e=>{ if(e.target===helpOv) closeHelp(); });
   const arrDone=document.getElementById("arrangeDone"); if(arrDone) arrDone.onclick=()=>{ sfx("tap"); arrangeStop(); };
   updateMusicBtn();
 
@@ -173,7 +176,8 @@ function setupInput(canvasEl){
   addEventListener("keydown",e=>{
     kick();
     if(e.key==="Escape"){
-      if(stickerBookOpen()){ closeStickerBook(); }
+      if(helpOpen()){ closeHelp(); }
+      else if(stickerBookOpen()){ closeStickerBook(); }
       else if(arrangeIsOpen()) arrangeClose();
       else { const shop=document.getElementById("shopOverlay"); if(shop&&shop.classList.contains("show")) closeUpgradeShop(); else toggleSettings(); }
     }
@@ -327,8 +331,19 @@ function boot(){
   try{ initLenis(); }catch(e){}
   try{ destroyVantaLoad(); }catch(e){}
   armAudioUnlock();
-  installTestSeam();
+  const e2e = installTestSeam();
   go("idle");
+  /* After go("idle"), not before: it opens over the clock-in screen it is
+     explaining, rather than over a loading screen. Once per save.
+
+     Not under ?e2e=1. That seam exists to put the app in a fixed state — it
+     already rolls a pinned patient and jumps to a named step — and a modal
+     that appears on a fresh save and never again is exactly the kind of
+     first-run chrome it is there to hold back: every browser test starts with
+     an empty localStorage, so without this the card would sit over the canvas
+     that 250 pointer-driven tests are aiming at. The real first-run path is
+     covered without the seam, in tests/modes.e2e.spec.js. */
+  if(!e2e){ try{ maybeOpenHelp(); }catch(e){} }
 }
 /* ---------- test seam ------------------------------------------------------
    Opt-in via ?e2e=1 only. Playwright uses this to jump straight to a step
@@ -352,10 +367,11 @@ function projectLocal(view, local, rect){
   return { x: p.x, y: p.y };
 }
 
+/** @returns true when the seam is installed, i.e. this is an ?e2e=1 page. */
 function installTestSeam(){
   let e2e = false;
   try{ e2e = new URLSearchParams(location.search).get("e2e")==="1"; }catch(_){}
-  if(!e2e) return;
+  if(!e2e) return false;
   window.__phlebTest = {
     /** Jumps into the venipuncture procedure at a given step id. */
     /**
@@ -1488,6 +1504,7 @@ function installTestSeam(){
       return true;
     },
   };
+  return true;
 }
 
 /**

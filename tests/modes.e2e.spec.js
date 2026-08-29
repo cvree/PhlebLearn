@@ -10,7 +10,7 @@
    are in a piece of software, and Play has none of them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, dismissHelp } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -51,6 +51,7 @@ async function openStep(page, stepId, mode){
 test("the clock-in screen offers exactly two modes", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await page.goto("./");
+  await dismissHelp(page);
   await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
   await expect(page.locator("#modePlay")).toBeVisible();
   await expect(page.locator("#modeLearn")).toContainText("Learn");
@@ -65,6 +66,7 @@ test("the clock-in screen offers exactly two modes", async ({ page }) => {
 test("Make it harder lives in Settings, and locks while a shift is running", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await page.goto("./");
+  await dismissHelp(page);
   await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
 
   // not on the clock-in screen any more
@@ -239,4 +241,76 @@ test("Play never shows a section card — nothing is said until the report", asy
   await carryOn(page, "#tqReady");
   await page.waitForTimeout(600);
   await expect(page.locator(".sec-card")).toHaveCount(0);
+});
+
+/* -------------------------------------------------------------------------
+   THE FIRST VISIT
+
+   A save with nothing on it arrives at a game whose central interaction —
+   dragging a limb and the things around it — is not discoverable from a
+   screen with two buttons on it, and whose two modes differ in whether the
+   learner is told anything at all. These prove the game says so, once, and
+   then stops saying it.
+   ------------------------------------------------------------------------- */
+
+test("a first visit is told how the game is operated, and only once", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await page.goto("./");
+  await page.waitForFunction(()=>window.__tinyVialsBooted === true, null, { timeout:20000 });
+
+  const card = page.locator("#helpOverlay.show");
+  await expect(card).toBeVisible({ timeout:10000 });
+  // the two things a screen with two buttons on it cannot say for itself
+  await expect(card).toContainText("Drag on the scene");
+  await expect(card).toContainText("Use controls");
+
+  await page.locator("#helpClose").click();
+  await expect(card).toBeHidden();
+  await expect(page.getByRole("heading", { name:/Clock in/i })).toBeVisible();
+
+  // the same browser, the same save: it does not come back
+  await page.goto("./");
+  await page.waitForFunction(()=>window.__tinyVialsBooted === true, null, { timeout:20000 });
+  await expect(page.getByRole("heading", { name:/Clock in/i })).toBeVisible({ timeout:15000 });
+  await expect(page.locator("#helpOverlay.show")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("it stays reachable from Settings once it has been dismissed", async ({ page }) => {
+  await page.goto("./");
+  await dismissHelp(page);
+  await expect(page.getByRole("heading", { name:/Clock in/i })).toBeVisible({ timeout:15000 });
+
+  await page.locator("#settingsBtn").click();
+  await page.locator("#openHelpSettings").click();
+  await expect(page.locator("#helpOverlay.show")).toBeVisible();
+  // Esc closes the topmost overlay, which is this one
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#helpOverlay.show")).toHaveCount(0);
+});
+
+test("a save with nothing on it is pointed at Learn, and a played one at Play", async ({ page }) => {
+  await page.goto("./");
+  await dismissHelp(page);
+  await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
+
+  /* Which button glows is the game's own recommendation, and on an empty save
+     it used to walk a beginner into the mode that says nothing at all. */
+  await expect(page.locator("#modeLearn")).toHaveClass(/cta-pulse/);
+  await expect(page.locator("#modePlay")).not.toHaveClass(/cta-pulse/);
+  await expect(page.locator("#modeLearn")).toContainText("start here");
+
+  // Once there is anything on the save, the emphasis goes back to Play. The
+  // save is edited directly rather than played through: what is under test is
+  // which button the clock-in screen highlights, not how XP is earned.
+  await page.evaluate(()=>{
+    const k = "phleb_shift_3d_v1";
+    const s = JSON.parse(localStorage.getItem(k) || "{}");
+    s.xp = 40; s.shifts = 1;
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.goto("./");
+  await expect(page.locator("#modePlay")).toBeVisible({ timeout:15000 });
+  await expect(page.locator("#modePlay")).toHaveClass(/cta-pulse/);
+  await expect(page.locator("#modeLearn")).not.toHaveClass(/cta-pulse/);
 });
