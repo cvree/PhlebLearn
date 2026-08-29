@@ -319,7 +319,7 @@ function boot(){
   try{ migrateSave(SS); saveSS(); }catch(e){ console.warn("save migration skipped", e); }
   try{ startThree(); }
   catch(e){ const m=document.getElementById("loadingMsg"); if(m) m.innerHTML='<span class="err">3D failed to start: '+(e.message||e)+'</span>'; return; }
-  document.getElementById("loading").style.display="none";
+  dismissLoading();
   try{ if(!localStorage.getItem("phleb_shift_3d_v1") && prefersReduced()) SS.reduceMotion=true; }catch(e){}
   applyReducedFlag();
   syncTop();
@@ -404,7 +404,24 @@ function installTestSeam(){
       });
       go("collect");
       const idx = ENC.collect ? ENC.collect.steps.indexOf(stepId) : -1;
-      if(idx > 0){ ENC.collect.step = idx; go("collect"); }
+      if(idx > 0){
+        /* Let step 0 tear its own lease down before step `idx` takes the
+           bench — exactly what jumpToStep() does, and for the same reason.
+
+           Without it the first go("collect") leaves the supply cart's session
+           live: `renderCurrentStep` only runs a step's cleanup from advance(),
+           and jumping past a step is not advancing past it, so the second
+           go() simply OVERWROTE `_collectCleanup` and the cart was never
+           stopped. A live staging session then sits in front of every other
+           runtime in the STEP_RUNTIMES table, and Learn offers a pointerdown
+           to the first live runtime only — so the cart quietly swallowed
+           every drag meant for the step under test, from tourniquet all the
+           way to inversion. The camera did not move (the gesture WAS claimed)
+           and nothing threw, so it looked exactly like a broken gesture. */
+        if(ENC._collectCleanup){ try{ ENC._collectCleanup(); }catch(_){} ENC._collectCleanup = null; }
+        ENC.collect.step = idx;
+        go("collect");
+      }
       return true;
     },
     /**
@@ -1471,6 +1488,19 @@ function installTestSeam(){
       return true;
     },
   };
+}
+
+/**
+ * The room is up. Fade the loading screen out rather than cutting it, then
+ * take it out of the layout once the fade has finished so nothing is left
+ * painting over the canvas. Reduced motion gets the cut it asked for.
+ */
+function dismissLoading(){
+  const el = document.getElementById("loading");
+  if(!el) return;
+  if(REDUCED || prefersReduced()){ el.style.display = "none"; return; }
+  el.classList.add("done");
+  setTimeout(()=>{ el.style.display = "none"; }, 400);
 }
 
 function prefersReduced(){ try{return matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(e){return false;} }

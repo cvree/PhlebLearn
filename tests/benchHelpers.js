@@ -19,27 +19,84 @@
    ========================================================================= */
 
 /**
- * Blocks until the bench camera has settled and stayed settled.
+ * Blocks until the bench camera has settled and STAYED settled, measured the
+ * way the tests actually use it: by where a fixed point in the scene lands on
+ * screen.
  *
- * Polled INSIDE the page rather than from the test.
- * The first version of this ran one `page.evaluate` per sample, and on this
- * runner a round trip is acknowledged only once the renderer's main thread
- * gets to it — which is a frame, which is up to half a second. Fifty samples
- * of that is half a minute of a ninety-second budget spent asking a question,
- * and it timed out tests that were doing nothing wrong. In-page polling costs
- * one round trip in total.
+ * TWO THINGS THIS HAS TO GET RIGHT, both learned the hard way.
  *
- * @param {import("@playwright/test").Page} page
+ * 1. THE SAMPLING LOOP RUNS INSIDE THE PAGE, DRIVEN BY THE PAGE.
+ *
+ *    Not by `waitForFunction`. Every question this helper asks — benchStats,
+ *    a projection — goes through the test seam, and every seam function is
+ *    `async` because it reaches its module through a dynamic import. A
+ *    `waitForFunction` predicate that returns a promise hands the runner a
+ *    Promise object, which is truthy, so the wait finished on its first poll
+ *    and this helper returned having waited for nothing at all. It looked
+ *    like it was working because the camera is usually PART of the way there
+ *    by then; measured on a slow renderer the projection was still 52 pixels
+ *    from where it would come to rest. So the loop lives in the page and the
+ *    runner waits on a plain boolean, which cannot be accidentally truthy.
+ *
+ *    One round trip in total either way. The first version of this ran one
+ *    `page.evaluate` per sample, and on this runner a round trip is
+ *    acknowledged only once the renderer's main thread gets to it — which is
+ *    a frame, which is up to half a second.
+ *
+ * 2. THE `settled` FLAG ALONE IS NOT ENOUGH.
+ *
+ *    `cameraSettled` answers "is the rig where it currently WANTS to be?",
+ *    and that is true in the window between the entry ease finishing and the
+ *    coach panel finishing its own layout — at which point
+ *    measureObstruction() moves the want and the rig eases again. So this
+ *    also requires the PROJECTION to hold still, which is the only property a
+ *    projected drag actually depends on, and is immune to whatever moves the
+ *    camera next.
  */
 export async function settleBench(page){
-  await page.waitForFunction(async () => {
-    const t = window.__phlebTest;
-    if(!t || !t.benchStats) return true;          // not a bench step; nothing to wait for
-    const s = await t.benchStats();
-    if(!s || !s.open) return true;
-    window.__benchStill = s.settled ? (window.__benchStill || 0) + 1 : 0;
-    return window.__benchStill >= 3;
-  }, null, { timeout: 30000, polling: 120 }).catch(() => {});
+  await page.evaluate(() => {
+    const w = window;
+    /* Each call supersedes any loop still running from a previous step. */
+    const token = (w.__benchSettleToken = (w.__benchSettleToken || 0) + 1);
+    w.__benchSettleOk = false;
+    (async () => {
+      const done = () => { if(w.__benchSettleToken === token) w.__benchSettleOk = true; };
+      const t = w.__phlebTest;
+      if(!t || !t.benchStats) return done();      // not a bench step; nothing to wait for
+      let still = 0, from = 0, prev = null;
+      const deadline = performance.now() + 25000;
+      for(;;){
+        if(w.__benchSettleToken !== token) return;   // a later settleBench owns this now
+        let s = null;
+        try{ s = await t.benchStats(); }catch(_){}
+        if(!s || !s.open) return done();
+
+        /* A fixed point on the limb, through whichever bench mode is live —
+           every step leases the same bench, so this projects in all of them. */
+        let mark = null;
+        try{
+          const p = await t.screenPointsOnBenchLimb([[0.02, 0, 0.001]]);
+          if(p && p[0]) mark = p[0];
+        }catch(_){}
+
+        // Sub-pixel is "not moving". Anything else restarts the streak.
+        const holding = s.settled && mark && prev
+          && Math.hypot(mark.x - prev.x, mark.y - prev.y) < 0.75;
+        if(holding){ if(still++ === 0) from = performance.now(); }
+        else still = 0;
+        prev = mark;
+
+        // Four still samples AND a real stretch of wall time, so a slow
+        // renderer cannot deliver four identical samples from inside one frame.
+        if(still >= 4 && performance.now() - from > 400) return done();
+        // Never hang a test on this: give up waiting and let the assertion
+        // that follows be the thing that reports the problem.
+        if(performance.now() > deadline) return done();
+        await new Promise(r => setTimeout(r, 120));
+      }
+    })();
+  });
+  await page.waitForFunction(() => window.__benchSettleOk === true, null, { timeout: 30000 }).catch(() => {});
 }
 
 /**
