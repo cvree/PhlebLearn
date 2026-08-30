@@ -345,17 +345,110 @@ truthy. `settleBench` was written that way and therefore returned on its first
 poll, every time, having waited for nothing. It now runs its sampling loop
 inside the page and has the runner wait on a plain boolean.
 
-The same rewrite fixed the reason the helper exists in the first place.
+The same rewrite fixed the reason the helper exists in the first place —
+though it took TWO attempts to land on a correct fix, and the first attempt is
+worth recording because it looked right and passed assembly cleanly.
+
 `cameraSettled` answers "is the rig where it currently *wants* to be?", and
 that is true in the window between the entry ease finishing and the coach
 panel's layout moving the target — measured at up to **52px** of further drift
 after the flag first went true, which is a drag that starts beside the object
-it meant to grab. `settleBench` now also requires the PROJECTION of a fixed
-limb point to hold still (sub-pixel, four samples, over at least 400ms), which
-is the only property a projected drag actually depends on and is immune to
-whatever moves the camera next. Entering a step costs about three seconds
-before a gesture may be driven; that is the honest price of the camera never
-cutting.
+it meant to grab.
+
+*First attempt (wrong):* require `settled` AND the on-screen projection of one
+fixed point — `[0.02, θ=0, r=0.001]`, close to the arm's surface near its
+local origin — to hold still for several samples. This passed `assembly.e2e`
+19/19 and looked like the fix. It was a fix for assembly specifically: every
+object assembly's tests touch sits close to the surface near the arm's
+origin, which is exactly the region a point THAT close to the origin is
+insensitive to change in. A re-frame that is mostly a ZOOM (a `dist`/`fov`
+change) moves a point near the optical centre very little while moving a
+point 6cm off the surface — where `collection`'s holder mouth and `insert`'s
+ready pose actually are (`READY_HEIGHT = 0.014`, `HOLDER_LEN = 0.062`) — by
+tens of pixels. The check reported "stable" while the geometry those tests
+were about to reach for was still sliding. `tests/collection.e2e.spec.js`
+failed 8 of 20 with exactly this signature (a gesture that runs, claims the
+pointer, and changes nothing) under this fix.
+
+*Second attempt (correct):* stop inferring stability from any one point in
+the scene, and ask the camera rig directly. `armScene.js` exports
+`cameraWantSignature` — a fingerprint of `rig.want.look/dist/fov` plus the
+current framing name, i.e. where `fitCamera()` last told the rig to go —
+threaded through `benchStats().wantSig`. `settleBench` now holds `settled`
+true AND an UNCHANGED `wantSig` for four samples over 400ms, which is
+independent of where in the scene a test happens to be looking. Entering a
+step costs about half a second before a gesture may be driven; that is the
+honest price of the camera never cutting.
+
+### A gesture that lands correctly can still be aimed at a STALE target
+
+The two traps above are about the FIRST gesture in a test — the one `open()`
+settles for. A large, separate class of failures turned out to be the SECOND
+gesture in a test that chains two: pick a tube up, then push it onto the
+holder; anchor the vein, then approach it; lift a tube into the hand, then
+swing it. Each of those first actions is a state change the step's OWN render
+loop reframes around on the NEXT frame it draws — not synchronously inside the
+pointer handler that caused it — so a test that immediately fetches fresh
+anchors for the second gesture is fetching anchors for a camera that has only
+just been told to move, not one that has arrived.
+
+Measured directly (`collection.e2e.spec.js`'s `carryToHolder` → `seatDrag`):
+**45px** of drift in the holder mouth's screen position between the anchor
+fetch used to carry a tube up and the fetch used, moments later, to seat it —
+enough that the seating drag started beside the flange and moved nothing.
+Adding one `await settleBench(page)` at the end of the first gesture, before
+the second one's anchor fetch, took `seatDepth` from `0` to the expected
+`0.0165` with nothing else changed. The same shape of fix went into every
+chained-gesture helper in `collection.e2e.spec.js`, `insert.e2e.spec.js`
+(`dragLimb`, the shared primitive both `anchorDrag` and `approachDrag` funnel
+through), `inversion.e2e.spec.js` (`pickUp`, `rackIt` — whose own `settle()`
+had the SAME broken-async-predicate bug as trap 2 above, independently, and
+now imports the fixed `settleBench` instead of a local copy), `postdraw.e2e.spec.js`
+(same broken-local-`settle()` story, same fix), and `withdrawal.e2e.spec.js`
+(`pullTail`, `gauzeToSite`, `withdrawDrag`, `shieldSlide`, `carryUnitTo` — the
+"release, withdraw, safety, sharps" chain is FOUR of these in a row in one
+test).
+
+**Confirmed pre-existing, not a regression.** A worktree of pristine
+`origin/main`, built and run through the identical suite, fails
+`collection.e2e.spec.js` on the exact same eleven tests, including the ones
+whose assertions were already vacuously true (e.g. `seatDepth < 0.006`, which
+`0` also satisfies) and so looked like passes. This bug has been in the suite
+since before any of the work this document otherwise describes; it was never
+visible because the suite had apparently never been run to completion here
+before — every prior verification in this project's history either ran a
+single spec file in isolation or was interrupted partway through a full run
+(see git history around this document). Running it to completion for the
+first time is what surfaced a category of bug three specs deep in chained
+gestures across half the step files in this game.
+
+### Two more pre-existing categories, found the same way, not fixed here
+
+Chasing every remaining browser-suite failure was out of scope for the branch
+that found this — the categories above accounted for the overwhelming
+majority of them, and both of the two below were confirmed by direct
+inspection to be unrelated to anything in that branch's diff:
+
+- **A `.stg-msg` reading "assessed after the patient" that no coach has ever
+  rendered.** Six tests across `postdraw.e2e.spec.js`, `withdrawal.e2e.spec.js`,
+  `collection.e2e.spec.js` and `inversion.e2e.spec.js` assert this text
+  appears in a scored (Play) shift. `stepHint(c)` in `physicalSteps.js`
+  returns `null` whenever `!reveal().hints` — which is always, in Play — so
+  the `.stg-msg.neutral` block these tests are waiting for can never render
+  in the mode they test it in. Either a feature was removed after these tests
+  were written, or it was never built; either way, `grep -rn "assessed after
+  the patient" src/` returns nothing.
+- **`.scoregrid` is hidden by design, and several `report.e2e.spec.js` tests
+  don't know it.** The debrief screen's category breakdown sits inside
+  `<div class="db-details" id="dbDetailsBody" hidden>`, revealed only by
+  clicking "Show the full breakdown" (`ui/panels.js`'s `renderScore()`).
+  `reportAtEnd()`'s helper asserts `.scoregrid` visible immediately after
+  finishing a draw, with no click in between — a leftover from before the
+  four-act debrief redesign that collapsed this section by default.
+
+Both are real product-or-test gaps worth a maintainer's attention, and neither
+is this document's problem to solve by inventing new coach copy or rewriting
+a redesigned screen's tests on a branch about something else.
 
 ### The first-run card is held back by the seam
 
