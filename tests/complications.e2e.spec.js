@@ -9,7 +9,7 @@
    from the collection that actually happened.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { holdSteps } from "./benchHelpers.js";
+import { holdSteps, chooseRoute } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -150,8 +150,7 @@ test("stopping the draw says so in the debrief, and the lab judges what was coll
   await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:8000 });
   const match = page.locator("#lblMatch");
   if(await match.count()) await match.click();
-  const route = page.locator("[data-route]").first();
-  if(await route.count()) await route.click();
+  await chooseRoute(page);
   const print = page.locator("#print");
   if(await print.count()) await print.click();
   // an exchange, if this patient had one: pick an answer, then continue

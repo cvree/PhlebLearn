@@ -142,6 +142,24 @@ export async function carryOn(page, selector){
 }
 
 /**
+ * Picks the routing that is actually right for this patient.
+ *
+ * Learn refuses a wrong one with a hint rather than committing it, so this
+ * tries each until one takes. Which one is right is rolled per patient and is
+ * not what any caller of this is testing.
+ */
+export async function chooseRoute(page){
+  for(let i = 0; i < 3; i++){
+    if(await page.locator("[data-route].good").count()) return true;
+    const r = page.locator("[data-route]").nth(i);
+    if(!(await r.count())) break;
+    await r.click().catch(()=>{});
+    await page.waitForTimeout(120);
+  }
+  return (await page.locator("[data-route].good").count()) > 0;
+}
+
+/**
  * Dismisses the section card, if the step that just ended raised one.
  *
  * Learn stops at the end of a section that is worth another look — below the

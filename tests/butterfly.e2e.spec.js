@@ -17,7 +17,7 @@
    would use them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn, holdSteps } from "./benchHelpers.js";
+import { carryOn, holdSteps, chooseRoute } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -307,11 +307,7 @@ test("a butterfly-hand attempt's report names the device and site it actually us
   await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
   const match = page.locator("#lblMatch");
   if(await match.count()) await match.click();
-  for(let i = 0; i < 3; i++){
-    const r = page.locator("[data-route]").nth(i);
-    if(await r.count()) await r.click();
-    if(await page.locator("[data-route].good").count()) break;
-  }
+  await chooseRoute(page);
   const print = page.locator("#print");
   if(await print.count()) await print.click();
   const opt = page.locator("#opts .opt").first();

@@ -9,7 +9,7 @@
    from the event logs the steps were already keeping.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn, holdSteps } from "./benchHelpers.js";
+import { carryOn, holdSteps, chooseRoute } from "./benchHelpers.js";
 // The number of rubric rows is a POLICY decision, not a fact about the app —
 // policy.js exists precisely so a programme can add or remove one. Reading it
 // here means adding a row (Phase 3b added two) updates these tests instead of
@@ -121,13 +121,7 @@ async function finishLabelling(page){
   const label = page.locator("#print");
   if(!(await label.count())) return;
   // Learn mode refuses a wrong routing choice, so try each until it sticks.
-  const routes = page.locator("[data-route]");
-  const n = await routes.count();
-  for(let i = 0; i < n; i++){
-    await routes.nth(i).click();
-    await page.waitForTimeout(80);
-    if(await page.locator("[data-route].good").count()) break;
-  }
+  await chooseRoute(page);
   await label.click();
   await page.waitForTimeout(200);
 }
@@ -323,23 +317,27 @@ test("a Learn attempt can never claim an unaided Excellent", async ({ page }) =>
 });
 
 test("bests are kept per mode and never pooled", async ({ page }) => {
-  await finishDrawIn(page, "practice");
+  /* Keyed by the modes that EXIST. "practice" and "final" are the two legacy
+     names the seam still accepts, and `setMode` normalises them to learn and
+     play on the way in — so the progress record has never had a `practice`
+     key to read, and asking for one threw rather than asserting anything. */
+  await finishDrawIn(page, "learn");
   let p = await progress(page);
-  expect(p.practice.attempts).toBe(1);
-  expect(p.final).toBeUndefined();
+  expect(p.learn.attempts).toBe(1);
+  expect(p.play).toBeUndefined();
 
-  await reportAtEnd(page, "final");
+  await reportAtEnd(page, "play");
   p = await progress(page);
-  expect(p.practice.attempts).toBe(1);
-  expect(p.final.attempts).toBe(1);
-  await expect(page.locator(".rep-policy", { hasText: /Final Practical: attempt 1/ })).toBeVisible();
+  expect(p.learn.attempts).toBe(1);
+  expect(p.play.attempts).toBe(1);
+  await expect(page.locator(".rep-policy", { hasText: /Play: attempt 1/ })).toBeVisible();
 });
 
 test("returning to the report does not count a second attempt", async ({ page }) => {
-  await reportAtEnd(page, "final");
+  await reportAtEnd(page, "play");
   const before = await progress(page);
   await page.evaluate(()=>window.__phlebTest.finishDraw());
   await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
   const after = await progress(page);
-  expect(after.final.attempts).toBe(before.final.attempts);
+  expect(after.play.attempts).toBe(before.play.attempts);
 });

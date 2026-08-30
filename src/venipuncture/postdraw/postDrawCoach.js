@@ -220,7 +220,6 @@ export function renderPostDrawCoach(host, o){
     bruiseText(state),
     issue ? issue.code : "-",
     guideSignature(),
-    smallTalkFor(state) || "-",
   ].join("|");
 
   if(host.dataset.pdSig === signature){ patchLive(host, state, mode); return; }
@@ -239,7 +238,12 @@ export function renderPostDrawCoach(host, o){
         ${rowsHTML(state, mode)}
       </div>
 
-      ${smallTalkFor(state) ? `<p class="pd-chat">“${esc(smallTalkFor(state))}”</p>` : ""}
+      ${/* Always in the markup, empty when there is nothing being said, and
+            written through [data-live] like every other thing that ticks —
+            re-rendering this panel on a clock would destroy whatever button
+            a hand is in the middle of pressing. */""}
+      <p class="pd-chat" data-live="chat" ${smallTalkFor(state) ? "" : "hidden"}>${
+        smallTalkFor(state) ? `“${esc(smallTalkFor(state))}”` : ""}</p>
 
       ${guided
         ? stepGuideHTML({
@@ -285,4 +289,14 @@ function patchLive(host, state, mode){
   set("arm", state.armFlexed ? "bent at the elbow" : "straight");
   set("bruise", bruiseText(state));
   if(mode === "bandage" || state.bandagedAt != null) set("bandage", bandageText(state));
+
+  // What the patient is saying while you hold. Same reason as everything else
+  // here: it changes on a clock, and the panel around it must not.
+  const chat = host.querySelector('[data-live="chat"]');
+  if(chat){
+    const line = smallTalkFor(state);
+    const text = line ? `“${line}”` : "";
+    if(chat.textContent !== text) chat.textContent = text;
+    chat.hidden = !line;
+  }
 }
