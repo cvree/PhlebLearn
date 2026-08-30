@@ -61,6 +61,31 @@ function taught(){
   return SS.taught;
 }
 export function hasSeenStep(id){ return !!(id && taught()[id]); }
+
+/* ---------- and what the learner did about the fold ---------------------------
+   The coaches re-render constantly — every sensation, every millimetre — and
+   each render rebuilds the disclosure from `hasSeenStep`. So on a step you are
+   meeting for the first time, closing the fold reopened it on the next frame,
+   forever, which is worse than never having offered to close it.
+
+   Session-scoped rather than saved: it is "I have read this, this time", not a
+   preference. One delegated listener, because there is no element to bind to —
+   the markup is a string, and the element it becomes is replaced on every
+   render. `toggle` does not bubble, hence the capture phase.
+   ---------------------------------------------------------------------------- */
+const closedByHand = new Set();
+let listening = false;
+function listenForToggles(){
+  if(listening || typeof document === "undefined") return;
+  listening = true;
+  document.addEventListener("toggle", e => {
+    const el = e.target;
+    if(!el || !el.classList || !el.classList.contains("sg-how")) return;
+    const id = el.dataset.step;
+    if(!id) return;
+    if(el.open) closedByHand.delete(id); else closedByHand.add(id);
+  }, true);
+}
 export function markStepTaught(id){
   if(!id || hasSeenStep(id)) return;
   taught()[id] = 1;
@@ -105,11 +130,12 @@ export function stepGuideHTML(o){
   const why = whyHTML(id);
   const how = opt.how || "";
   const body = `${why}${how ? `<div class="sg-do">${how}</div>` : ""}`;
-  const open = body && (opt.forceOpen || !hasSeenStep(id));
+  listenForToggles();
+  const open = body && (opt.forceOpen || (!hasSeenStep(id) && !closedByHand.has(id)));
   return `<div class="sg" data-step="${esc(id || "")}" data-ready="${(opt.ready != null ? opt.ready : tone === "ready") ? 1 : 0}">
     <div class="stg-msg ${tone}" role="status" aria-live="polite">${line}</div>
     ${opt.note ? `<p class="sg-note">${opt.note}</p>` : ""}
-    ${body ? `<details class="sg-how"${open ? " open" : ""}>
+    ${body ? `<details class="sg-how" data-step="${esc(id || "")}"${open ? " open" : ""}>
       <summary>${VP_ICON[id] || "📘"} How this step works</summary>
       ${body}
     </details>` : ""}
@@ -135,5 +161,5 @@ export function stepHintHTML(hint, ready){
  * otherwise never notice the step becoming "taught" mid-draw.
  */
 export function guideSignature(){
-  return `${currentStep || "-"}:${hasSeenStep(currentStep) ? 1 : 0}`;
+  return `${currentStep || "-"}:${hasSeenStep(currentStep) ? 1 : 0}:${closedByHand.has(currentStep) ? 1 : 0}`;
 }
