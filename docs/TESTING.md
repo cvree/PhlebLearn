@@ -419,31 +419,54 @@ turned up in — with different results, honestly reported:
   presence as this file being fixed.
 - **`inversion.e2e.spec.js`** (`pickUp`, `rackIt` — whose own `settle()` had
   the SAME broken-async-predicate bug as trap 2 above, independently, and
-  now imports the fixed `settleBench` instead of a local copy): partial
-  improvement, not confirmed complete — a clean, uncontended re-run was not
-  finished within this branch's time budget.
-- **`postdraw.e2e.spec.js`** / **`withdrawal.e2e.spec.js`**: same
-  broken-local-`settle()` story for postdraw, same fix, plus the
-  chained-gesture settle added to `pressHoldRelease`, `pullTail`,
-  `gauzeToSite`, `withdrawDrag`, `shieldSlide`, `carryUnitTo` — "release,
-  withdraw, safety, sharps" is four of these in a row in one test. **Not
-  independently confirmed** — every run of these two files in this branch's
-  history ran concurrently with either the `origin/main` baseline comparison
-  or another test process on this single-core machine, and both showed bare
-  `Test timeout of 90000ms exceeded` failures inside `page.mouse.move` under
-  that contention — a resource artifact, not an assertion failure, but one
-  that makes every count from those runs unusable as a verdict on whether
-  the fix works. Left in on the same reasoning as insert's: harmless,
-  plausibly correct by the same mechanism proven on collection, not proven.
+  now imports the fixed `settleBench` instead of a local copy): **confirmed
+  improved, not complete.** A clean, uncontended run: 3 of 6 original
+  failures gone (down to `swinging it fast haemolyses…`, `a scored shift
+  lets under-mixed…`, `finishing a section pays out…`), no new ones.
+- **`withdrawal.e2e.spec.js`** (`pullTail`, `gauzeToSite`, `withdrawDrag`,
+  `shieldSlide`, `carryUnitTo` — "release, withdraw, safety, sharps" is four
+  of these in a row in one test): **confirmed unchanged.** A clean run fails
+  the same two it always did (`the four steps hand one continuous piece of
+  work forward`, `a scored shift allows an unsafe sequence…` — the latter is
+  the `.stg-msg` gap below). The fix neither helped nor hurt here.
+- **`postdraw.e2e.spec.js`** (same broken-local-`settle()` story, same fix,
+  plus the chained-gesture settle added to `pressHoldRelease`): **mixed, and
+  worth reading carefully before touching this file again.** A clean run
+  shows four failures where the baseline-confirmed pre-existing set was two.
+  One of the two new ones is a genuine improvement misfiled as a failure:
+  `the dressing is dragged onto the site…` used to fail at
+  `before.haemostatic).toBe(true)` — never reached — and now gets past that
+  and fails much later, on `bandageAlignM` (`0.0186` against a `< 0.014`
+  threshold) — closer, not broken further. The OTHER new one,
+  `bending the patient's arm up stops the clot progressing`, is a real
+  regression: `snap.armFlexed` is `false` where it used to be `true`,
+  reproduced identically in two separate runs (one contended, one clean),
+  failing on `open()`'s drag — before `pressHoldRelease` ever runs, so it is
+  the `settle()` swap in `open()`, not the addition to `pressHoldRelease`,
+  that did it. Most likely: the old, never-actually-waiting `settle()` let
+  this test's hardcoded 90px hand-drag execute against whatever camera
+  position the FIRST rendered frame happened to have, and the properly-
+  settled camera this fix now waits for sits at a different zoom, where 90
+  screen pixels of drag no longer crosses the world-space threshold
+  `armFlexed` is measured against. **Not fixed here** — diagnosing and
+  correcting the drag's distance (or the threshold) against the correctly-
+  settled camera is a small, separate piece of work this branch ran out of
+  time for.
 
-**What this means for whoever picks this up next.** Re-run
-`insert.e2e.spec.js`, `inversion.e2e.spec.js`, `postdraw.e2e.spec.js` and
-`withdrawal.e2e.spec.js` ALONE — nothing else contending for the renderer —
-before trusting any pass/fail count from them. `insert.e2e.spec.js`
-specifically still has a real, undiagnosed bug behind its eight failures;
-start from `entryX: null` after `approachDrag`, not from the settle-timing
-story above, which this file's own evidence rules out as the whole
-explanation.
+**What this means for whoever picks this up next.** `collection.e2e.spec.js`
+and `inversion.e2e.spec.js` are confirmed net improvements — safe to build
+on. `withdrawal.e2e.spec.js` is confirmed unchanged — safe, inert.
+`insert.e2e.spec.js` has a real, undiagnosed bug behind its eight failures,
+unrelated to the settle-timing story; start from `entryX: null` after
+`approachDrag`. `postdraw.e2e.spec.js` needs the most care: before changing
+anything else in it, fix `bending the patient's arm up stops the clot
+progressing`'s drag distance against the now-correctly-settled camera, and
+recheck whether `the dressing is dragged onto the site…`'s `bandageAlignM`
+needs the same kind of correction now that it gets far enough to measure.
+Re-run all four files ALONE — nothing else contending for the renderer —
+before trusting any pass/fail count from them; every count in this section
+came from either such a run or, where marked, two independent runs
+agreeing.
 
 **Confirmed pre-existing, not a regression.** A worktree of pristine
 `origin/main`, built and run through the identical suite, fails
