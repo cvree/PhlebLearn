@@ -166,7 +166,11 @@ export function reveal(){
    ========================================================================= */
 export function buttonControls(){ return !!SS.buttonControls; }
 
-export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true};
+/* `tray` is the work area carried between this shift's patients — see
+   venipuncture/staging/trayCarryover.js. It belongs to the SHIFT rather than
+   to the encounter, because carrying it is the whole point: the encounter is
+   the thing it outlives. */
+export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,tray:null};
 export function setShift(next){ SHIFT = next; }
 
 // current encounter (patient, in-progress choices, venipuncture procedure state)

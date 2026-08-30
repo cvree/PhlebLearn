@@ -193,6 +193,7 @@ export function renderStagingCoach(host, o){
   const guided = !!o.guided;
   const issue = nextIssue(result);
   const ready = result.ready;
+  const restocked = !!(state.restocked && state.restocked.length);
 
   host.innerHTML = `
     <div class="stg-coach">
@@ -211,20 +212,33 @@ export function renderStagingCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            ready: ready,
             tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: ready ? "Work area ready." : (issue ? (issue.severity === "block" ? "Not ready yet." : "Worth fixing.") : ""),
             line: ready
               ? "Everything you need is on the tray, the tubes are in order of draw, and the sharps container is beside the chair."
               : (issue ? issue.message : "Stage the equipment this draw needs."),
+            /* Said when it is true, and it never says WHICH item — that is the
+               thing the learner has to find. See staging/trayCarryover.js. */
+            note: restocked ? "Restocked from your cart between patients. Turn the packages over — a restock is not a guarantee." : "",
             how: HOW,
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${listView ? listHTML(state, catalog) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="stgReady" ${(guided && !ready)?"disabled":""} style="${(guided && !ready)?"opacity:.5":""}">
-        ${guided ? (ready ? "Tray ready ▶" : "Tray not ready yet") : "I'm ready — begin the draw ▶"}
-      </button>
+      ${/* THE BUTTON APPEARS WHEN THERE IS SOMETHING TO PRESS IT FOR.
+
+           It used to be a full-width primary bar reading "Tray not ready yet"
+           — the loudest control on the panel, permanently disabled for the
+           whole of the step, saying what the guidance line above it was
+           already saying properly. Preparing a work area is one of the two
+           steps that genuinely ends on a judgement rather than an action, so
+           the button is real; it is just not there before it means anything. */
+        (guided && !ready) ? "" : `
+        <button class="btn vp-tap" id="stgReady">
+          ${guided ? "Tray ready ▶" : "I'm ready — begin the draw ▶"}
+        </button>`}
     </div>`;
 
   const h = o.handlers || {};

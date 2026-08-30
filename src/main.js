@@ -41,7 +41,7 @@ import { benchHandDown, benchHandUp } from "./bench/benchSession.js";
 import { tickComplications } from "./venipuncture/complications/complicationRuntime.js";
 // Same reason: in Play a step ends because the action that ends it happened,
 // and the settle it waits out does not belong to whichever screen is up.
-import { tickAutoAdvance, autoAdvanceState } from "./venipuncture/autoAdvance.js";
+import { tickAutoAdvance, autoAdvanceState, holdAutoAdvance, fireAutoAdvance } from "./venipuncture/autoAdvance.js";
 // Nothing in this game integrates forces; every object moves along an authored
 // curve. One flat tween list, ticked here because the composition root owns the
 // frame. See bench/motion.js.
@@ -401,7 +401,10 @@ function installTestSeam(){
       // "learn"/"practice"/"final" the three the game now has.
       setMode(mode);
       const { setShift } = await import("./game/gameState.js");
-      setShift({ len:1, index:0, patients:[], ratings:[], orderAllOk:true, safetyAllOk:true, coins:0, startMs:Date.now(), patientTimes:[], missed:[] });
+      /* `tray:null`: the seam drops into ONE pinned patient, so a restocked
+         tray from a previous patient would be a carried-over state a test
+         never asked for. See venipuncture/staging/trayCarryover.js. */
+      setShift({ len:1, index:0, patients:[], ratings:[], orderAllOk:true, safetyAllOk:true, coins:0, startMs:Date.now(), patientTimes:[], missed:[], tray:null });
       const p = makePatient();
       const selected = tubes || ["lightblue","lavender"];
       setEnc({ p, selected, ordered:selected.slice(), idChoice:true, reqChoice:true, siteChoice:true,
@@ -1064,6 +1067,13 @@ function installTestSeam(){
     async autoAdvance(){
       return autoAdvanceState();
     },
+    /* A step ends itself a beat after its completing action happens, which is
+       a race for any test that wants to assert the step BECAME ready — by the
+       time the assertion runs the draw has moved on. These two hold the draw
+       where it is and end the step on demand: the same handle the confirm
+       button used to be, without putting the button back in the game. */
+    async holdSteps(on){ holdAutoAdvance(on !== false); return true; },
+    async endStep(){ return fireAutoAdvance(); },
     async hubScreenPoint(){
       const { getAssemblyContext } = await import("./venipuncture/assembly/assemblyRuntime.js");
       const ctx = getAssemblyContext();
