@@ -6,27 +6,39 @@
 <meta name="theme-color" content="#eaf3ff">
 <title>Tiny Vials</title>
 <meta name="description" content="Tiny Vials: a cozy 3D phlebotomy practice game with a realistic, step-by-step venipuncture simulation.">
-  <script type="module" crossorigin src="/PhlebLearn/assets/build/index-DIMIN1Ji.js"></script>
+<!-- Inline SVG, not a file: this game is served from a project page under
+     /PhlebLearn/, and a data URI is the one icon reference that cannot be
+     broken by a base-path mistake. See docs/DEPLOYMENT.md. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20d%3D%22M16%202.5c0%200-9.6%2011.9-9.6%2018A9.6%209.6%200%200%200%2025.6%2020.5c0-6.1-9.6-18-9.6-18z%22%20fill%3D%22%23e0526d%22%2F%3E%3Cpath%20d%3D%22M11.6%2019.6a4.4%204.4%200%200%200%204.4%204.4%22%20fill%3D%22none%22%20stroke%3D%22%23ffe3ea%22%20stroke-width%3D%222.2%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tiny Vials">
+<meta property="og:title" content="Tiny Vials — a cozy phlebotomy practice game">
+<meta property="og:description" content="Run a small draw room: greet the patient, find a vein by feel, build the needle, take the blood, and get the specimens to the lab intact.">
+<meta property="og:url" content="https://cvree.github.io/PhlebLearn/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Tiny Vials — a cozy phlebotomy practice game">
+<meta name="twitter:description" content="Seventeen real interactions, measured in real units. A practice tool, not a slideshow with buttons.">
+  <script type="module" crossorigin src="/PhlebLearn/assets/build/index-BF2hGuye.js"></script>
   <link rel="modulepreload" crossorigin href="/PhlebLearn/assets/build/three-yHN7xn1O.js">
-  <link rel="stylesheet" crossorigin href="/PhlebLearn/assets/build/index-zD9o-BnV.css">
+  <link rel="stylesheet" crossorigin href="/PhlebLearn/assets/build/index-BEg6h4Ng.css">
 </head>
 <body>
 <div id="app">
   <div class="topbar">
     <div class="badgechip titlechip"><span class="shiny-text">🩸 Tiny Vials</span></div>
-    <div class="badgechip" id="coinChip" title="Open the cozy office upgrade shop">
+    <div class="badgechip" id="coinChip" role="button" tabindex="0" title="Open the cozy office upgrade shop" aria-label="Open the office upgrade shop">
       <span id="tPatient">Patient 0/5</span>
       <span>⭐ <b id="tXp">0</b></span>
       <span>🪙 <b id="tCoins">0</b></span>
     </div>
   </div>
-  <button class="floatbtn" id="resetCam" style="top:54px;right:12px">🔄 Recenter</button>
-  <button class="floatbtn" id="settingsBtn" style="top:92px;right:12px">⚙️ Settings</button>
-  <button class="floatbtn" id="shopBtn" style="top:130px;right:12px">🏠 Shop</button>
-  <button class="floatbtn" id="stickerBtn" style="top:168px;right:12px">📔 Stickers</button>
+  <button class="floatbtn fb-right" id="resetCam" style="--fb-row:0">🔄 Recenter</button>
+  <button class="floatbtn fb-right" id="settingsBtn" style="--fb-row:1">⚙️ Settings</button>
+  <button class="floatbtn fb-right" id="shopBtn" style="--fb-row:2">🏠 Shop</button>
+  <button class="floatbtn fb-right" id="stickerBtn" style="--fb-row:3">📔 Stickers</button>
   <!-- left edge on purpose: on a tall viewport the panel grows to 80vh and
        would sit on top of anything stacked with the right-hand buttons -->
-  <button class="floatbtn" id="panelToggle" style="top:54px;left:12px;z-index:7" aria-expanded="true" aria-controls="panel">🗔 Hide panel</button>
+  <button class="floatbtn fb-left" id="panelToggle" style="--fb-row:0" aria-expanded="true" aria-controls="panel">🗔 Hide panel</button>
   <div class="panel" id="panel"></div>
   <div class="disclaimer">Study simulation only. Real blood collection requires approved training, instructor supervision, clinical practice, and employer policy.</div>
 
@@ -34,12 +46,18 @@
     <div class="settings-card">
       <h3>⚙️ Settings</h3>
       <div class="ssub">Press <b>Esc</b> any time to open or close this.</div>
+      <div class="setgroup">Display</div>
       <div class="setrow"><span>🌗 Dark mode</span><button id="setTheme">Off</button></div>
       <div class="setrow"><span>🎬 Animations</span><button id="setMotion">On</button></div>
+      <div class="setgroup">Hands</div>
       <div class="setrow"><span>✋ Dominant hand</span><button id="setHand">Right</button></div>
       <div class="setrow"><span>🧲 Assisted snapping</span><button id="setSnap">Off</button></div>
+      <div class="setrow"><span>🖐️ Controls</span><button id="setDirect">Direct</button></div>
+      <div class="setgroup">Sound</div>
       <div class="setrow"><span>🎵 Lobby music</span><button id="setMusic">On</button></div>
       <div class="setrow"><span>🔊 Music volume</span><input type="range" id="setMusicVol" min="0" max="100" value="55" style="flex:1;max-width:140px;accent-color:#ff9cc0"></div>
+      <details class="challenges" id="setChallenges"></details>
+      <button class="btn ghost" id="openHelpSettings">❔ How this works</button>
       <button class="btn ghost" id="openShopSettings">🏠 Office upgrades</button>
       <button class="btn closebtn" id="setClose">Done</button>
       <div class="credits">Tiny Vials · a Tiny Clinic game</div>
@@ -50,6 +68,10 @@
     <div class="shop-card">
       <div id="shopContent"></div>
     </div>
+  </div>
+
+  <div class="help-overlay" id="helpOverlay">
+    <div class="help-card" id="helpContent"></div>
   </div>
 
   <div class="sticker-overlay" id="stickerOverlay">
@@ -81,8 +103,15 @@ window.tinyVialsLibError=function(name){ window.tinyVialsLoadNote(name+' failed 
 setTimeout(function(){ if(!window.__tinyVialsBooted && !window.THREE){ window.tinyVialsLoadNote('Still waiting for the 3D library. If this stays here, check your internet/CDN blockers or run the HTML through a local server (module scripts need http/https, not file://).',true); } },7000);
 </script>
 <!-- Dynamic UI layer (progressive enhancement — the game runs without these if a CDN is blocked) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('GSAP motion')"></script>
-<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('Lenis smooth-scroll')"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/vanta/0.5.24/vanta.fog.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('Vanta backdrop')"></script>
+<!-- `defer`, not blocking. These three are decoration — the game runs without
+     any of them (see ui/dynamicEffects.js) — but as plain synchronous scripts
+     they held up HTML parsing, so the loading screen could not paint until
+     three CDN round-trips had finished or failed. Deferred scripts still
+     execute in document order and still run before the deferred module below,
+     so GSAP/Lenis/Vanta are present by the time main.js reads them; they just
+     no longer stand between the player and the first frame. -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('GSAP motion')"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('Lenis smooth-scroll')"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/vanta/0.5.24/vanta.fog.min.js" onerror="window.tinyVialsLibError&&window.tinyVialsLibError('Vanta backdrop')"></script>
 </body>
 </html>
