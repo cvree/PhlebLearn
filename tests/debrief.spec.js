@@ -50,6 +50,12 @@ test("every technique reading carries its own unit", () => {
   };
   const lines = techniqueLines(c);
   assert.ok(lines.length >= 8, `only ${lines.length} readings`);
+  /* The vein that was chosen and what the patient's body did are readings too
+     — they used to be recap chips on a screen that no longer exists, and the
+     debrief is where every measurement lands now. */
+  const labels = lines.map(l => l.label);
+  if(c.palpationMeasurements && c.palpationMeasurements.chosenLabel) assert.ok(labels.includes("vein"));
+  if(c.complicationMeasurements) assert.ok(labels.includes("complications"));
   const UNIT = /(s|°|%|mm|mL|″|up|rolled|\d\/\d)$/;
   for(const l of lines){
     assert.ok(UNIT.test(String(l.value)), `"${l.label}: ${l.value}" has no unit`);
