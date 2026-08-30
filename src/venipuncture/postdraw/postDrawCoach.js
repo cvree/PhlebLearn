@@ -18,6 +18,40 @@ import { nextIssue, nextAction, forceBandFor, SITE_KIND } from "./postDrawRules.
 import { secondsRemaining, meanForce } from "./postDrawState.js";
 import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
 
+/* =========================================================================
+   WHAT THE PATIENT SAYS WHILE YOU HOLD.
+
+   Haemostasis is thirty real seconds, and fifty-five for someone on
+   anticoagulants. That is the one genuinely still stretch in the whole draw:
+   a hand on a gauze pad, a countdown, and nothing to do but not let go —
+   which is exactly right clinically and, on its own, half a minute of
+   watching a bar.
+
+   It is also, in a real room, the half minute where the patient talks to you.
+   So they do. These change every ten seconds or so of held pressure, they say
+   nothing about technique, and they never ask for an answer — lifting your
+   hand to reply is the one thing this step is teaching you not to do.
+   ========================================================================= */
+const SMALL_TALK = [
+  "That was better than last time, honestly.",
+  "How long do I keep this on for?",
+  "I always look away. Every single time.",
+  "My mum faints at these. I get it from her.",
+  "Is that a lot of blood? It looks like a lot.",
+  "You're quicker than the machine at the pharmacy.",
+  "I've got the whole afternoon off after this.",
+  "It's the little plaster I like. Small victories.",
+  "Do you do this all day? I couldn't.",
+  "That's the arm I sleep on, too.",
+];
+/** Which line, from how long they have been sitting there. Stable per bucket. */
+function smallTalkFor(state){
+  if(state.clotProgress >= 1 || state.pressureStartedAt == null) return null;
+  const bucket = Math.floor((state.heldSeconds || 0)/10);
+  if(bucket < 1) return null;         // the first ten seconds are just the hold
+  return SMALL_TALK[bucket % SMALL_TALK.length];
+}
+
 /* How each gesture is performed — behind that step's own disclosure now rather
    than printed under every frame of it. See stepGuide.js. */
 const HOW = {
@@ -186,6 +220,7 @@ export function renderPostDrawCoach(host, o){
     bruiseText(state),
     issue ? issue.code : "-",
     guideSignature(),
+    smallTalkFor(state) || "-",
   ].join("|");
 
   if(host.dataset.pdSig === signature){ patchLive(host, state, mode); return; }
@@ -203,6 +238,8 @@ export function renderPostDrawCoach(host, o){
       <div class="asm-panel">
         ${rowsHTML(state, mode)}
       </div>
+
+      ${smallTalkFor(state) ? `<p class="pd-chat">“${esc(smallTalkFor(state))}”</p>` : ""}
 
       ${guided
         ? stepGuideHTML({

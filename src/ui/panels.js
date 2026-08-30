@@ -534,9 +534,18 @@ function renderCollect(){
       const score = sectionScore(readings);
       const mistakes = readings.reduce((n, r)=>n + ((r.measurement.mistakes||[]).length), 0);
       if(score >= SECTION_CLEAN && !mistakes && nextId){
-        // Said, not staged. The number is the same one the card would have
-        // shown, and the draw does not stop to show it.
-        toast(`${section.label} · ${score}/100 ✓`);
+        /* Said, not staged. The number is the same one the card would have
+           shown, and the draw does not stop to show it.
+
+           The streak goes with it. It has been accumulating in `c.streak`
+           since the beginning and was invisible until the debrief, which is
+           right for a scored shift — nothing is said there at all — and a
+           waste in a lesson, where three clean sections in a row is the
+           thing that makes the fourth one feel worth doing well. */
+        /* Already incremented: the driver runs onStepFinished (which pays the
+           section and advances the streak) before it asks for feedback. */
+        const run = c.streak || 0;
+        toast(`${section.label} · ${score}/100 ✓${run >= 3 ? `  🔥 ${run} clean in a row` : ""}`);
         return null;
       }
       return { section, readings, done: !nextId, score };
