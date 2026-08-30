@@ -777,10 +777,20 @@ controls the product no longer has, and those are fixed. The method is the
 thing to keep: **a worktree at the branch point is cheap, and it is the only
 answer to "was that me?" that does not require believing anyone.**
 
+**Where the pass left it: 18 failed, 238 passed.** Every one of the eighteen is
+in a group that fails at the branch point — `insert.e2e` all eight, the same
+eight; three of `palpation.e2e`'s four; two each of `inversion.e2e`'s and
+`postdraw.e2e`'s four; one of `staging.e2e`'s five; one of `butterfly.e2e`'s
+five; and one in `bench.e2e`, which flakes in both directions. Nothing new was
+introduced and about a dozen stale assertions were retired, which is what moved
+the number.
+
 Then re-read the lesson two paragraphs up. Reproducing at the branch point
 proves it is not a regression. It still does not prove it is environmental, and
 `insert.e2e` remains a real, unexplained, eight-test hole in this suite on this
-machine.
+machine. Whoever picks it up: the anchor lands (the panel shows the offset and
+the traction in millimetres) and the approach that follows it does not — the
+pointer-down at the ready pose, held clear of the skin, is not being claimed.
 
 ### The flag that lied
 
