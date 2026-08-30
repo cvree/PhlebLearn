@@ -219,3 +219,6 @@
 .dlg-you{justify-content:flex-end}
 .dlg-you .bubble.you{background:var(--plum);color:#fff;border-color:transparent}
 .dlg-you .bubble.you .who{color:rgba(255,255,255,.8)}
+/* A line that went to the lab wrong. It still says what it said. */
+.lbl-row.missed{background:#fdf3f6}
+.lbl-row.missed .lbl-val{color:var(--bad);text-decoration:underline wavy var(--bad)}

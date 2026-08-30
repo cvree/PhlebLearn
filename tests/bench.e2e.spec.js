@@ -23,6 +23,11 @@ const MODES = ["tourniquet", "palpate", "clean", "assemble", "insert"];
 async function boot(page){
   await page.goto("/?e2e=1");
   await page.waitForFunction(() => !!window.__phlebTest, null, { timeout: 20000 });
+  /* Hold the draw on whatever step the seam puts it. A step ends itself a
+     beat after its completing action happens, in both modes now, and a bench
+     test that applies a band and then reaches for the strap would be reaching
+     for a strap the draw has already moved on from. */
+  await page.evaluate(() => window.__phlebTest.holdSteps(true));
 }
 
 /**
@@ -40,8 +45,13 @@ async function openStep(page, step, tubes, mode){
     // The strap's loose layout is computed on the runtime's first frame, and
     // the bench's camera can already be settled from the step before — so
     // "the camera has stopped" does not imply "there is a strap to grab yet".
-    await page.waitForFunction(
-      async () => !!(await window.__phlebTest.screenPointOnStrap(0)), null, { timeout: 20000 });
+    /* Both ends AND the middle: the tests grab the strap at its midpoint, and
+       a tip that projects is not proof that the whole strap does. */
+    await page.waitForFunction(async () => {
+      const t = window.__phlebTest;
+      return !!(await t.screenPointOnStrap(0)) && !!(await t.screenPointOnStrap(0.5))
+        && !!(await t.screenPointOnStrap(1));
+    }, null, { timeout: 20000 });
   }
   await settleBench(page);
 }

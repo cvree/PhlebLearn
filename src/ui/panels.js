@@ -959,12 +959,21 @@ function renderLabel(){
 
     <div class="lbl-card${checked ? " done" : ""}">
       <div class="lbl-head">Printed label · ${(ENC.collect && ENC.collect.tubes ? ENC.collect.tubes.length : 1)} tube(s)</div>
-      ${draft.fields.map(f=>`
-        <button class="lbl-row${checked && draft.flaw && draft.flaw.field===f.key ? " fixed" : ""}"
+      ${draft.fields.map(f=>{
+        const isFlaw = !!(draft.flaw && draft.flaw.field === f.key);
+        /* Corrected only if it was actually CAUGHT. A line the learner walked
+           past still says what it said — the tube went to the lab like that,
+           and a label that quietly fixed itself would be the game lying about
+           the one thing this screen exists to teach. */
+        const caught = checked && isFlaw && verdict && verdict.ok;
+        const missed = checked && isFlaw && !(verdict && verdict.ok);
+        return `
+        <button class="lbl-row${caught ? " fixed" : ""}${missed ? " missed" : ""}"
                 data-field="${f.key}" ${checked ? "disabled" : ""}>
           <span class="lbl-lab">${f.label}</span>
-          <span class="lbl-val">${esc(checked && draft.flaw && draft.flaw.field===f.key ? "corrected" : f.value)}</span>
-        </button>`).join("")}
+          <span class="lbl-val">${esc(caught ? "corrected" : f.value)}</span>
+        </button>`;
+      }).join("")}
       <div class="lbl-band">${esc(p.name)} · ${esc(p.dob)} · ${esc(p.id)}<span class="lbl-bandlab">wristband</span></div>
     </div>
 
@@ -986,7 +995,10 @@ function renderLabel(){
     const right = flaw ? calledField === flaw.field : calledField === null;
     ENC.labelChecked = true;
     ENC.labelFields = { name:true, iddob:true, datetime:true, initials:true };
-    if(!right && flaw) ENC.labelFields[flaw.field] = false;
+    /* Whatever is wrong with the label as it LEAVES: the flaw they walked
+       past, or the correct line they "fixed" on a label that had nothing
+       wrong with it. Either way one field is not what the patient says. */
+    if(!right) ENC.labelFields[flaw ? flaw.field : calledField] = false;
     ENC.labelVerdict = right
       ? { ok:true, text: flaw
           ? `<b>Caught it.</b> ${flaw.why} Corrected before it left the chair.`
