@@ -1151,3 +1151,94 @@ Honest list, so the next branch does not have to rediscover it:
 - **`public/assets/audio/lobby.mp3` still has unverified provenance**, flagged
   in `docs/THIRD_PARTY_LICENSES.md`. `public/assets/icons` and
   `public/assets/textures` are empty directories.
+
+## Fun pass ✅ complete (`claude/game-fun-simplification-bj40qy`)
+
+The steps were real, the measurements were real, and the panel was still a
+wall of text with a disabled button at the bottom of it. This pass took out
+the redundancy that had accumulated *inside* screens rather than between them,
+and gave the two dullest stretches of the loop something to do.
+
+### The panel said everything four times
+
+On the insertion step, in Learn, top to bottom: a teaching card telling you to
+anchor the vein, a verdict telling you to anchor the vein, a next-action line
+telling you to anchor the vein, and a how-to paragraph telling you to anchor
+the vein. Eleven coaches, all built the same way, all correct, all at once.
+
+`venipuncture/stepGuide.js` is one guidance line now — the correction if there
+is one to make, the confirmation when the step is done, the next action
+otherwise — plus one fold holding the clinical reason and how the gesture is
+performed, which opens itself the first time a learner meets a step and is
+shut after that. The teaching is not deleted, it is spent once, and the fold
+remembers being closed by hand for the session. Two kinds of thing stayed
+visible because they are FACTS rather than restatements: the order of draw and
+the inversion counts, and how hard is firm enough on this site and how long
+this patient's blood needs.
+
+### The loudest control on the panel was permanently disabled
+
+A full-width primary button on every step, reading "Not ready yet" for the
+whole of it, pressable only at the moment the step was already correct — so it
+gated nothing, sixteen times a draw. Learn ends a step on the action now, like
+Play, and holds the finished step and its verdict about three times as long,
+which is what the button was actually buying. The arrival room and the supply
+cart keep a real button, because "done" there is a judgement rather than an
+event; what went is their disabled state.
+
+Play keeps its quiet "Carry on", and that one is load-bearing: implicit
+advancement asks whether the step is DONE, and a bad band is not — so it is
+the only thing that can walk a scored shift on from work that is not right.
+
+### Fifty identical drags a shift
+
+The tray was rebuilt from empty for every patient. It carries now
+(`staging/trayCarryover.js`): the consumable categories you staged, the sharps
+container if it ended up in reach, and where you pushed the tray. Not the
+tubes — those are this patient's order and the graded half of the step. And
+roughly one patient in three, the restock hands you something that should not
+be on the tray, unchecked and unannounced, so the step gets shorter and harder
+at once.
+
+### Eleven modal cards telling you the good work was good
+
+Every section ended on a full screen with the measurement cards and an offer
+to replay it. The screen exists to offer the replay; offering it for a clean
+section is the redundancy. A section at or above the clean bar with nothing
+recorded against it says its score in a line — with the streak, which had been
+accumulating invisibly since the first section — and the draw carries on.
+
+### Two verdicts on one encounter
+
+"Draw complete" printed the recap chips, the lab's verdict, the work-area
+card, the rubric and the payout, two clicks before the debrief said all of it
+again. (The Streamlining pass above moved the *report* to the end and left the
+recap; this finishes the job.) The draw ends where it actually ends now — at
+the chair, with unlabelled tubes in your hand — and the two readings that were
+only on that screen, the vein you chose and what the patient's body did, are
+readings in the debrief.
+
+Labelling was four checkboxes with no wrong answer. It is a printed label with
+the wristband under it and one call to make: everything matches, or one line
+does not. A line that was missed still says what it said, and the score reads
+the label rather than the ticking.
+
+And the two conversations were three screens each for one decision. One
+exchange now, everything said at once, the reply and the lesson in place.
+
+### The one place someone is talking to you
+
+Haemostasis is thirty real seconds, and fifty-five on anticoagulants — the
+only genuinely still stretch in the draw. The patient talks through it now: a
+line every ten seconds of held pressure, never a question that wants an
+answer, because lifting your hand to reply is what this step is teaching you
+not to do.
+
+### What this cost the tests
+
+The browser suite read "is this step finished?" off the confirm button's
+disabled state, which was fair while the button existed. It reads `data-ready`
+off the guidance block now, and the seam grew `holdSteps()` and `endStep()` —
+a step that ends itself a beat after becoming ready is a race for any test
+asserting that it became ready. `tests/trayCarryover.spec.js` is new (11
+tests); `tests/autoAdvance.spec.js` was rewritten around Learn advancing.

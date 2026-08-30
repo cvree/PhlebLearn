@@ -110,6 +110,28 @@ input modes are governed identically. Grouped as:
 - **Registry fallback**: a model whose GLB fails to load still produces a
   usable instance from its procedural builder.
 
+## The tray between patients (`tests/trayCarryover.spec.js`)
+
+A shift is six patients, and the consumable half of the tray is the same nine
+objects every time. It carries now — see `staging/trayCarryover.js` — so these
+hold the shape of what carries and what does not:
+
+- the CATEGORIES you staged carry, never the objects (the objects were used on
+  the last patient), and the restock comes out of *this* patient's cart;
+- the tubes never carry, because they are this patient's requisition and the
+  graded half of the step;
+- a flawed item does not carry as itself, and neither does a sharps container
+  left across the patient's arm — restocking either into the same mistake
+  would punish it twice without ever asking again;
+- and the restock can hand you something bad, unchecked, which nothing
+  announces. Deterministic in the tests through an injected `rng` and an
+  explicit `flawChance`, so "one patient in three" is a property of play and
+  not a coin flip inside an assertion.
+
+The last test is the one that matters most: a restock places through the same
+mutators a drag does, so the event log, the rules and the measurements cannot
+tell the two apart.
+
 ## Playwright smoke tests (`tests/smoke.spec.js`)
 
 Configured in `playwright.config.js` to run against `vite preview` (the
@@ -247,7 +269,9 @@ a real object rather than a widget:
 
 `main.js` installs `window.__phlebTest` **only** when the URL carries `e2e=1`.
 It exposes `gotoProcedureStep(stepId, tubes, mode)`, `stagingSnapshot()`,
-`screenPointFor(itemId)` and `screenPointForZone(zone)`. The `mode` argument
+`screenPointFor(itemId)`, `screenPointForZone(zone)`, and the two that hold a
+draw still now that no step waits for a button — `holdSteps(on)` and
+`endStep()`, described below. The `mode` argument
 (`"teach"` / `"play"`) matters: guided and scored shifts are deliberately
 different mechanics, so a test that doesn't say which one it wants is testing
 neither.
@@ -314,6 +338,33 @@ basis without rebuilding it, so a single continuous gesture that carried
 straight from a bad approach into a fresh one crashed on the very next move
 event — caught only because the browser suite drives that exact recovery path
 and the unit tests, working in plain numbers, cannot.
+
+### Holding the draw still, now that nothing has to be pressed
+
+A step ends because the action that ends it happened, in **both** modes — Learn
+holds the finished step and its verdict about three times as long before moving
+on, and that is the only difference. Nothing is pressed. (Two exceptions, in
+every mode: the arrival room and the supply cart, where "done" is a judgement
+rather than an event.)
+
+That is fine for the game and a race for any test that wants to assert a step
+*became* ready: by the time the assertion runs, the draw has moved on and the
+readiness being read belongs to the next step. So the seam holds it:
+
+- `holdSteps(true)` freezes implicit advancement. Every spec that asserts
+  readiness calls it in its `open()` helper, right after `__phlebTest` appears.
+- `endStep()` ends the current step on demand, if its completing action has
+  happened — the same handle the confirm button used to be, without putting the
+  button back in the game. `benchHelpers.js`'s `carryOn()` uses it, then falls
+  back to Play's quiet "Carry on" for the case implicit advancement cannot
+  cover: walking on from work that is not right.
+- `expectStepReady(page, true|false)` reads readiness off the guidance block's
+  `data-ready`, which is where it is published now. The specs used to read it
+  off the confirm button's disabled state, which was a fair proxy while the
+  button existed.
+
+The advancement itself is covered by `tests/autoAdvance.spec.js` and, end to
+end, by `tests/modes.e2e.spec.js` — which deliberately does *not* hold it.
 
 ### Two traps that make a bench gesture do nothing, silently
 

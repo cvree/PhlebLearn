@@ -266,10 +266,11 @@ export function ensureSupplySession(c){
     // Remembered so the coach can say a tray was restocked; never which item
     // is the bad one, which is the learner's to find.
     state.restockSuspect = restock.plantedId;
-    /* The replacements counter exists to record the learner putting something
-       back; a restock is not that, and the restock's own placements are not
-       theirs to be judged on either. */
-    state.replacements = 0;
+    /* Nothing else to reset. `replacements` counts items LEAVING a staged
+       zone, and a restock only puts things into one — so taking the planted
+       item back off the tray still counts against the learner exactly as it
+       would if they had staged it themselves, which is right: they did commit
+       to it by starting the draw with it there. */
   }
 
   const layout = createLayout({
