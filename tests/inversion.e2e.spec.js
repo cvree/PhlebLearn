@@ -8,7 +8,7 @@
    its own count rather than a global six.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, settleBench } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -44,32 +44,33 @@ async function open(page, mode){
     [TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.inversionAnchors()), null, { timeout:10000 });
-  await settle(page);
-}
-
-/** Waits for the camera to have rendered and stopped moving — see postdraw's note. */
-async function settle(page){
-  await page.evaluate(()=>{ delete window.__invPrev; });
-  await page.waitForFunction(async ()=>{
-    const a = await window.__phlebTest.inversionAnchors();
-    if(!a || a.frame < 4) return false;
-    const prev = window.__invPrev;
-    window.__invPrev = a.hand;
-    return !!prev && Math.hypot(prev.x - a.hand.x, prev.y - a.hand.y) < 0.5;
-  }, null, { timeout: 15000 });
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.inversionSnapshot());
 const anchors = page=>page.evaluate(()=>window.__phlebTest.inversionAnchors());
 const tubeOf = (snap, key)=>snap.tubes.find(t => t.key === key);
 
-/** Carries a tube out of the rack up into the hand. */
+/**
+ * Carries a tube out of the rack up into the hand.
+ *
+ * Settles before returning, with the mouse left down — `swing()` continues
+ * this same gesture rather than starting a new one, and it fetches ITS OWN
+ * `pivot` from fresh anchors the instant it is called. Lifting a tube is a
+ * mode change this step's own render loop reframes around on its next drawn
+ * frame, not synchronously here, so a `pivot` fetched before that settles is
+ * a pivot the hand has already left — the arc traces around the wrong
+ * centre and the runtime never sees an inversion of the shape it is
+ * measuring for. Waiting with the pointer merely held, not released, is safe:
+ * nothing here depends on the physical mouse moving while this polls.
+ */
 async function pickUp(page, key){
   const a = await anchors(page);
   await page.mouse.move(a.rack[key].x, a.rack[key].y);
   await page.mouse.down();
   await page.mouse.move(a.hand.x, a.hand.y, { steps: 22 });
   await page.waitForTimeout(80);
+  await settleBench(page);
   return a;
 }
 
@@ -112,6 +113,8 @@ async function rackIt(page, key){
   await page.mouse.move(a.rack[key].x, a.rack[key].y, { steps: 18 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  // settle for whichever tube the caller reaches for next — see pickUp's note.
+  await settleBench(page);
 }
 
 /* ---------- the step is real ------------------------------------------------------ */

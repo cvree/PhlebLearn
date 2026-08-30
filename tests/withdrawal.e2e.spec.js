@@ -52,7 +52,13 @@ async function open(page, mode, step){
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.withdrawalSnapshot());
 const anchors = page=>page.evaluate(()=>window.__phlebTest.withdrawalAnchors());
 
-/** Pulls the band's tail free — a real travel, not a button. */
+/**
+ * Pulls the band's tail free — a real travel, not a button.
+ *
+ * Settles before returning: releasing the band is a state change this step's
+ * own render loop reframes around on its next drawn frame, and this file
+ * chains several of these gestures together — see withdrawDrag's note.
+ */
 async function pullTail(page){
   const a = await anchors(page);
   await page.mouse.move(a.tail.x, a.tail.y);
@@ -60,6 +66,7 @@ async function pullTail(page){
   await page.mouse.move(a.tail.x + 90, a.tail.y - 70, { steps: 18 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
 /** Carries the gauze from the bench to rest by the site. */
@@ -70,9 +77,21 @@ async function gauzeToSite(page){
   await page.mouse.move(a.site.x, a.site.y, { steps: 24 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
-/** Draws the needle `mm` millimetres OUT along its own entry line. */
+/**
+ * Draws the needle `mm` millimetres OUT along its own entry line.
+ *
+ * Settles before returning, like every gesture helper in this file. Release,
+ * withdraw, safety and sharps are one continuous piece of work — the whole
+ * point this file's tests exist to prove — chained through this same page
+ * without a fresh `open()` between them, and each transition is a state
+ * change this step's render loop reframes around on ITS OWN next drawn
+ * frame, not synchronously inside the pointer handler that caused it. A
+ * later gesture in the chain that fetches fresh anchors before that settles
+ * is fetching anchors for a camera that has only just been told to move.
+ */
 async function withdrawDrag(page, mm, sideMm){
   const a = await anchors(page);
   const sx = a.sidePx ? a.sidePx.dx*(sideMm || 0)/10 : 0;
@@ -82,6 +101,7 @@ async function withdrawDrag(page, mm, sideMm){
   await page.mouse.move(a.hub.x + a.outPx.dx*mm/10 + sx, a.hub.y + a.outPx.dy*mm/10 + sy, { steps: 26 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  await settleBench(page);
 }
 
 /** Slides the safety shield `mm` millimetres forward along the needle. */
@@ -92,6 +112,7 @@ async function shieldSlide(page, mm){
   await page.mouse.move(a.shield.x + a.inPx.dx*mm/10, a.shield.y + a.inPx.dy*mm/10, { steps: 20 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  await settleBench(page);
 }
 
 /**
@@ -114,6 +135,7 @@ async function carryUnitTo(page, dest){
   await page.mouse.move(a[dest].x, a[dest].y, { steps: 26 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  await settleBench(page);
 }
 
 /* ---------- release: the band comes off by its own tail --------------------------- */

@@ -62,7 +62,18 @@ const snapshot = page=>page.evaluate(()=>window.__phlebTest.collectionSnapshot()
 const anchors = page=>page.evaluate(()=>window.__phlebTest.collectionAnchors());
 const fastFill = (page, s)=>page.evaluate(x=>window.__phlebTest.fastForwardFill(x), s);
 
-/** Carries a tube from its rack slot into the holder's mouth. */
+/**
+ * Carries a tube from its rack slot into the holder's mouth.
+ *
+ * Settles the camera before returning, not just after `open()`. Taking a
+ * tube up changes this step's own mode (idle → seat) and its own render loop
+ * reframes around that on the next frame it draws — a request issued AFTER
+ * this gesture completes, not inside it. A caller that immediately fetches
+ * fresh anchors for the NEXT drag is projecting through a camera that has
+ * only just been told where to go. Measured at 45px of drift between the
+ * pre- and post-carry anchor fetch; without this every seat/push test in this
+ * file grabbed 45px short of the flange and moved nothing.
+ */
 async function carryToHolder(page, key){
   const a = await anchors(page);
   await page.mouse.move(a.rack[key].x, a.rack[key].y);
@@ -70,6 +81,7 @@ async function carryToHolder(page, key){
   await page.mouse.move(a.mouth.x, a.mouth.y, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
 /**
@@ -92,6 +104,9 @@ async function seatDrag(page, mm, from){
   await page.mouse.move(start.x + a.alongPx.dx*mm/10, start.y + a.alongPx.dy*mm/10, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  // settle for the sake of whatever the CALLER does next — a second seatDrag,
+  // or a fresh anchor fetch — see carryToHolder's doc comment above.
+  await settleBench(page);
 }
 
 /** A point out along the tube's barrel, well clear of the flange. */
