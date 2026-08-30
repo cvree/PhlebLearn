@@ -105,25 +105,80 @@ export async function settleBench(page){
 }
 
 /**
- * Confirms a step, whether or not the confirm button is still there.
+ * Waits for a step to end, whether or not there is a button to end it with.
  *
- * In Learn a step ends when the learner presses that button, and this clicks
- * it. In Play the ACTION that ends a step ends it — you tie the band and the
- * draw is on the band — so by the time a test reaches for the button, the
- * draw has already moved on and the button belongs to the previous screen.
+ * There used to be one on every step in Learn. There is not any more: a step
+ * ends because the ACTION that ends it happened, in both modes, and the panel
+ * simply holds the finished step and its verdict for a beat before moving on.
+ * The two steps that still end on a press — the arrival room and the supply
+ * cart, where "done" is a judgement rather than an event — still have one, and
+ * this clicks it.
  *
- * Tolerating its absence is the new behaviour rather than a fudge around it:
- * a test that hangs for ninety seconds waiting to press "Carry on" in Play is
- * asserting something the game deliberately stopped doing. What each test
- * still asserts afterwards is that it arrived at the RIGHT next step, which is
- * the claim that actually matters.
+ * So the contract is "get past this step", not "click this thing". Absence of
+ * the button is the normal case and this waits out the settle instead. What
+ * each test still asserts afterwards is that it arrived at the RIGHT next
+ * step, which is the claim that actually matters.
  */
 export async function carryOn(page, selector){
-  const btn = page.locator(selector);
-  if(!(await btn.count())) return false;
-  if(!(await btn.isEnabled().catch(()=>false))) return false;
-  await btn.click({ timeout: 5000 }).catch(()=>{});
-  return true;
+  const named = selector ? page.locator(selector) : null;
+  if(named && await named.count() && await named.isEnabled().catch(()=>false)){
+    await named.click({ timeout: 5000 }).catch(()=>{});
+    return true;
+  }
+  /* In Learn there is nothing to click: end the step the way the draw itself
+     would, through the seam. Deterministic, rather than sleeping out the
+     settle and hoping a software renderer reached the frame that ticks it. */
+  if(await page.evaluate(() => window.__phlebTest && window.__phlebTest.endStep
+      ? window.__phlebTest.endStep() : false)) return true;
+  /* Not ready, so implicit advancement will not have it. That is a scored
+     shift walking on from work that is not right, which is exactly what the
+     Carry on button is for and the only thing left that can do it. */
+  const hatch = page.locator("#vpStage .btn.vp-tap.quiet");
+  if(await hatch.count()){
+    await hatch.first().click({ timeout: 5000 }).catch(()=>{});
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Holds the draw on whatever step it is on.
+ *
+ * Every spec that asserts "this step is now complete" needs this: without it,
+ * the step ends itself a beat after becoming ready and the readiness being
+ * asserted belongs to the following step by the time the assertion runs. The
+ * advancement itself is covered by tests/autoAdvance.spec.js and, end to end,
+ * by tests/modes.e2e.spec.js — which deliberately does NOT hold it.
+ */
+export async function holdSteps(page){
+  await page.evaluate(() => window.__phlebTest && window.__phlebTest.holdSteps
+    ? window.__phlebTest.holdSteps(true) : null);
+}
+
+/**
+ * Whether the step on screen reports its completing action as having happened.
+ *
+ * The browser tests used to read this off the confirm button's disabled state,
+ * which was a fair proxy while the button existed. It is published on the
+ * guidance block instead now — one handle, the same in both modes, and it
+ * survives the button going away. See venipuncture/stepGuide.js.
+ */
+export async function stepReady(page){
+  return page.evaluate(() => {
+    const el = document.querySelector("#vpStage .sg[data-ready], #arrivalStage .sg[data-ready]")
+      || document.querySelector(".sg[data-ready]");
+    return el ? el.dataset.ready === "1" : null;
+  });
+}
+
+/** Asserts the step's readiness, waiting for it to get there. */
+export async function expectStepReady(page, want, opts){
+  const timeout = (opts && opts.timeout) || 10000;
+  await page.waitForFunction(w => {
+    const el = document.querySelector("#vpStage .sg[data-ready], #arrivalStage .sg[data-ready]")
+      || document.querySelector(".sg[data-ready]");
+    return !!el && (el.dataset.ready === "1") === w;
+  }, want, { timeout });
 }
 
 /**

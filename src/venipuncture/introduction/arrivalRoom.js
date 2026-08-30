@@ -203,6 +203,7 @@ export function renderArrivalRoom(host, o){
 
       ${guided ? stepGuideHTML({
           id: "introduce",
+          ready: canStart,
           tone: canStart ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
           lead: canStart ? "You know who this is." : "Not yet.",
           line: canStart ? nextAction(state) : (issue ? issue.message : nextAction(state)),
@@ -224,9 +225,12 @@ export function renderArrivalRoom(host, o){
 
       ${sinkHTML(state)}
 
-      <button class="btn vp-tap" id="arrStart" ${canStart ? "" : "disabled style='opacity:.5'"}>
-        ${canStart ? "Prepare your work area ▶" : `Identify them first (${identifiersObtained(state).length}/${REQUIRED_IDENTIFIERS})`}
-      </button>
+      ${/* Same rule as the supply cart's: the button is here when there is
+           something to press it for. Before two identifiers match there is
+           nothing to press, and a disabled bar reading "Identify them first
+           (0/2)" was a third copy of what the readiness chips and the
+           guidance line both already say. */
+        canStart ? `<button class="btn vp-tap" id="arrStart">Prepare your work area ▶</button>` : ""}
     </div>`;
 
   const h = o.handlers || {};

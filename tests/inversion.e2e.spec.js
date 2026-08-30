@@ -8,7 +8,7 @@
    its own count rather than a global six.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn, settleBench } from "./benchHelpers.js";
+import { carryOn, settleBench, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -40,6 +40,10 @@ async function open(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(([t, m])=>window.__phlebTest.gotoProcedureStep("invert", t, m),
     [TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
@@ -142,8 +146,8 @@ test("each additive is held to its own count, not a global six", async ({ page }
   expect(citrate.ideal).toBe(4);
   expect(edta.ideal).toBe(8);
   expect(citrate.ideal).not.toBe(edta.ideal);
-  await expect(page.locator(".tq-next")).toContainText("4×");
-  await expect(page.locator(".tq-next")).toContainText("8×");
+  await expect(page.locator(".sg-note")).toContainText("4×");
+  await expect(page.locator(".sg-note")).toContainText("8×");
 });
 
 /* ---------- picking up and turning ------------------------------------------------- */
@@ -229,7 +233,7 @@ test("mixing a tube to its count and racking it completes that tube", async ({ p
   expect(snap.heldKey).toBeNull();
   // the other tube still owes its own eight
   expect(snap.pending).toContain("lavender");
-  await expect(page.locator("#invReady")).toBeDisabled();
+  await expectStepReady(page, false);
   expect(errors).toEqual([]);
 });
 
@@ -237,13 +241,16 @@ test("mixing a tube to its count and racking it completes that tube", async ({ p
 
 test("teaching mode will not leave the step while a tube can still be mixed", async ({ page })=>{
   await open(page, "teach");
-  await expect(page.locator("#invReady")).toBeDisabled();
-  await expect(page.locator("#invReady")).toHaveText(/Not finished/);
+  await expectStepReady(page, false);
+  await expectStepReady(page, false);
 });
 
 test("a scored shift lets under-mixed specimens through and stays quiet", async ({ page })=>{
   await open(page, "play");
-  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  /* Play says NOTHING. There is no standing note any more — one explaining
+     that your technique is being assessed is still being told something —
+     so what "quiet" means is that there is no verdict on screen at all. */
+  await expect(page.locator(".vp-stage .stg-msg")).toHaveCount(0);
   await expect(page.locator("#invReady")).toBeEnabled();
   await expect(page.locator("#invReady")).toHaveText(/Carry on/);
 });
@@ -253,9 +260,9 @@ test("a scored shift lets under-mixed specimens through and stays quiet", async 
 test("the coach patches the live count and angle rather than re-rendering", async ({ page })=>{
   await open(page, "teach");
   await pickUp(page, "lavender");
-  await page.evaluate(()=>{ document.querySelector("#invReady").dataset.probe = "1"; });
+  await page.evaluate(()=>{ document.querySelector(".stg-topline").dataset.probe = "1"; });
   await swing(page, 100);
-  const kept = await page.evaluate(()=>document.querySelector("#invReady").dataset.probe);
+  const kept = await page.evaluate(()=>document.querySelector(".stg-topline").dataset.probe);
   await page.mouse.up();
   expect(kept).toBe("1");
   await expect(page.locator('[data-live="tilt"]')).toContainText("°");
@@ -283,7 +290,7 @@ test("the controls path mixes every tube through the same rules", async ({ page 
   expect(tubeOf(snap, "lavender").inversions).toBe(8);
   expect(snap.tubes.every(t => t.usable)).toBe(true);
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#invReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -308,6 +315,10 @@ test("the controls path is not an easier game — rocking and shaking both fail"
 test("the plain serum tube must not be mixed, and the controls say so", async ({ page })=>{
   await page.goto("./?e2e=1");
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(()=>window.__phlebTest.gotoProcedureStep("invert", ["red","lavender"], "teach"));
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.inversionAnchors()), null, { timeout:10000 });
@@ -380,8 +391,8 @@ test("finishing a section pays out there and then, scaled by how well it went", 
     await page.locator('[data-inv="mix"]').click();
     await page.locator('[data-inv="rack"]').click();
   }
-  await expect(page.locator("#invReady")).toBeEnabled();
-  await carryOn(page, "#invReady");
+  await expectStepReady(page, true);
+  await carryOn(page);
 
   const after = await page.evaluate(()=>window.__phlebTest.rewardSnapshot());
   // the step tick alone is 2 XP; a section mixed to every tube's own count is

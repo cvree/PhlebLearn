@@ -12,7 +12,7 @@
    staging mechanic broke, not that a different patient got rolled.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, holdSteps } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -43,6 +43,10 @@ async function openStaging(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("gather", ["lightblue","lavender"], m), mode||"teach");
   await expect(page.locator(".stg-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>{
@@ -235,7 +239,7 @@ test("left-handed mode mirrors the staging zones on screen", async ({ page }) =>
 test("Tray ready stays locked until every condition is met, then advances the procedure", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await openStaging(page);
-  await expect(page.locator("#stgReady")).toBeDisabled();
+  await expect(page.locator("#stgReady")).toHaveCount(0);
 
   await stageEverythingViaList(page);
 
@@ -259,7 +263,7 @@ test("an unreachable sharps container blocks readiness until it is moved", async
 
   await page.locator(`[data-stage="${sharps.id}"][data-zone="across"]`).click();
   expect((await snapshot(page)).ready).toBe(false);
-  await expect(page.locator("#stgReady")).toBeDisabled();
+  await expect(page.locator("#stgReady")).toHaveCount(0);
   await expect(page.locator(".stg-msg")).toContainText(/past the patient's arm/i);
 
   await page.locator(`[data-stage="${sharps.id}"][data-zone="reach"]`).click();
@@ -339,7 +343,7 @@ test("a scored shift does not explain why a staged item is wrong", async ({ page
 test("teaching mode still gates the draw behind a correct tray", async ({ page }) => {
   await openStaging(page, "teach");
   await expect(page.locator(".stg-checks .stg-chk")).toHaveCount(9);
-  await expect(page.locator("#stgReady")).toBeDisabled();
+  await expect(page.locator("#stgReady")).toHaveCount(0);
   await expect(page.locator(".stg-msg")).toContainText(/still need|Not ready/i);
 });
 

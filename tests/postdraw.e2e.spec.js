@@ -9,7 +9,7 @@
    gesture that put it on.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn, settleBench } from "./benchHelpers.js";
+import { carryOn, settleBench, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -41,6 +41,10 @@ async function open(page, mode, step){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m, "straight-antecubital"),
     [step || "pressure", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
@@ -159,7 +163,7 @@ test("a pad rested on lightly never stops the bleeding, however long it is held"
 test("firm pressure held through the requirement actually stops it", async ({ page })=>{
   const errors = attachDiagnostics(page);
   await open(page, "teach", "pressure");
-  await expect(page.locator("#pdReady")).toBeDisabled();
+  await expectStepReady(page, false);
   await pressHoldRelease(page, 0.75, 45);
 
   const snap = await snapshot(page);
@@ -169,7 +173,7 @@ test("firm pressure held through the requirement actually stops it", async ({ pa
   // letting go after it is holding IS the check, and the site is dry
   expect(snap.checked).toBe(true);
   expect(snap.bleedingAtCheck).toBe(false);
-  await expect(page.locator("#pdReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -199,7 +203,7 @@ test("lifting the gauze early shows blood and costs progress", async ({ page })=
   expect(snap.releasedEarlyCount).toBe(1);
   expect(snap.clotProgress).toBeLessThan(mid.clotProgress);
   expect(snap.issues).toContain("stillBleeding");
-  await expect(page.locator("#pdReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 /* ---------- the flexed elbow ------------------------------------------------------ */
@@ -235,7 +239,7 @@ test("the dressing is dragged onto the site, and its alignment and tightness are
   await pressHoldRelease(page, 0.75, 45);
   const before = await snapshot(page);
   expect(before.haemostatic).toBe(true);
-  await expect(page.locator("#pdReady")).toBeDisabled();
+  await expectStepReady(page, false);
 
   const a = await anchors(page);
   await page.mouse.move(a.bandage.x, a.bandage.y);
@@ -254,7 +258,7 @@ test("the dressing is dragged onto the site, and its alignment and tightness are
   expect(snap.bandageAlignM).toBeLessThan(0.014);
   expect(snap.bandageTightness).toBeGreaterThan(0);
   expect(snap.bandageTightness).toBeLessThan(0.88);
-  await expect(page.locator("#pdReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -272,7 +276,7 @@ test("a dressing put on over a bleeding puncture is blocked", async ({ page })=>
   expect(snap.bandaged).toBe(true);
   expect(snap.bandagedWhileBleeding).toBe(true);
   expect(snap.blocking).toContain("bandagedBleeding");
-  await expect(page.locator("#pdReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 /* ---------- the two steps are one piece of work ----------------------------------- */
@@ -288,7 +292,7 @@ test("the bandage step inherits the clot the pressure step formed", async ({ pag
   expect(done.padOffSite).toBe(false);
   expect(done.meanForce).toBeGreaterThan(done.requiredForce);
   expect(done.pressureReady).toBe(true);
-  await carryOn(page, "#pdReady");
+  await carryOn(page);
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.postDrawAnchors()), null, { timeout:10000 });
@@ -304,14 +308,20 @@ test("the bandage step inherits the clot the pressure step formed", async ({ pag
 
 test("a scored shift lets a hematoma happen and says nothing until after", async ({ page })=>{
   await open(page, "play", "pressure");
-  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  /* Play says NOTHING. There is no standing note any more — one explaining
+     that your technique is being assessed is still being told something —
+     so what "quiet" means is that there is no verdict on screen at all. */
+  await expect(page.locator(".vp-stage .stg-msg")).toHaveCount(0);
   await expect(page.locator("#pdReady")).toBeEnabled();
   await fastForward(page, 120);          // walk away from a bleeding puncture
 
   const snap = await snapshot(page);
   expect(snap.hematomaGrade).toBe("hematoma");
   expect(snap.blocking).toContain("hematoma");
-  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  /* Play says NOTHING. There is no standing note any more — one explaining
+     that your technique is being assessed is still being told something —
+     so what "quiet" means is that there is no verdict on screen at all. */
+  await expect(page.locator(".vp-stage .stg-msg")).toHaveCount(0);
 });
 
 /* ---------- the coach does not tear itself down while the hold ticks -------------- */
@@ -319,10 +329,10 @@ test("a scored shift lets a hematoma happen and says nothing until after", async
 test("the coach patches the live force and countdown rather than re-rendering", async ({ page })=>{
   await open(page, "teach", "pressure");
   await pressInto(page, 0.75);
-  await page.evaluate(()=>{ document.querySelector("#pdReady").dataset.probe = "1"; });
+  await page.evaluate(()=>{ document.querySelector(".stg-topline").dataset.probe = "1"; });
   await fastForward(page, 8);
   await page.waitForTimeout(700);
-  const kept = await page.evaluate(()=>document.querySelector("#pdReady").dataset.probe);
+  const kept = await page.evaluate(()=>document.querySelector(".stg-topline").dataset.probe);
   await page.mouse.up();
   expect(kept).toBe("1");
   await expect(page.locator('[data-live="hold"]')).toContainText("to go");
@@ -347,7 +357,7 @@ test("the controls path runs both steps through the same rules", async ({ page }
   expect(snap.haemostatic).toBe(true);
   expect(snap.bleedingAtCheck).toBe(false);
   expect(snap.pressureReady).toBe(true);
-  await carryOn(page, "#pdReady");
+  await carryOn(page);
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await useControls(page);

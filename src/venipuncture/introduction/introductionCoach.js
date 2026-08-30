@@ -132,6 +132,7 @@ export function renderIntroductionCoach(host, o){
       ${guided
         ? stepGuideHTML({
             id: "introduce",
+            ready,
             tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: ready ? "Identified, informed and gloved."
                         : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
@@ -139,14 +140,20 @@ export function renderIntroductionCoach(host, o){
               ? "You know who this is, they know what is about to happen, and your hands are clean."
               : (issue ? issue.message : nextAction(state)),
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${actsHTML(state)}
       ${handsHTML(state)}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="introReady" ${(o.gate && !ready) ? "disabled" : ""} style="${(o.gate && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Ready — prepare your tray ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+      ${/* Meeting a patient is one of the two steps that ends on a judgement
+           rather than an action, so this button is real in both modes. What
+           went is its disabled state: a full-width bar reading "Not ready
+           yet" is not a control, and the guidance line above already says
+           exactly which identifier is missing. */
+        (o.gate && !ready) ? "" : `
+        <button class="btn vp-tap${guided ? "" : " quiet"}" id="introReady">
+          ${guided ? "Ready — prepare your tray ▶" : "Carry on ▶"}
+        </button>`}
     </div>`;
 
   const h = o.handlers || {};

@@ -94,6 +94,7 @@ export function renderCleaningCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            ready: ready,
             tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: ready ? "Clean and dry."
                         : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
@@ -102,15 +103,26 @@ export function renderCleaningCoach(host, o){
               : (issue ? issue.message : nextAction(state, result)),
             how: HOW,
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${listView ? controlsHTML(state) : ""}
 
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S.
+
+           A scored shift has to let the learner move on from work that is not
+           right — a band too close to the site, a site half-scrubbed — and
+           carry the mistake forward to the report. Nothing else can end those
+           steps, because implicit advancement asks whether the step is DONE
+           and a bad band is not.
+
+           Learn has no button at all now. It is gated on being right by
+           design, and the step ends itself the moment it is — so the control
+           that used to sit here was a full-width primary bar reading "Not
+           ready yet" for the whole of the step, and nothing else, ever. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="clnReady">Carry on ▶</button>`}
+
       ${!listView && !state.swabOpen ? `<button class="btn ghost vp-tap" id="clnOpen">Open the alcohol pad</button>` : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="clnReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Site prepped — assemble the needle ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
     </div>`;
 
   const h = o.handlers || {};

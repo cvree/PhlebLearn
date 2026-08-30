@@ -10,7 +10,7 @@
    be clean.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -40,6 +40,10 @@ async function open(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("insert", ["lightblue","lavender"], m, "straight-antecubital"), mode||"teach");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.insertAnchors()), null, { timeout:10000 });
@@ -176,7 +180,7 @@ test("a natural straight carry from the ready pose to the mark lands in the idea
   expect(snap.inVein).toBe(true);
   expect(snap.flashAt).not.toBeNull();
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#insReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -316,7 +320,7 @@ test("the controls anchor and insert with the same rules, scene torn down", asyn
   snap = await snapshot(page);
   expect(snap.inVein).toBe(true);
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#insReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 

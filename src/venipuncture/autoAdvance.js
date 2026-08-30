@@ -1,17 +1,32 @@
 /* =========================================================================
    IMPLICIT ADVANCEMENT — how a draw stops being a slideshow.
 
-   In Learn, a step ends when the learner presses a button that says so. That
-   is right for a lesson: the confirmation is a beat, and the gate that comes
-   with it is how Learn teaches.
+   A step ends because the ACTION that ends it happened. You tie the band and
+   the draw is on the band; you commit to a vein and the draw is on the vein;
+   the last tube comes off and the draw is on the withdrawal. Nothing is
+   pressed and nothing is announced.
 
-   In Play there is no button. The step ends because the ACTION that ends it
-   happened. You tie the band and the draw is on the band; you commit to a
-   vein and the draw is on the vein; the last tube comes off and the draw is
-   on the withdrawal. Nothing is pressed, nothing is announced, and there is
-   no step counter to watch tick over — which is the whole point, because a
-   trained phlebotomist counting down "step 9 of 16" is being reminded they
-   are inside a piece of software.
+   THIS USED TO BE PLAY-ONLY, AND LEARN KEPT A BUTTON.
+
+   The argument was that the confirmation is a beat and the gate that comes
+   with it is how Learn teaches. Neither half survived contact with the
+   screen. The gate is not the button's: a step becomes ready when it is
+   RIGHT, so the button was only ever pressable at the moment the gate had
+   already opened — it gated nothing. And the beat it bought cost sixteen
+   clicks a draw on a full-width primary button that, for all the time before
+   that moment, read "Not ready yet": the loudest control on the panel,
+   permanently disabled, saying nothing the guidance line was not already
+   saying better.
+
+   So Learn advances on the action too. What it keeps is the BEAT — it holds
+   the finished step, and its "that is a good tourniquet" line, on screen
+   about three times as long as Play does, which is what the button was
+   actually providing. See settleMs().
+
+   Two steps still end on a press in every mode, because there is no action
+   in them that means "done": the arrival room ("I have asked everything I
+   need to") and the supply cart ("my tray is ready"). Those are judgements,
+   and the learner makes them.
 
    THREE THINGS THIS FILE IS CAREFUL ABOUT
 
@@ -34,11 +49,6 @@
       step is trivially complete for a one-tube draw. Advancing there would
       skip the step entirely without the learner seeing it. A step must be
       seen to become ready, not found ready.
-
-   The two steps that DON'T auto-advance are the two where "done" is a
-   judgement rather than an event: the introduction, and preparing the work
-   area. Nothing happens that means "I have asked everything I need to" or
-   "my tray is ready" — the learner decides, and so they still say so.
    ========================================================================= */
 import { reveal } from "../game/gameState.js";
 
@@ -50,7 +60,48 @@ import { reveal } from "../game/gameState.js";
  */
 export const SETTLE_MS = 420;
 
+/**
+ * Learn's settle: the same mechanism, held long enough to read.
+ *
+ * This is what the confirm button was really for. A learner who has just
+ * tied a good band is told so — "veins filled, pulse intact, tail clear of
+ * the field" — and that sentence is worth about a second of standing still
+ * before the draw moves on. A trained phlebotomist does not need the second,
+ * which is why Play does not spend it.
+ */
+export const LEARN_SETTLE_MS = 1250;
+
+/** The settle this mode uses. `stepChrome` is the mode's own "this is a lesson". */
+export function settleMs(){
+  return reveal().stepChrome ? LEARN_SETTLE_MS : SETTLE_MS;
+}
+
 let watch = null;
+
+/* ---------- the browser tests' handle on all of this --------------------------
+   A step that ends itself a beat after it becomes ready is exactly what this
+   file is for, and it is also a race for any test that wants to ASSERT the
+   step became ready: by the time the assertion runs, the draw has moved on and
+   the readiness it was reading belongs to the next step.
+
+   So the ?e2e=1 seam can hold the draw on the current step and end it on
+   demand — the same two things the confirm button used to give a test, without
+   putting the button back in the game. Nothing outside the seam calls either:
+   `installTestSeam()` is the only importer, and it only runs under ?e2e=1.
+   ---------------------------------------------------------------------------- */
+let held = false;
+
+/** Freezes (or unfreezes) implicit advancement. Test seam only. */
+export function holdAutoAdvance(on){ held = !!on; }
+
+/** Ends the current step now, if its completing action has happened. Test seam only. */
+export function fireAutoAdvance(){
+  if(!watch || !watch.ready || !watch.armed) return false;
+  const go = watch.finish;
+  watch = null;
+  if(typeof go === "function"){ go(); return true; }
+  return false;
+}
 
 /**
  * Called from a step's own `draw()`, every time it re-renders, with whether
@@ -61,11 +112,6 @@ let watch = null;
  * decides nothing itself.
  */
 export function reportStepReady(key, ready, finish){
-  // Learn keeps its button. `stepChrome` is the mode's own description of
-  // whether it shows the scaffolding of a lesson, and the confirm button is
-  // part of that scaffolding.
-  if(reveal().stepChrome){ watch = null; return; }
-
   if(!watch || watch.key !== key){
     /* A NEW STEP. If it is ALREADY ready on the frame it opens, this step has
        nothing for the learner to do — a one-tube draw has no tube to switch
@@ -93,8 +139,9 @@ export function reportStepReady(key, ready, finish){
  * belong to whichever screen happens to be up.
  */
 export function tickAutoAdvance(){
+  if(held) return false;
   if(!watch || !watch.ready || !watch.armed) return false;
-  if(now() - watch.since < SETTLE_MS) return false;
+  if(now() - watch.since < settleMs()) return false;
   const go = watch.finish;
   watch = null;
   if(typeof go === "function"){ go(); return true; }

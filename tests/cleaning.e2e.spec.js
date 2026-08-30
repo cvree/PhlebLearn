@@ -6,7 +6,7 @@
    site again undoes it.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -36,6 +36,10 @@ async function openCleaning(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("clean", ["lightblue","lavender"], m), mode||"teach");
   await expect(page.locator(".cln-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.screenPointOnField(0, 0)), null, { timeout:10000 });
@@ -122,14 +126,14 @@ test("scrubbing outward covers the field and is accepted once dry", async ({ pag
   // still wet — the draw cannot proceed
   expect(wet.ready).toBe(false);
   expect(wet.blocking).toContain("stillWet");
-  await expect(page.locator("#clnReady")).toBeDisabled();
+  await expectStepReady(page, false);
 
   await dry(page, 35);
   await page.waitForTimeout(200);
   const dried = await snapshot(page);
   expect(dried.dryness).toBe(1);
   expect(dried.ready).toBe(true);
-  await expect(page.locator("#clnReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -200,7 +204,7 @@ test("touching the site after it is clean and dry undoes it", async ({ page })=>
   expect(snap.retouched).toBe(true);
   expect(snap.blocking).toContain("retouched");
   expect(snap.ready).toBe(false);
-  await expect(page.locator("#clnReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 /* ---------- the accessible path -------------------------------------------------- */
@@ -233,7 +237,7 @@ test("the controls path can produce a bad prep too — it is not an easier game"
 
   const snap = await snapshot(page);
   expect(snap.blocking).toContain("underCovered");
-  await expect(page.locator("#clnReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 test("scrubbing back and forth is recorded as working inward", async ({ page })=>{
@@ -255,12 +259,11 @@ test("a scored shift lets a wet, half-scrubbed site through and carries it forwa
   await page.locator("#clnOpen").click();
   await scrubSpiral(page, 0.4);
 
-  const ready = page.locator("#clnReady");
-  await expect(ready).toBeEnabled();
+  await expect(page.locator("#clnReady")).toBeEnabled();
   const before = await snapshot(page);
   expect(before.blocking.length).toBeGreaterThan(0);
 
-  await ready.click();
+  await carryOn(page);
   await page.waitForTimeout(400);
   await expect(page.locator(".cln-coach")).toHaveCount(0);
 });

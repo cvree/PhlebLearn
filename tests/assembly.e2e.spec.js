@@ -9,7 +9,7 @@
    next step opens.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -39,6 +39,10 @@ async function open(page, step, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1]), [step, mode||"teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.benchAnchors()), null, { timeout:10000 });
@@ -250,7 +254,7 @@ test("one turn is not finger-tight, and the step says so", async ({ page })=>{
   expect(snap.turns).toBeLessThan(1.9);
   expect(snap.blocking).toContain("loose");
   expect(snap.ready).toBe(false);
-  await expect(page.locator("#asmReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 test("turning the wrong way takes it back off", async ({ page })=>{
@@ -433,7 +437,7 @@ test("the controls build the same unit the bench does, with the scene torn down"
   expect(snap.crossThreaded).toBe(false);
   expect(snap.turns).toBe(2.5);
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#asmReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 

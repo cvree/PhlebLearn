@@ -268,6 +268,7 @@ export function renderTourniquetCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            ready: ready,
             tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: ready ? "That is a good tourniquet."
                         : (issue ? (issue.severity === "block" ? "Not right yet." : "Worth fixing.") : ""),
@@ -276,15 +277,24 @@ export function renderTourniquetCoach(host, o){
               : (issue ? issue.message : nextAction(state)),
             how: HOW,
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${listView ? controlsHTML(state, o.site && o.site.x, o.site && o.site.ideal) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="tqReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided
-          ? (ready ? "Band on — find the vein ▶" : (secured ? "Fix the band first" : "Band not on yet"))
-          : "Carry on ▶"}
-      </button>
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S.
+
+           A scored shift has to let the learner move on from work that is not
+           right — a band too close to the site, a site half-scrubbed — and
+           carry the mistake forward to the report. Nothing else can end those
+           steps, because implicit advancement asks whether the step is DONE
+           and a bad band is not.
+
+           Learn has no button at all now. It is gated on being right by
+           design, and the step ends itself the moment it is — so the control
+           that used to sit here was a full-width primary bar reading "Not
+           ready yet" for the whole of the step, and nothing else, ever. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="tqReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

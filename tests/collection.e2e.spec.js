@@ -9,7 +9,7 @@
    collected.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench, carryOn } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 /* The slowest file in the suite, and honestly so: several of these tests seat
    a tube, fill it, pull it off and seat the next one, which is four separate
@@ -50,6 +50,10 @@ async function open(page, mode, step){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m, "straight-antecubital"),
     [step || "fill", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
@@ -298,13 +302,13 @@ test("reaching for the wrong tube first carries additive into the next one", asy
 
 test("teaching mode will not leave the fill step until the first tube is off", async ({ page })=>{
   await open(page, "teach");
-  await expect(page.locator("#colReady")).toBeDisabled();
+  await expectStepReady(page, false);
   await carryToHolder(page, "lightblue");
   await seatDrag(page, 16);
   await fastFill(page, 30);
-  await expect(page.locator("#colReady")).toBeDisabled();   // still on the holder
+  await expectStepReady(page, false);   // still on the holder
   await seatDrag(page, -22);
-  await expect(page.locator("#colReady")).toBeEnabled();
+  await expectStepReady(page, true);
 });
 
 test("the switch step inherits the tube the fill step already collected", async ({ page })=>{
@@ -314,7 +318,7 @@ test("the switch step inherits the tube the fill step already collected", async 
   await seatDrag(page, 16);
   await fastFill(page, 30);
   await seatDrag(page, -22);
-  await carryOn(page, "#colReady");
+  await carryOn(page);
   await expect(page.locator(".asm-coach")).toBeVisible();
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.collectionAnchors()), null, { timeout:10000 });
 
@@ -335,7 +339,10 @@ test("a scored shift lets the learner leave whenever they judge it done", async 
   await expect(page.locator("#colReady")).toBeEnabled();
   await expect(page.locator("#colReady")).toHaveText(/Carry on/);
   // and it says nothing about what is wrong
-  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  /* Play says NOTHING. There is no standing note any more — one explaining
+     that your technique is being assessed is still being told something —
+     so what "quiet" means is that there is no verdict on screen at all. */
+  await expect(page.locator(".vp-stage .stg-msg")).toHaveCount(0);
 });
 
 /* ---------- the coach does not tear itself down while the fill ticks -------------- */
@@ -344,11 +351,11 @@ test("the coach patches the ticking volume rather than re-rendering the panel", 
   await open(page, "teach");
   await carryToHolder(page, "lightblue");
   await seatDrag(page, 16);
-  await page.evaluate(()=>{ document.querySelector("#colReady").dataset.probe = "1"; });
+  await page.evaluate(()=>{ document.querySelector(".stg-topline").dataset.probe = "1"; });
   await page.waitForTimeout(900);
   // the button survived a second of ticking fill — a wholesale re-render would
   // have replaced it, dropping focus and destroying in-flight clicks
-  const kept = await page.evaluate(()=>document.querySelector("#colReady").dataset.probe);
+  const kept = await page.evaluate(()=>document.querySelector(".stg-topline").dataset.probe);
   expect(kept).toBe("1");
   await expect(page.locator(".asm-panel")).toContainText("mL");
 });
@@ -418,7 +425,7 @@ test("a short tube can be drawn again through the controls, and then the step is
   await page.locator('[data-col="push-braced"]').click();
   await page.locator('[data-col="remove-braced"]').click();
   // every tube is off the holder, and the step still is not finished
-  await expect(page.locator("#colReady")).toBeDisabled();
+  await expectStepReady(page, false);
 
   await page.locator('[data-col="take:lightblue"]').click();
   await page.locator('[data-col="push-braced"]').click();
@@ -428,6 +435,6 @@ test("a short tube can be drawn again through the controls, and then the step is
   const snap = await snapshot(page);
   expect(snap.tubes[0].fraction).toBeCloseTo(1, 3);
   expect(snap.tubesWasted).toBe(1);
-  await expect(page.locator("#colReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });

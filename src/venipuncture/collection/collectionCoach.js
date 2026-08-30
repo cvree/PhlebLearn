@@ -185,6 +185,9 @@ export function renderCollectionCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            /* `clean` is ready AND unblocked; readiness itself is the coarser
+               `ready`, which is what ends the step. */
+            ready,
             tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Going on now.") : ""),
             line: clean
@@ -195,15 +198,16 @@ export function renderCollectionCoach(host, o){
             note: `Order of draw: ${order.map(k=>esc(tubeName(k))).join(" → ")}`,
             how: HOW,
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${listView ? controlsHTML(state, result) : ""}
 
       ${bf ? postEntryControlsHTML(bf) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="colReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? esc(o.readyLabel || "All tubes collected ▶") : "Not finished yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="colReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

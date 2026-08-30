@@ -153,6 +153,9 @@ export function renderInversionCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            /* `clean` is ready AND unblocked; readiness itself is the coarser
+               `ready`, which is what ends the step. */
+            ready,
             tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now.") : ""),
             line: clean || !issue ? nextAction(state, result) : issue.message,
@@ -164,13 +167,14 @@ export function renderInversionCoach(host, o){
             }).join(" · ")}`,
             how: HOW,
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${listView ? controlsHTML(state, result) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="invReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Specimens mixed ▶" : "Not finished yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="invReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

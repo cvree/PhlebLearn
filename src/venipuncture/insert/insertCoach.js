@@ -158,6 +158,7 @@ export function renderInsertCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            ready: ready,
             tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: ready ? "Flash confirmed."
                         : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
@@ -165,7 +166,7 @@ export function renderInsertCoach(host, o){
                         : (issue ? issue.message : nextAction(state, result)),
             how: howHTML(angleWindow),
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${isButterfly && bf ? wingControlsHTML(bf) : ""}
 
@@ -175,9 +176,10 @@ export function renderInsertCoach(host, o){
 
       ${isButterfly && bf ? postEntryControlsHTML(bf) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="insReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "In the vein — hold ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="insReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

@@ -10,7 +10,7 @@
    are in a piece of software, and Play has none of them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn, dismissHelp } from "./benchHelpers.js";
+import { carryOn, dismissHelp, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -40,6 +40,10 @@ async function openStep(page, stepId, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1], "straight-antecubital"), [stepId, mode]);
   await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
 }
@@ -110,7 +114,7 @@ test("Learn teaches the step, gates the Continue button, and says where you are"
   await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "learn");
   await expect(page.locator(".lesson .modetag")).toContainText("TEACHING");
   await expect(page.locator("#vpStage .stg-msg.neutral")).toHaveCount(0);
-  await expect(page.locator("#insReady")).toBeDisabled();
+  await expectStepReady(page, false);
   // the chrome of a lesson: which step, how far through, and what it is called
   await expect(page.locator(".vp-count")).toContainText("step");
   await expect(page.locator(".vp-bar")).toBeVisible();
@@ -128,7 +132,7 @@ test("Play says nothing at all: no lesson, no hint, no counter, no bar", async (
   await expect(page.locator(".vp-hint")).toHaveCount(0);
   await expect(page.locator(".vp-count")).toHaveCount(0);
   await expect(page.locator(".vp-bar")).toHaveCount(0);
-  await expect(page.locator("#insReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -216,8 +220,8 @@ test("Learn shows the section's own measurements when it ends, and can replay it
      to actually be done before it can end. The band goes on through the same
      pure helpers the gesture writes through. */
   await page.evaluate(()=>window.__phlebTest.applyBandWell());
-  await expect(page.locator("#tqReady")).toBeEnabled({ timeout:10000 });
-  await carryOn(page, "#tqReady");
+  await expectStepReady(page, true);
+  await carryOn(page);
 
   const card = page.locator(".sec-card").first();
   await expect(card).toBeVisible({ timeout:10000 });
@@ -238,7 +242,7 @@ test("Learn shows the section's own measurements when it ends, and can replay it
 
 test("Play never shows a section card — nothing is said until the report", async ({ page }) => {
   await openStep(page, "tourniquet", "play");
-  await carryOn(page, "#tqReady");
+  await carryOn(page);
   await page.waitForTimeout(600);
   await expect(page.locator(".sec-card")).toHaveCount(0);
 });

@@ -217,6 +217,9 @@ export function renderWithdrawalCoach(host, o){
 
       ${guided
         ? stepGuideHTML({
+            /* `clean` is ready AND unblocked; readiness itself is the coarser
+               `ready`, which is what ends the step. */
+            ready,
             tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
             lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now.") : ""),
             line: clean || !issue
@@ -224,13 +227,14 @@ export function renderWithdrawalCoach(host, o){
               : issue.message,
             how: HOW[mode] || "",
           })
-        : stepHintHTML(o.hint)}
+        : stepHintHTML(o.hint, ready)}
 
       ${listView ? controlsHTML(state, { tourniquetReleased: live.tourniquetReleased }) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="wdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? esc(READY_LABELS[mode] || "Continue ▶") : "Not finished yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="wdReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

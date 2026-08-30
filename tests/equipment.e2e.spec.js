@@ -9,6 +9,7 @@
    different label.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { holdSteps } from "./benchHelpers.js";
 
 /** Grants upgrades by writing the save the game itself reads. */
 async function withUpgrades(page, ids){
@@ -26,6 +27,10 @@ async function startDraw(page){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   // `introduce` is the first step, so the choice screen (which precedes every
   // step) is what actually renders.
   await page.evaluate(()=>window.__phlebTest.gotoProcedureStep("introduce", ["lightblue","lavender"], "teach"));

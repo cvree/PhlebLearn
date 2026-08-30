@@ -47,8 +47,9 @@ function msgBlock(guided, ready, issue, action, readyLead, readyLine, hint, how)
   // Play says nothing at all until the report. A standing note explaining
   // that your technique is being assessed is still being told something,
   // and a trained phlebotomist does not need to be told it twice.
-  if(!guided) return stepHintHTML(hint);
+  if(!guided) return stepHintHTML(hint, ready);
   return stepGuideHTML({
+    ready,
     tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
     lead: ready ? readyLead : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
     line: ready ? readyLine : (issue ? issue.message : action),
@@ -154,9 +155,10 @@ export function renderAssemblyCoach(host, o){
 
       ${listView ? assembleControlsHTML(state) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="asmReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Unit built — uncap it ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="asmReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};
@@ -290,9 +292,9 @@ export function renderUncapCoach(host, o){
         <button class="btn ghost vp-tap ${state.warnedAt ? "on" : ""}" id="uncWarn">${state.warnedAt ? "✔ Patient warned" : "Tell the patient: “small poke coming”"}</button>
       </div>` : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="uncReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Ready — go in ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="uncReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};
