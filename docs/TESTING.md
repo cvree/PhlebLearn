@@ -754,6 +754,34 @@ before believing it.
 failed two tests, a run of this build failed one, and they were not the same
 tests. Re-run it before believing any single result.
 
+### The measurement, taken properly
+
+The fun pass needed to know which of its failures were its own, so it took the
+one measurement that answers that: a git worktree at the branch point, built
+into its own `dist/`, served on its own port, running the eight specs whose
+failures were unexplained. Two trees, two ports, one at a time — running them
+concurrently would have put two software rasterisers on one core, which is the
+condition every flake in this file is a symptom of.
+
+**Thirty-two of a hundred and twenty-five failed at the branch point**, with no
+change of any kind applied: all eight of `insert.e2e`'s gesture tests, four of
+`palpation.e2e`'s, five of `butterfly.e2e`'s, four each in `inversion.e2e` and
+`postdraw.e2e`, five in `staging.e2e` and two in `withdrawal.e2e`. `bench.e2e`
+passed there and failed one on the changed tree, in both directions as
+documented above.
+
+So the eight `insert.e2e` failures are the machine, not a regression — that is
+the group most worth knowing about, because it is the largest and the most
+alarming to find. Some of the rest were genuinely stale assertions pointed at
+controls the product no longer has, and those are fixed. The method is the
+thing to keep: **a worktree at the branch point is cheap, and it is the only
+answer to "was that me?" that does not require believing anyone.**
+
+Then re-read the lesson two paragraphs up. Reproducing at the branch point
+proves it is not a regression. It still does not prove it is environmental, and
+`insert.e2e` remains a real, unexplained, eight-test hole in this suite on this
+machine.
+
 ### The flag that lied
 
 `playwright.config.js` passes `--enable-unsafe-swiftshader` and nothing else.
