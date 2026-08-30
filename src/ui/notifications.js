@@ -9,7 +9,8 @@ import { REDUCED } from "../game/gameState.js";
 export function toast(msg){
   let t=document.createElement("div");
   t.textContent=msg;
-  t.style.cssText="position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:25;background:#2b2740;color:#fff;padding:8px 14px;border-radius:12px;font-weight:800;font-size:13px;box-shadow:var(--shadow);max-width:88%;text-align:center;animation:slideUp .25s ease both";
+  // top offset clears the top bar, and the top bar clears the notch
+  t.style.cssText="position:absolute;top:calc(60px + var(--safe-t));left:50%;transform:translateX(-50%);z-index:25;background:#2b2740;color:#fff;padding:8px 14px;border-radius:12px;font-weight:800;font-size:13px;box-shadow:var(--shadow);max-width:88%;text-align:center;animation:slideUp .25s ease both";
   $("app").appendChild(t); setTimeout(()=>t.remove(),2200);
 }
 
@@ -34,7 +35,7 @@ export function floatXP(text){
   if(REDUCED){ toast(text); return; }
   const app=$("app"); if(!app)return;
   const d=document.createElement("div"); d.className="floatxp"; d.textContent=text;
-  d.style.right="16px"; d.style.top="48px";
+  d.style.right="calc(16px + var(--safe-r))"; d.style.top="calc(48px + var(--safe-t))";
   app.appendChild(d); setTimeout(()=>d.remove(),1200);
 }
 

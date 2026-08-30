@@ -9,7 +9,7 @@
    ends up inside a real container — or is refused by the trash.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench, carryOn } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady, pastSectionCard } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -41,6 +41,10 @@ async function open(page, mode, step){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(([s, t, m])=>window.__phlebTest.gotoProcedureStep(s, t, m, "straight-antecubital"),
     [step || "release", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
@@ -52,7 +56,13 @@ async function open(page, mode, step){
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.withdrawalSnapshot());
 const anchors = page=>page.evaluate(()=>window.__phlebTest.withdrawalAnchors());
 
-/** Pulls the band's tail free — a real travel, not a button. */
+/**
+ * Pulls the band's tail free — a real travel, not a button.
+ *
+ * Settles before returning: releasing the band is a state change this step's
+ * own render loop reframes around on its next drawn frame, and this file
+ * chains several of these gestures together — see withdrawDrag's note.
+ */
 async function pullTail(page){
   const a = await anchors(page);
   await page.mouse.move(a.tail.x, a.tail.y);
@@ -60,6 +70,7 @@ async function pullTail(page){
   await page.mouse.move(a.tail.x + 90, a.tail.y - 70, { steps: 18 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
 /** Carries the gauze from the bench to rest by the site. */
@@ -70,9 +81,21 @@ async function gauzeToSite(page){
   await page.mouse.move(a.site.x, a.site.y, { steps: 24 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
-/** Draws the needle `mm` millimetres OUT along its own entry line. */
+/**
+ * Draws the needle `mm` millimetres OUT along its own entry line.
+ *
+ * Settles before returning, like every gesture helper in this file. Release,
+ * withdraw, safety and sharps are one continuous piece of work — the whole
+ * point this file's tests exist to prove — chained through this same page
+ * without a fresh `open()` between them, and each transition is a state
+ * change this step's render loop reframes around on ITS OWN next drawn
+ * frame, not synchronously inside the pointer handler that caused it. A
+ * later gesture in the chain that fetches fresh anchors before that settles
+ * is fetching anchors for a camera that has only just been told to move.
+ */
 async function withdrawDrag(page, mm, sideMm){
   const a = await anchors(page);
   const sx = a.sidePx ? a.sidePx.dx*(sideMm || 0)/10 : 0;
@@ -82,6 +105,7 @@ async function withdrawDrag(page, mm, sideMm){
   await page.mouse.move(a.hub.x + a.outPx.dx*mm/10 + sx, a.hub.y + a.outPx.dy*mm/10 + sy, { steps: 26 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  await settleBench(page);
 }
 
 /** Slides the safety shield `mm` millimetres forward along the needle. */
@@ -92,6 +116,7 @@ async function shieldSlide(page, mm){
   await page.mouse.move(a.shield.x + a.inPx.dx*mm/10, a.shield.y + a.inPx.dy*mm/10, { steps: 20 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  await settleBench(page);
 }
 
 /**
@@ -114,6 +139,7 @@ async function carryUnitTo(page, dest){
   await page.mouse.move(a[dest].x, a[dest].y, { steps: 26 });
   await page.mouse.up();
   await page.waitForTimeout(150);
+  await settleBench(page);
 }
 
 /* ---------- release: the band comes off by its own tail --------------------------- */
@@ -136,7 +162,7 @@ test("release is the real band's real tail, not a button", async ({ page })=>{
 test("pulling the tail releases the band, and the clock it stops is the band's own", async ({ page })=>{
   const errors = attachDiagnostics(page);
   await open(page, "teach", "release");
-  await expect(page.locator("#wdReady")).toBeDisabled();
+  await expectStepReady(page, false);
   await pullTail(page);
 
   const snap = await snapshot(page);
@@ -144,16 +170,16 @@ test("pulling the tail releases the band, and the clock it stops is the band's o
   expect(snap.bandReleasedAt).not.toBeNull();
   expect(snap.tourniquetSecondsAtRelease).toBeGreaterThan(0);
   expect(snap.collectionDoneAtRelease).toBe(true);
-  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expectStepReady(page, true);
   await expect(page.locator('[data-live="band"]')).toHaveText("off");
   expect(errors).toEqual([]);
 });
 
 test("the coach patches the band's ticking clock rather than re-rendering", async ({ page })=>{
   await open(page, "teach", "release");
-  await page.evaluate(()=>{ document.querySelector("#wdReady").dataset.probe = "1"; });
+  await page.evaluate(()=>{ document.querySelector(".stg-topline").dataset.probe = "1"; });
   await page.waitForTimeout(1200);
-  const kept = await page.evaluate(()=>document.querySelector("#wdReady").dataset.probe);
+  const kept = await page.evaluate(()=>document.querySelector(".stg-topline").dataset.probe);
   expect(kept).toBe("1");
   await expect(page.locator('[data-live="band"]')).toContainText("on —");
 });
@@ -180,7 +206,7 @@ test("a smooth pull along the entry line brings the needle out cleanly", async (
   await open(page, "teach", "withdraw");
   await pullTail(page);
   await gauzeToSite(page);
-  await expect(page.locator("#wdReady")).toBeDisabled();
+  await expectStepReady(page, false);
   await withdrawDrag(page, 30);
 
   const snap = await snapshot(page);
@@ -189,7 +215,7 @@ test("a smooth pull along the entry line brings the needle out cleanly", async (
   expect(snap.exitDeviationDeg).toBeLessThan(12);
   expect(snap.gauzeReadyAtWithdraw).toBe(true);
   expect(snap.tourniquetOnAtWithdraw).toBe(false);
-  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expectStepReady(page, true);
   await expect(page.locator('[data-live="depth"]')).toHaveText("out");
   expect(errors).toEqual([]);
 });
@@ -230,7 +256,7 @@ test("the shield slides forward for real and locks at full travel, in the hand",
   let snap = await snapshot(page);
   expect(snap.withdrawn).toBe(true);
   expect(snap.safetyLocked).toBe(false);
-  await expect(page.locator("#wdReady")).toBeDisabled();
+  await expectStepReady(page, false);
 
   await shieldSlide(page, 12);      // part-way: nothing locks
   snap = await snapshot(page);
@@ -241,7 +267,7 @@ test("the shield slides forward for real and locks at full travel, in the hand",
   snap = await snapshot(page);
   expect(snap.safetyLocked).toBe(true);
   expect(snap.surfaceActivated).toBe(false);
-  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expectStepReady(page, true);
   await expect(page.locator('[data-live="safety"]')).toHaveText("locked");
   expect(errors).toEqual([]);
 });
@@ -256,7 +282,7 @@ test("the unit is carried into the sharps container and is gone", async ({ page 
   await gauzeToSite(page);
   await withdrawDrag(page, 30);
   await shieldSlide(page, 40);
-  await expect(page.locator("#wdReady")).toBeDisabled();
+  await expectStepReady(page, false);
   await carryUnitTo(page, "sharps");
 
   const snap = await snapshot(page);
@@ -264,7 +290,7 @@ test("the unit is carried into the sharps container and is gone", async ({ page 
   expect(snap.disposedFully).toBe(true);
   expect(snap.safetyEngagedAtDispose).toBe(true);
   expect(snap.trashAttempts).toBe(0);
-  await expect(page.locator("#wdReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -297,7 +323,7 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   const errors = attachDiagnostics(page);
   await open(page, "teach", "release");
   await pullTail(page);
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
 
   // withdraw inherits the released band
   await expect(page.locator(".asm-coach")).toBeVisible();
@@ -306,21 +332,24 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   expect(snap.bandOnPatient).toBe(false);
   await gauzeToSite(page);
   await withdrawDrag(page, 30);
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
 
   // safety inherits the withdrawn needle
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
   snap = await snapshot(page);
   expect(snap.withdrawn).toBe(true);
   await shieldSlide(page, 40);
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
 
   // dispose inherits the locked shield
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalAnchors()), null, { timeout:10000 });
   snap = await snapshot(page);
   expect(snap.safetyLocked).toBe(true);
   await carryUnitTo(page, "sharps");
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
+  // that ended the withdrawal SECTION, and this one is never clean — the
+  // sequence above is deliberately a slow, imperfect one
+  await pastSectionCard(page);
 
   // and it hands straight on to the pressure step, which inherits the puncture
   // this sequence just left — and knows the band was off before the needle was
@@ -343,6 +372,10 @@ test("a tube left engaged on the holder is still engaged here, and blocks", asyn
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(([t])=>window.__phlebTest.gotoProcedureStep("fill", t, "play", "straight-antecubital"), [TUBES]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
 
@@ -357,7 +390,7 @@ test("a tube left engaged on the holder is still engaged here, and blocks", asyn
 
   // a scored shift lets them walk on: fill -> switch -> release -> withdraw
   for(let i = 0; i < 3; i++){
-    await page.locator("#colReady, #wdReady").first().click();
+    await carryOn(page);
     await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   }
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.withdrawalSnapshot()), null, { timeout:10000 });
@@ -370,7 +403,10 @@ test("a tube left engaged on the holder is still engaged here, and blocks", asyn
 
 test("a scored shift allows an unsafe sequence and says nothing until after", async ({ page })=>{
   await open(page, "play", "withdraw");
-  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  /* Play says NOTHING. There is no standing note any more — one explaining
+     that your technique is being assessed is still being told something —
+     so what "quiet" means is that there is no verdict on screen at all. */
+  await expect(page.locator(".vp-stage .stg-msg")).toHaveCount(0);
   await expect(page.locator("#wdReady")).toBeEnabled();
   // withdraw with the band still on — allowed, recorded
   await gauzeToSite(page);
@@ -381,7 +417,10 @@ test("a scored shift allows an unsafe sequence and says nothing until after", as
   expect(snap.tourniquetOnAtWithdraw).toBe(true);
   expect(snap.blocking).toContain("withdrewUnderPressure");
   // and the coach still names nothing
-  await expect(page.locator(".stg-msg")).toContainText("assessed after the patient");
+  /* Play says NOTHING. There is no standing note any more — one explaining
+     that your technique is being assessed is still being told something —
+     so what "quiet" means is that there is no verdict on screen at all. */
+  await expect(page.locator(".vp-stage .stg-msg")).toHaveCount(0);
 });
 
 /* ---------- the accessible path ------------------------------------------------------ */
@@ -396,7 +435,7 @@ test("the controls path runs the whole sequence through the same rules", async (
   let snap = await snapshot(page);
   expect(snap.bandOnPatient).toBe(false);
   expect(snap.fistRelaxed).toBe(true);
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await useControls(page);
@@ -406,14 +445,14 @@ test("the controls path runs the whole sequence through the same rules", async (
   snap = await snapshot(page);
   expect(snap.withdrawn).toBe(true);
   expect(snap.gauzeReadyAtWithdraw).toBe(true);
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
 
   await useControls(page);
   await page.locator('[data-wd="safety-hand"]').click();
   snap = await snapshot(page);
   expect(snap.safetyLocked).toBe(true);
   expect(snap.surfaceActivated).toBe(false);
-  await carryOn(page, "#wdReady");
+  await carryOn(page);
 
   await useControls(page);
   await page.locator('[data-wd="dispose-sharps"]').click();

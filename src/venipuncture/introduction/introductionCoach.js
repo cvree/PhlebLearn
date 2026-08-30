@@ -18,6 +18,7 @@ import {
   ACT, ACT_DEFS, nextAction, nextIssue,
   HYGIENE_GOOD_S, DRY_MIN_S, REQUIRED_IDENTIFIERS, identifiersObtained,
 } from "./introductionRules.js";
+import { stepGuideHTML, stepHintHTML } from "../stepGuide.js";
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
@@ -129,21 +130,30 @@ export function renderIntroductionCoach(host, o){
       <div class="asm-panel">${idHTML(state)}</div>
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>Identified, informed and gloved.</b> You know who this is, they know what is about to happen, and your hands are clean.`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state))}
-          </div>
-          <p class="tq-next">${esc(nextAction(state))}</p>`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            id: "introduce",
+            ready,
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Identified, informed and gloved."
+                        : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
+            line: ready
+              ? "You know who this is, they know what is about to happen, and your hands are clean."
+              : (issue ? issue.message : nextAction(state)),
+          })
+        : stepHintHTML(o.hint, ready)}
 
       ${actsHTML(state)}
       ${handsHTML(state)}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="introReady" ${(o.gate && !ready) ? "disabled" : ""} style="${(o.gate && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Ready — prepare your tray ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+      ${/* Meeting a patient is one of the two steps that ends on a judgement
+           rather than an action, so this button is real in both modes. What
+           went is its disabled state: a full-width bar reading "Not ready
+           yet" is not a control, and the guidance line above already says
+           exactly which identifier is missing. */
+        (o.gate && !ready) ? "" : `
+        <button class="btn vp-tap${guided ? "" : " quiet"}" id="introReady">
+          ${guided ? "Ready — prepare your tray ▶" : "Carry on ▶"}
+        </button>`}
     </div>`;
 
   const h = o.handlers || {};

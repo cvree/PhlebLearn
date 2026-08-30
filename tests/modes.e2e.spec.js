@@ -10,7 +10,7 @@
    are in a piece of software, and Play has none of them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, dismissHelp, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -40,6 +40,10 @@ async function openStep(page, stepId, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1], "straight-antecubital"), [stepId, mode]);
   await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
 }
@@ -51,6 +55,7 @@ async function openStep(page, stepId, mode){
 test("the clock-in screen offers exactly two modes", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await page.goto("./");
+  await dismissHelp(page);
   await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
   await expect(page.locator("#modePlay")).toBeVisible();
   await expect(page.locator("#modeLearn")).toContainText("Learn");
@@ -65,6 +70,7 @@ test("the clock-in screen offers exactly two modes", async ({ page }) => {
 test("Make it harder lives in Settings, and locks while a shift is running", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await page.goto("./");
+  await dismissHelp(page);
   await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
 
   // not on the clock-in screen any more
@@ -102,13 +108,25 @@ test("Make it harder lives in Settings, and locks while a shift is running", asy
    What each mode puts on the screen
    ------------------------------------------------------------------------- */
 
-test("Learn teaches the step, gates the Continue button, and says where you are", async ({ page }) => {
+test("Learn teaches the step, gates it, and says where you are", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await openStep(page, "insert", "learn");
   await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "learn");
-  await expect(page.locator(".lesson .modetag")).toContainText("TEACHING");
+
+  /* The teaching used to be a permanent card above the coach, printing the
+     step's tip and its "why it matters" on every frame while the coach said
+     the same thing three more ways underneath. It is the body of the step's
+     own fold now, open on a first meeting and shut after — so what "Learn
+     teaches the step" means is that the tip and the reason are there to read.
+     See venipuncture/stepGuide.js. */
+  const how = page.locator("#vpStage .sg-how");
+  await expect(how).toBeVisible();
+  await expect(how.locator("summary")).toContainText(/How this step works/i);
+  await expect(how).toContainText(/bevel-up at a shallow/i);
+  await expect(how).toContainText(/Why it matters/i);
+
   await expect(page.locator("#vpStage .stg-msg.neutral")).toHaveCount(0);
-  await expect(page.locator("#insReady")).toBeDisabled();
+  await expectStepReady(page, false);
   // the chrome of a lesson: which step, how far through, and what it is called
   await expect(page.locator(".vp-count")).toContainText("step");
   await expect(page.locator(".vp-bar")).toBeVisible();
@@ -126,7 +144,16 @@ test("Play says nothing at all: no lesson, no hint, no counter, no bar", async (
   await expect(page.locator(".vp-hint")).toHaveCount(0);
   await expect(page.locator(".vp-count")).toHaveCount(0);
   await expect(page.locator(".vp-bar")).toHaveCount(0);
+  // no fold either: the teaching is Learn's, and Play has none of it
+  await expect(page.locator("#vpStage .sg-how")).toHaveCount(0);
+  await expect(page.locator("#vpStage .stg-msg")).toHaveCount(0);
+
+  /* The one control Play keeps, and it is not a verdict: nothing else can
+     walk a scored shift on from work that is not right, and this step is not
+     right — nothing has been anchored yet. */
+  await expectStepReady(page, false);
   await expect(page.locator("#insReady")).toBeEnabled();
+  await expect(page.locator("#insReady")).toHaveText(/Carry on/);
   expect(errors).toEqual([]);
 });
 
@@ -205,17 +232,20 @@ test("Learn colours a measured value; Play renders the same value plain", async 
    Section feedback and replay — Practice's two good ideas, now in Learn
    ------------------------------------------------------------------------- */
 
-test("Learn shows the section's own measurements when it ends, and can replay it", async ({ page }) => {
+test("a section worth another look stops the draw, with its measurements and a replay", async ({ page }) => {
   test.slow();
   const errors = attachDiagnostics(page);
   await openStep(page, "tourniquet", "learn");
 
-  /* Learn GATES its continue button — that is the mode — so the section has
-     to actually be done before it can end. The band goes on through the same
-     pure helpers the gesture writes through. */
-  await page.evaluate(()=>window.__phlebTest.applyBandWell());
-  await expect(page.locator("#tqReady")).toBeEnabled({ timeout:10000 });
-  await carryOn(page, "#tqReady");
+  /* Learn will not leave a step until it is right — that is the mode — so the
+     band has to actually go on. This one goes on ACCEPTABLY and no better:
+     under the arm, tucked, snug enough to pass, and crooked enough down the
+     limb to be worth doing again. A clean section does not stop the draw any
+     more (see panels.js's sectionFeedbackFor), which is the point of using a
+     scruffy one here. */
+  await page.evaluate(()=>window.__phlebTest.applyBandScruffily());
+  await expectStepReady(page, true);
+  await carryOn(page);
 
   const card = page.locator(".sec-card").first();
   await expect(card).toBeVisible({ timeout:10000 });
@@ -234,9 +264,99 @@ test("Learn shows the section's own measurements when it ends, and can replay it
   expect(errors).toEqual([]);
 });
 
+test("a clean section does not stop the draw to tell you it went well", async ({ page }) => {
+  test.slow();
+  const errors = attachDiagnostics(page);
+  await openStep(page, "tourniquet", "learn");
+
+  await page.evaluate(()=>window.__phlebTest.applyBandWell());
+  await expectStepReady(page, true);
+  await carryOn(page);
+
+  /* Straight on to the next step. Eleven modal cards a draw, each telling the
+     learner that the thing they just did well went well and offering to replay
+     it, is eleven interruptions with no decision in any of them. */
+  await expect(page.locator(".sec-card")).toHaveCount(0);
+  await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
+  await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
+  expect(errors).toEqual([]);
+});
+
 test("Play never shows a section card — nothing is said until the report", async ({ page }) => {
   await openStep(page, "tourniquet", "play");
-  await carryOn(page, "#tqReady");
+  await carryOn(page);
   await page.waitForTimeout(600);
   await expect(page.locator(".sec-card")).toHaveCount(0);
+});
+
+/* -------------------------------------------------------------------------
+   THE FIRST VISIT
+
+   A save with nothing on it arrives at a game whose central interaction —
+   dragging a limb and the things around it — is not discoverable from a
+   screen with two buttons on it, and whose two modes differ in whether the
+   learner is told anything at all. These prove the game says so, once, and
+   then stops saying it.
+   ------------------------------------------------------------------------- */
+
+test("a first visit is told how the game is operated, and only once", async ({ page }) => {
+  const errors = attachDiagnostics(page);
+  await page.goto("./");
+  await page.waitForFunction(()=>window.__tinyVialsBooted === true, null, { timeout:20000 });
+
+  const card = page.locator("#helpOverlay.show");
+  await expect(card).toBeVisible({ timeout:10000 });
+  // the two things a screen with two buttons on it cannot say for itself
+  await expect(card).toContainText("Drag on the scene");
+  await expect(card).toContainText("Use controls");
+
+  await page.locator("#helpClose").click();
+  await expect(card).toBeHidden();
+  await expect(page.getByRole("heading", { name:/Clock in/i })).toBeVisible();
+
+  // the same browser, the same save: it does not come back
+  await page.goto("./");
+  await page.waitForFunction(()=>window.__tinyVialsBooted === true, null, { timeout:20000 });
+  await expect(page.getByRole("heading", { name:/Clock in/i })).toBeVisible({ timeout:15000 });
+  await expect(page.locator("#helpOverlay.show")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("it stays reachable from Settings once it has been dismissed", async ({ page }) => {
+  await page.goto("./");
+  await dismissHelp(page);
+  await expect(page.getByRole("heading", { name:/Clock in/i })).toBeVisible({ timeout:15000 });
+
+  await page.locator("#settingsBtn").click();
+  await page.locator("#openHelpSettings").click();
+  await expect(page.locator("#helpOverlay.show")).toBeVisible();
+  // Esc closes the topmost overlay, which is this one
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#helpOverlay.show")).toHaveCount(0);
+});
+
+test("a save with nothing on it is pointed at Learn, and a played one at Play", async ({ page }) => {
+  await page.goto("./");
+  await dismissHelp(page);
+  await expect(page.locator("#modeLearn")).toBeVisible({ timeout:15000 });
+
+  /* Which button glows is the game's own recommendation, and on an empty save
+     it used to walk a beginner into the mode that says nothing at all. */
+  await expect(page.locator("#modeLearn")).toHaveClass(/cta-pulse/);
+  await expect(page.locator("#modePlay")).not.toHaveClass(/cta-pulse/);
+  await expect(page.locator("#modeLearn")).toContainText("start here");
+
+  // Once there is anything on the save, the emphasis goes back to Play. The
+  // save is edited directly rather than played through: what is under test is
+  // which button the clock-in screen highlights, not how XP is earned.
+  await page.evaluate(()=>{
+    const k = "phleb_shift_3d_v1";
+    const s = JSON.parse(localStorage.getItem(k) || "{}");
+    s.xp = 40; s.shifts = 1;
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.goto("./");
+  await expect(page.locator("#modePlay")).toBeVisible({ timeout:15000 });
+  await expect(page.locator("#modePlay")).toHaveClass(/cta-pulse/);
+  await expect(page.locator("#modeLearn")).not.toHaveClass(/cta-pulse/);
 });

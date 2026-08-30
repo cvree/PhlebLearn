@@ -10,7 +10,7 @@ export function fbCard(c, ok, scoreDetailAnswer, onReviewClick){
   const f=FEEDBACK[c], link=CARD_LINKS[c];
   const a = scoreDetailAnswer(c,ok);
   const status = ok ? "Correct interaction" : "Needs review";
-  const ansHTML = a ? `<div class="ans">${a.ctx?`<span class="ansrow ctx">${a.ctx}</span>`:""}<span class="ansrow ${ok?'correct':'you'}">Encounter result: <b>${status}</b></span><span class="ansrow ${ok?'correct':'you'}">Your answer: <b>${a.your||", "}</b></span><span class="ansrow correct">Best answer: <b>${a.correct||", "}</b></span></div>` : "";
+  const ansHTML = a ? `<div class="ans">${a.ctx?`<span class="ansrow ctx">${a.ctx}</span>`:""}<span class="ansrow ${ok?'correct':'you'}">Encounter result: <b>${status}</b></span><span class="ansrow ${ok?'correct':'you'}">Your answer: <b>${a.your||"—"}</b></span><span class="ansrow correct">Best answer: <b>${a.correct||"—"}</b></span></div>` : "";
   const d=document.createElement("div"); d.className="fb"+(ok?"":" no");
   d.innerHTML=`<b>${ok?'✓':'✗'} ${f.label}</b>${ansHTML}<br>
     <span class="why">Why it matters: ${f.why}</span><br>

@@ -17,6 +17,17 @@ import {
   nextIssue, nextAction, inversionsFor, mustNotMix, requiresMixing,
   tubeName, additiveOf, haemolysisGrade, SHAKE_DEG_PER_S, OVER_AT,
 } from "./inversionRules.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed — behind the step's disclosure now rather than
+   printed under every frame of it. See stepGuide.js. */
+const HOW = `<p><b>Pick a tube up off the rack</b> — drag it out and up to your hand.</p>
+  <p><b>Turn it all the way over and back.</b> Drag in an arc around your hand: past ${OVER_AT}° is over,
+  and back upright completes one. Watch the blood travel the length of the tube — if it does not, the
+  additive at the bottom is not being reached.</p>
+  <p><b>Gently.</b> Shaking bursts red cells and haemolyses the sample. And a plain serum tube has no
+  additive at all: it has to sit still and clot undisturbed, so that one goes straight back in the rack.</p>
+  <p>Then <b>drag each mixed tube back to the rack and stand it up.</b></p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
@@ -101,20 +112,6 @@ function controlsHTML(state, result){
   </fieldset></div>`;
 }
 
-function helpHTML(state, result){
-  const held = result.held;
-  if(!held){
-    return `<b>Pick a tube up off the rack.</b> Drag it out and up to your hand. Each additive needs its own number of inversions — the count is not the same for every cap colour.`;
-  }
-  if(mustNotMix(held.key)){
-    return `<b>${esc(tubeName(held.key))} has no additive.</b> It has to sit still and clot undisturbed, so put it straight back in the rack — this is the one tube you do NOT invert.`;
-  }
-  const spec = inversionsFor(held.key);
-  if(held.inversions < spec.min){
-    return `<b>Turn it all the way over and back.</b> Drag in an arc around your hand: past ${OVER_AT}° is over, and back upright completes one. ${esc(additiveOf(held.key))} needs ${spec.ideal}. Watch the blood travel the length of the tube — if it does not, the additive at the bottom is not being reached. Gently: shaking it bursts red cells.`;
-  }
-  return `<b>That one is mixed.</b> Drag it back to the rack and stand it up.`;
-}
 
 export function renderInversionCoach(host, o){
   const { state, result } = o;
@@ -135,6 +132,7 @@ export function renderInversionCoach(host, o){
     result.pending.length,
     result.racked.length,
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.invSig === signature){ patchLive(host, state, result); return; }
@@ -154,25 +152,29 @@ export function renderInversionCoach(host, o){
       </div>
 
       ${guided
-        ? `<div class="stg-msg ${clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${clean
-              ? `<b>${esc(nextAction(state, result))}</b>`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, result))}
-          </div>
-          <p class="tq-next">Required: ${state.order.map(k=>{
-            const spec = inversionsFor(k);
-            return `${esc(tubeName(k))} ${spec.mustNotMix ? "none" : spec.ideal + "×"}`;
-          }).join(" · ")}</p>`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            /* `clean` is ready AND unblocked; readiness itself is the coarser
+               `ready`, which is what ends the step. */
+            ready,
+            tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now.") : ""),
+            line: clean || !issue ? nextAction(state, result) : issue.message,
+            /* The counts are a fact per cap colour, and they are the whole
+               content of this step — they stay on screen. */
+            note: `Required: ${state.order.map(k=>{
+              const spec = inversionsFor(k);
+              return `${esc(tubeName(k))} ${spec.mustNotMix ? "none" : spec.ideal + "×"}`;
+            }).join(" · ")}`,
+            how: HOW,
+          })
+        : stepHintHTML(o.hint, ready)}
 
-      ${listView
-        ? controlsHTML(state, result)
-        : `${guided ? `<p class="stg-help">${helpHTML(state, result)}</p>` : ""}`}
+      ${listView ? controlsHTML(state, result) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="invReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Specimens mixed ▶" : "Not finished yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="invReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

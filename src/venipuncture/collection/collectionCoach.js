@@ -21,6 +21,20 @@ import {
 } from "./collectionRules.js";
 import { current } from "./collectionState.js";
 import { wingStatusHTML, infiltrationBannerHTML, postEntryControlsHTML, patchWingLive } from "../butterfly/butterflyCoach.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed — behind the step's disclosure now rather than
+   printed under every frame of it. What used to be here was a per-state
+   paragraph that restated `nextAction()` sentence for sentence, in bold, four
+   lines below it. See stepGuide.js. */
+const HOW = `<p><b>Drag the next tube off the rack and into the holder.</b> Which one you reach for is the
+  order of draw — the last tube's additive goes through the same needle into this one.</p>
+  <p><b>Push it on by dragging along the holder, pressing on the flange</b>, not the tube: the fingers
+  hooked behind the flange are what stop the push going into the patient's arm. Nothing is pierced until
+  it passes the guideline.</p>
+  <p><b>Then wait.</b> The vacuum stops on its own when the tube is full — that is the thing to watch for.
+  Pulling it off early leaves it short. If the flow stops before then the vein has collapsed onto the tip:
+  back the tube off to the guideline to break the vacuum, let the vein refill, and push it back on.</p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function mm(m){ return Math.round((m || 0)*1000); }
@@ -114,22 +128,6 @@ function controlsHTML(state, result){
   </fieldset></div>`;
 }
 
-function helpHTML(state, result){
-  const cur = result.current;
-  if(!cur){
-    return `<b>Drag the next tube off the rack and into the holder.</b> Which one you reach for is the order of draw — the last tube's additive goes through the same needle into this one.`;
-  }
-  if(!cur.pierced){
-    return `<b>Push the tube on by dragging along the holder.</b> Press on the <b>flange</b> first, not the tube — the fingers hooked behind it are what stop the push going into the patient's arm. Nothing is pierced until it passes the guideline.`;
-  }
-  if(cur.collapsed){
-    return `<b>The flow has stopped early.</b> Drag the tube back to the guideline to break the vacuum, wait for the vein to refill, then push it back on.`;
-  }
-  if(cur.drawnMl < cur.volumeMl){
-    return `<b>Wait.</b> The vacuum stops on its own when the tube is full — that is the thing to watch for. Pulling it off before then leaves it short.`;
-  }
-  return `<b>Full.</b> Drag it straight off, flange held.`;
-}
 
 export function renderCollectionCoach(host, o){
   const { state, result } = o;
@@ -160,6 +158,7 @@ export function renderCollectionCoach(host, o){
     result.redrawable.length,
     issue ? issue.code : "-",
     bf ? bf.secured : "-", bf ? (bf.infiltratedMl > 0) : "-", bf ? bf.infiltrationNoticed : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.colSig === signature){ patchLive(host, state, result, bf); return; }
@@ -185,24 +184,30 @@ export function renderCollectionCoach(host, o){
       ${bf ? infiltrationBannerHTML(bf) : ""}
 
       ${guided
-        ? `<div class="stg-msg ${clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${clean
-              ? `<b>${esc(o.readyMessage || "Every tube is filled to its draw volume, in order. The band comes off next.")}</b>`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Going on now."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, result))}
-          </div>
-          <p class="tq-next">Order of draw: ${order.map(k=>esc(tubeName(k))).join(" → ")}</p>`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            /* `clean` is ready AND unblocked; readiness itself is the coarser
+               `ready`, which is what ends the step. */
+            ready,
+            tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Going on now.") : ""),
+            line: clean
+              ? (o.readyMessage || "Every tube is filled to its draw volume, in order. The band comes off next.")
+              : (issue ? issue.message : nextAction(state, result)),
+            /* The order of draw is a FACT this step needs on screen, not a
+               second phrasing of the instruction — so it stays visible. */
+            note: `Order of draw: ${order.map(k=>esc(tubeName(k))).join(" → ")}`,
+            how: HOW,
+          })
+        : stepHintHTML(o.hint, ready)}
 
-      ${listView
-        ? controlsHTML(state, result)
-        : `${guided ? `<p class="stg-help">${helpHTML(state, result)}</p>` : ""}`}
+      ${listView ? controlsHTML(state, result) : ""}
 
       ${bf ? postEntryControlsHTML(bf) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="colReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? esc(o.readyLabel || "All tubes collected ▶") : "Not finished yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="colReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

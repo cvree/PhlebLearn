@@ -8,7 +8,7 @@
    you never actually pressed.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench, carryOn } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -38,6 +38,10 @@ async function openPalpation(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("palpate", ["lightblue","lavender"], m, "straight-antecubital"), mode||"teach");
   await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.screenPointOverVessel("median-cubital")),
@@ -159,9 +163,19 @@ test("palpation is a real arm, not four labelled buttons", async ({ page })=>{
 
 test("nothing is named on screen before it has been felt", async ({ page })=>{
   await openPalpation(page, "teach");
-  const text = await page.locator(".plp-coach").innerText();
+  /* Scoped to what the panel says about THIS ARM, which is the rule: the
+     sensation under the fingertip, the name slot beside it, and the guidance
+     line. Not the step's teaching, which has always named the median cubital
+     as the first-choice vein in the abstract — that is the lesson, and it
+     moved inside the coach when the panel's separate teaching card went away.
+     Naming a structure the learner has felt is the learner's job; naming the
+     first-choice vein of the antecubital fossa is the syllabus. */
+  const live = await page.locator(".plp-touch, .sg > .stg-msg").allInnerTexts();
+  const text = live.join(" ");
   expect(text).not.toMatch(/median cubital/i);
   expect(text).not.toMatch(/brachial artery/i);
+  // and the slot that would name it is empty
+  await expect(page.locator('[data-live="named"]')).toHaveText("");
 });
 
 /* ---------- pressure is a real quantity -------------------------------------- */
@@ -280,8 +294,7 @@ test("lifting off something pulsing counts as recognising it", async ({ page })=
 
 test("marking the vein you felt passes, and teaching mode then lets the draw on", async ({ page })=>{
   await openPalpation(page, "teach");
-  const ready = page.locator("#plpReady");
-  await expect(ready).toBeDisabled();
+  await expectStepReady(page, false);
 
   await holdToCommit(page, "median-cubital");
 
@@ -289,7 +302,7 @@ test("marking the vein you felt passes, and teaching mode then lets the draw on"
   expect(snap.chosenId).toBe("median-cubital");
   expect(snap.ready).toBe(true);
   expect(snap.ideal).toBe(true);
-  await expect(ready).toBeEnabled();
+  await expectStepReady(page, true);
 });
 
 test("marking the artery is blocked, whatever else was right", async ({ page })=>{
@@ -306,13 +319,13 @@ test("marking the artery is blocked, whatever else was right", async ({ page })=
   expect(snap.chosenId).toBe("brachial-artery");
   expect(snap.blocking).toContain("choseArtery");
   expect(snap.ready).toBe(false);
-  await expect(page.locator("#plpReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 test("the site marked carries into the encounter for the steps that follow", async ({ page })=>{
   await openPalpation(page, "teach");
   await holdToCommit(page, "median-cubital");
-  await carryOn(page, "#plpReady");
+  await carryOn(page);
   await page.waitForTimeout(400);
 
   const still = await snapshot(page);
@@ -345,7 +358,7 @@ test("the controls path presses real places and cannot skip feeling either", asy
   expect(snap.felt).toContain("median-cubital");
   expect(snap.traces.length).toBeGreaterThan(0);
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#plpReady")).toBeEnabled();
+  await expectStepReady(page, true);
 });
 
 test("the controls path names spots on the arm, never the veins themselves", async ({ page })=>{
@@ -377,12 +390,11 @@ test("a scored shift lets a bad site through and carries it forward", async ({ p
   await liftOff(page);
   await holdToCommit(page, "biceps-tendon");
 
-  const ready = page.locator("#plpReady");
-  await expect(ready).toBeEnabled();
+  await expect(page.locator("#plpReady")).toBeEnabled();
   const before = await snapshot(page);
   expect(before.blocking.length).toBeGreaterThan(0);
 
-  await ready.click();
+  await carryOn(page);
   await page.waitForTimeout(400);
   await expect(page.locator(".plp-coach")).toHaveCount(0);
 });

@@ -14,6 +14,16 @@ import { TUBES } from "../../config.js";
 import { CATEGORY, REQUIRED_TRAY_CATEGORIES, isUsable } from "./supplyCatalog.js";
 import { ZONE, HAND } from "./stagingState.js";
 import { nextIssue } from "./stagingRules.js";
+import { stepGuideHTML, stepHintHTML } from "../stepGuide.js";
+
+/* How the cart is worked — behind the step's disclosure now rather than
+   printed under every frame of it. See stepGuide.js. */
+const HOW = `<p><b>Drag an item from the cart onto the tray</b>, and drag the tray itself to move your whole
+  work area to where your hands actually are.</p>
+  <p><b>Tap an item to turn it over</b> and read its label — expiry, gauge, seal, and whose name is on it.
+  <b>Double-tap it</b> to send it straight to the tray.</p>
+  <p>Tubes seat into the numbered rack, in order of draw. The sharps container goes on the marked pad beside
+  the chair, within reach, before you touch the patient.</p>`;
 
 const CATEGORY_TITLE = {
   [CATEGORY.GLOVES]:"Gloves",
@@ -183,6 +193,7 @@ export function renderStagingCoach(host, o){
   const guided = !!o.guided;
   const issue = nextIssue(result);
   const ready = result.ready;
+  const restocked = !!(state.restocked && state.restocked.length);
 
   host.innerHTML = `
     <div class="stg-coach">
@@ -200,23 +211,34 @@ export function renderStagingCoach(host, o){
       ${inspectHTML(inspecting, guided)}
 
       ${guided
-        ? `<div class="stg-msg ${ready?'ready':(issue&&issue.severity==='block'?'block':'warn')}" role="status" aria-live="polite">
-            ${ready
-              ? "<b>Work area ready.</b> Everything you need is on the tray, the tubes are in order of draw, and the sharps container is beside the chair."
-              : issue ? `<b>${issue.severity==='block'?'Not ready yet.':'Worth fixing.'}</b> ${esc(issue.message)}`
-                      : "Stage the equipment this draw needs."}
-          </div>`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            ready: ready,
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Work area ready." : (issue ? (issue.severity === "block" ? "Not ready yet." : "Worth fixing.") : ""),
+            line: ready
+              ? "Everything you need is on the tray, the tubes are in order of draw, and the sharps container is beside the chair."
+              : (issue ? issue.message : "Stage the equipment this draw needs."),
+            /* Said when it is true, and it never says WHICH item — that is the
+               thing the learner has to find. See staging/trayCarryover.js. */
+            note: restocked ? "Restocked from your cart between patients. Turn the packages over — a restock is not a guarantee." : "",
+            how: HOW,
+          })
+        : stepHintHTML(o.hint, ready)}
 
-      ${listView ? listHTML(state, catalog) : `${guided ? `<p class="stg-help">
-        Drag an item from the cart onto the tray, and drag the tray itself to move your whole work area.
-        <b>Tap an item to turn it over</b> and read its label; <b>double-tap it</b> to send it straight to the tray.
-        Tubes seat into the numbered rack. The sharps container goes on the marked pad beside the chair.
-      </p>` : ""}`}
+      ${listView ? listHTML(state, catalog) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="stgReady" ${(guided && !ready)?"disabled":""} style="${(guided && !ready)?"opacity:.5":""}">
-        ${guided ? (ready ? "Tray ready ▶" : "Tray not ready yet") : "I'm ready — begin the draw ▶"}
-      </button>
+      ${/* THE BUTTON APPEARS WHEN THERE IS SOMETHING TO PRESS IT FOR.
+
+           It used to be a full-width primary bar reading "Tray not ready yet"
+           — the loudest control on the panel, permanently disabled for the
+           whole of the step, saying what the guidance line above it was
+           already saying properly. Preparing a work area is one of the two
+           steps that genuinely ends on a judgement rather than an action, so
+           the button is real; it is just not there before it means anything. */
+        (guided && !ready) ? "" : `
+        <button class="btn vp-tap" id="stgReady">
+          ${guided ? "Tray ready ▶" : "I'm ready — begin the draw ▶"}
+        </button>`}
     </div>`;
 
   const h = o.handlers || {};

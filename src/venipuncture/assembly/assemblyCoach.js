@@ -16,24 +16,45 @@ import {
   nextIssue, nextAssemblyAction, nextUncapAction,
   SNUG_TURNS, SECURE_TURNS, CROSS_THREAD_DEG, BEVEL_TOLERANCE_DEG, AXIAL_GOOD, bevelFromTurns,
 } from "./assemblyRules.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How each gesture is performed — behind the step's own disclosure now rather
+   than printed under every frame of it. See stepGuide.js. */
+const ASSEMBLE_HOW = `<p><b>Peel the pouch open along its seam.</b> Drag from the notch and stay on the seam —
+  tearing across the film sheds onto the needle you are about to pull through it.</p>
+  <p><b>Take the needle out by its coloured sheath.</b> The grey sleeved end is what goes inside the holder
+  and into every tube — fingers do not go on it.</p>
+  <p><b>Carry the needle onto the hub and keep pushing along the hub's own axis.</b> It turns as it goes.
+  More than ${CROSS_THREAD_DEG}° off the axis and it cross-threads: it will feel like it is going on, bind,
+  and never seat. You will feel it stop at finger-tight.</p>`;
+const UNCAP_HOW = `<p><b>Pull the sheath straight off, along the needle.</b> Levering it sideways bends the
+  shaft and rolls the cutting edge over — and a barbed needle drags going in and shreds the sample.</p>
+  <p><b>Where the bevel points was decided by where your threading stopped.</b> Drag the holder toward or
+  away from you to roll it until the opening faces straight up. Hold still on the holder to lean in and
+  check the edge. Then put the sheath down clear of the prepped field — never back on the needle.</p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
-function msgBlock(guided, ready, issue, action, readyText, hint){
-  if(!guided){
-    // Play says nothing at all until the report. A standing note explaining
-    // that your technique is being assessed is still being told something,
-    // and a trained phlebotomist does not need to be told it twice.
-    return hint
-      ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(hint)}</div>`
-      : "";
-  }
-  return `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-      ${ready ? readyText
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(action)}
-    </div>
-    <p class="tq-next">${esc(action)}</p>`;
+/**
+ * One line, and one disclosure behind it — the shared shape every step uses.
+ * See stepGuide.js for why there is only one of them.
+ *
+ * @param {string} readyLead  the bold half of the success line
+ * @param {string} readyLine  the rest of it
+ * @param {string} how        how the gesture is performed, for the disclosure
+ */
+function msgBlock(guided, ready, issue, action, readyLead, readyLine, hint, how){
+  // Play says nothing at all until the report. A standing note explaining
+  // that your technique is being assessed is still being told something,
+  // and a trained phlebotomist does not need to be told it twice.
+  if(!guided) return stepHintHTML(hint, ready);
+  return stepGuideHTML({
+    ready,
+    tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+    lead: ready ? readyLead : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
+    line: ready ? readyLine : (issue ? issue.message : action),
+    how,
+  });
 }
 
 /* =========================================================================
@@ -110,6 +131,7 @@ export function renderAssemblyCoach(host, o){
     "asm", listView, guided, ready, state.pouchOpen, state.needleInHand, state.engaged,
     state.crossThreaded, state.contaminated, state.turns >= SECURE_TURNS,
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.asmSig === signature){ patchAssembly(host, state, o.unit); return; }
@@ -127,19 +149,16 @@ export function renderAssemblyCoach(host, o){
       ${threadHTML(state, o.unit)}
 
       ${msgBlock(guided, ready, issue, nextAssemblyAction(state),
-        `<b>Threaded and finger-tight.</b> ${state.turns.toFixed(1)} turns, square on the hub. Leave the sheath on until you are ready to stick.`, o.hint)}
+        "Threaded and finger-tight.",
+        `${state.turns.toFixed(1)} turns, square on the hub. Leave the sheath on until you are ready to stick.`,
+        o.hint, ASSEMBLE_HOW)}
 
-      ${listView ? assembleControlsHTML(state) : `${guided ? `<p class="stg-help">
-        ${!state.pouchOpen
-          ? `<b>Peel the pouch open along its seam.</b> Drag from the notch and stay on the seam — tearing across the film sheds onto the needle you are about to pull through it.`
-          : !state.needleInHand
-            ? `<b>Take the needle out by its coloured sheath.</b> The grey sleeved end is what goes inside the holder and into every tube — fingers do not go on it.`
-            : `<b>Carry the needle onto the hub and keep pushing along the hub's own axis.</b> It turns as it goes. More than ${CROSS_THREAD_DEG}° off the axis and it cross-threads: it will feel like it is going on, bind, and never seat. You will feel it stop at finger-tight.`}
-      </p>` : ""}`}
+      ${listView ? assembleControlsHTML(state) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="asmReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Unit built — uncap it ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="asmReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};
@@ -245,6 +264,7 @@ export function renderUncapCoach(host, o){
     state.needleDamaged, state.needleContaminated, state.recapped, !!state.warnedAt,
     Math.abs(bevel) <= BEVEL_TOLERANCE_DEG,
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.uncSig === signature){ patchUncap(host, state); return; }
@@ -262,21 +282,19 @@ export function renderUncapCoach(host, o){
       ${uncapHTML(state)}
 
       ${msgBlock(guided, ready, issue, nextUncapAction(state),
-        `<b>Bevel up, needle intact.</b> The sheath is clear of the field and the patient has been told. Go in.`, o.hint)}
+        "Bevel up, needle intact.",
+        "The sheath is clear of the field and the patient has been told. Go in.",
+        o.hint, UNCAP_HOW)}
 
-      ${listView ? uncapControlsHTML(state) : `${guided ? `<p class="stg-help">
-        ${state.capOn
-          ? `<b>Pull the sheath straight off, along the needle.</b> Levering it sideways bends the shaft and rolls the cutting edge over — and a barbed needle drags going in and shreds the sample.`
-          : `<b>Where the bevel points was decided by where your threading stopped.</b> Drag the holder toward or away from you to roll it until the opening faces straight up. Hold still on the holder to lean in and check the edge. Then put the sheath down clear of the prepped field — never back on the needle.`}
-      </p>` : ""}`}
+      ${listView ? uncapControlsHTML(state) : ""}
 
       ${!listView ? `<div class="asm-inline">
         <button class="btn ghost vp-tap ${state.warnedAt ? "on" : ""}" id="uncWarn">${state.warnedAt ? "✔ Patient warned" : "Tell the patient: “small poke coming”"}</button>
       </div>` : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="uncReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Ready — go in ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="uncReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

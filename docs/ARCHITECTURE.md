@@ -31,6 +31,8 @@ venipuncture/  (procedureState, questions, clinicalRules, steps,
                measurement every runtime frames its camera from,
                stepRuntimes = the table main.js dispatches through,
                autoAdvance = what ends a step in Play,
+               stepGuide = the one guidance line every coach renders, and
+               the disclosure that holds what used to be said four times,
                one directory per converted step —
                staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
                assembly/*, insert/*, collection/*, withdrawal/*, postdraw/*,
@@ -78,6 +80,14 @@ toast/confetti/floatXP *are* a UI concern, but it's treated as a dependency
 leaf (like `dom.js`) — it must never import from `panels.js`/`settings.js`/
 `coachLayer.js`, precisely so that `game/`, `world/`, and `venipuncture/`
 modules can call `toast()` for user feedback without an upward import.
+
+**`ui/overlayFocus.js` is the same case, and stricter**: it imports nothing at
+all. It owns what a keyboard sees when one of the four full-screen overlays —
+Settings, the shop, the sticker book, "How this works" — opens and closes:
+focus moves into the card, Tab stays inside it, and closing gives focus back
+to whatever opened it. Any overlay added later gets it by calling
+`overlayOpened()` after showing and `overlayClosed()` after hiding; nothing
+else in the app should be reaching for `document.activeElement`.
 
 ## Physical gameplay: how a step becomes a real interaction
 

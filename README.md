@@ -22,7 +22,7 @@ buttons:
 | | |
 |---|---|
 | **Introduce and identify** | Ask for the name and date of birth, in an open question. Scrub for a real twenty seconds. Glove after, not before. |
-| **Prepare the work area** | Twenty-three recognisable objects on a supply cart. Turn each one over to read its label — two tubes share a cap colour and only one is in date; one needle pouch is split. Rack the tubes in order of draw. Put the sharps container in reach *before* you touch the patient. |
+| **Prepare the work area** | Twenty-three recognisable objects on a supply cart. Turn each one over to read its label — two tubes share a cap colour and only one is in date; one needle pouch is split. Rack the tubes in order of draw. Put the sharps container in reach *before* you touch the patient. Between patients the tray comes back restocked, so the only work is this order's tubes — but a restock is not a guarantee, and roughly one patient in three it hands you something that should not be on the tray. |
 | **Tourniquet** | A real strap on a real arm, routed under the limb, tensioned by how far you pull, tucked so a fingertip can free it. Too tight and the hand goes pale and the radial pulse disappears. |
 | **Palpate** | Feel for the vein with a fingertip. A vein bounces; a tendon is a hard cord; an artery pulses. A compliant vein rolls away from the pressure — you can feel it move. |
 | **Clean** | Concentric outward spirals from the puncture site. Measure the coverage, wait the real drying time, and do not touch the field again. |
@@ -58,8 +58,19 @@ and a rejection names the tests the patient has to be drawn again for.
 ## One patient, start to finish
 
 They arrive with their requisition → assess the arms, if they need it → the
-draw → label the tubes and decide how they travel → answer whatever they
-asked you → the score, and your practical report.
+draw → read the printed label against the patient and decide how the batch
+travels → answer whatever they asked you → the debrief, in four acts.
+
+The draw does not end on a screen. It ends at the chair with unlabelled tubes
+in your hand, because a "Draw complete" page listing the lab's verdict, the
+recap chips and the rubric was a second judgement on the same encounter,
+delivered two clicks before the debrief said all of it again and better.
+
+And labelling is one check rather than four ticks. The label is printed from
+the order and you read it against the wristband: either everything on it
+matches, or one line does not. A tube that leaves the chair carrying the wrong
+information is the single most consequential error in the job, and ticking four
+boxes with no wrong answer was never going to teach it.
 
 Identification, tube selection and order of draw are not questions you answer
 before the draw; they are things you do inside it, at the patient and at the
@@ -69,8 +80,15 @@ cart. Nothing asks you twice.
 
 | Mode | What it tells you |
 |---|---|
-| 🎓 **Learn** | Full teaching. Names the specific error, tells you the correct next action, and will not let you continue until the step is right. Each section's own measurements arrive when it ends, and you may replay it. |
-| 🩸 **Play** | Nothing. No instruction, no hint, no verdict, no step counter, and no button between one step and the next — the action that ends a step ends it. Then a rubric report: 0–4 per row against configurable thresholds, automatic-failure events, and a replay built from the steps' own logs. |
+| 🎓 **Learn** | One line at a time, live: the correction if there is one to make, the confirmation when the step is done, the next action otherwise. Why it matters and how the gesture works sit behind one fold that opens itself the first time you meet a step and is shut after. It will not let you past a step until it is right. Each section's own measurements arrive when it ends, and you may replay it. |
+| 🩸 **Play** | Nothing. No instruction, no hint, no verdict, no step counter. Then a rubric report: 0–4 per row against configurable thresholds, automatic-failure events, and a replay built from the steps' own logs. |
+
+Neither mode has a "Carry on" button between steps: **the action that ends a
+step ends it**, in both. Learn holds the finished step and its verdict on
+screen about three times as long, which is the only thing the button was
+really buying. Play keeps one quiet control, for the one thing implicit
+advancement cannot do — walking on from work that is *not* right, and carrying
+the mistake into the report.
 
 There used to be four, which is four answers to the two questions a learner
 actually arrives with. Practice's two good ideas — feedback at the end of a
@@ -111,7 +129,7 @@ npm run dev        # http://localhost:5173/
 npm run build      # → dist/
 npm run preview    # serves the production build
 
-npm test           # 600+ unit tests, no browser needed
+npm test           # 800+ unit tests, no browser needed
 npm run test:e2e   # Playwright, against the production build
 npm run verify     # all three, in order — run before merging
 ```
@@ -128,6 +146,8 @@ src/
                                       state (pure) · rules (pure) ·
                                       runtime (THREE) · coach (DOM) ·
                                       scoring (measurements)
+    stepGuide.js                      the one guidance line every coach
+                                      renders, and the fold behind it
     complications/  specimen/         the two draw-scoped layers
     rubric/                           policy, grading, report, replay
   input/  ui/                         pointers, screens, overlays

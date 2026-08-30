@@ -17,6 +17,9 @@ export function defaultSS(){
   return {xp:0,coins:0,earned:0,badges:[],mastery:{},weak:[],shifts:0,bestRating:0,reduceMotion:false,music:true,musicVol:0.55,ownedUpgrades:[],placements:{},wallPlace:{},rotations:{},wallRot:{},stickers:{},stickerClaimed:{},dark:false,
     // physical-interaction preferences (branch: physical supply staging)
     handedness:"right", assistedSnapping:false, stagingListView:false,
+    // "How this works" opens once, on a save that has never played, and is in
+    // Settings from then on. See ui/settings.js's maybeOpenHelp().
+    seenHelp:false,
     // per-mode progress: Learn, Practice and Final Practical are tracked
     // separately, because a best set with the coach talking is not the same
     // achievement as one set in silence. See game/modeProgress.js.
@@ -163,7 +166,11 @@ export function reveal(){
    ========================================================================= */
 export function buttonControls(){ return !!SS.buttonControls; }
 
-export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true};
+/* `tray` is the work area carried between this shift's patients — see
+   venipuncture/staging/trayCarryover.js. It belongs to the SHIFT rather than
+   to the encounter, because carrying it is the whole point: the encounter is
+   the thing it outlives. */
+export let SHIFT = {len:5,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,tray:null};
 export function setShift(next){ SHIFT = next; }
 
 // current encounter (patient, in-progress choices, venipuncture procedure state)

@@ -19,6 +19,28 @@ import {
   nextIssue, nextAction, modeReady, safetyActionFor, DEVICE,
 } from "./withdrawalRules.js";
 import { gauzeReady, exposedSeconds } from "./withdrawalState.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How each of the four handling gestures is performed — behind that step's own
+   disclosure now rather than printed under every frame of it. What used to be
+   here restated `nextAction()` almost sentence for sentence. See stepGuide.js. */
+const HOW = {
+  release: `<p><b>Tell the patient to open their hand first</b>, then find the band's tucked tail and pull it
+    free — one pull on the tucked loop is what the tuck was for.</p>
+    <p>Steady the holder with your other hand while you reach: the needle is still in the vein, and a
+    congested vein bleeds hard through a fresh puncture if the needle comes out under tension.</p>`,
+  withdraw: `<p><b>Gauze first.</b> Drag the pad from the bench and rest it just above the puncture — close
+    enough to press the instant the needle is out, but no pressure yet, because the needle is still in.</p>
+    <p><b>Then draw the needle back along the line it went in.</b> Take hold of the holder and pull steadily
+    outward — smooth, on the line, no sideways lever and no yank.</p>`,
+  safety: `<p><b>Engage the device's own safety, one-handed, in the air</b> — never against the bench, never
+    back into the cap. It clicks when it locks.</p>
+    <p>Most needlestick injuries happen in the few seconds between the needle leaving the arm and the safety
+    going on, which is why this comes before anything else you might want to do for the patient.</p>`,
+  dispose: `<p><b>Straight into the sharps container, the whole unit.</b> Needle and holder together — taking
+    them apart by hand is the other way people get stuck.</p>
+    <p>Route around the patient, not over them, and do not put it down anywhere on the way.</p>`,
+};
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function mm(m){ return Math.round((m || 0)*1000*10)/10; }
@@ -150,25 +172,6 @@ function controlsHTML(state, o){
  * Prompts the next thing that actually needs doing on this arm, in clinical
  * order — state-driven for the same reason the controls are.
  */
-function helpHTML(state, o){
-  if(!o.tourniquetReleased){
-    if(!state.fistRelaxed) return `<b>Tell the patient to open their hand first</b>, then find the band's tucked tail and pull it free — steady the holder with your other hand while you reach.`;
-    return `<b>Pull the band's tail free.</b> One pull on the tucked loop and it comes off — that is what the tuck was for. Keep the needle hand still.`;
-  }
-  if(state.withdrawnAt == null){
-    if(state.gauzeTakenAt == null || state.gauzePlacedAt == null){
-      return `<b>Gauze first.</b> Drag the pad from the bench and rest it just above the puncture — close enough to press the instant the needle is out, but no pressure yet.`;
-    }
-    return `<b>Draw the needle back along the line it went in.</b> Take hold of the holder and pull steadily outward — smooth, on the line, no sideways lever and no yank.`;
-  }
-  if(state.safetyLockedAt == null){
-    return `<b>${esc(safetyActionFor(state.device).description)}.</b> One hand, in the air — never against the bench, never back into the cap. It clicks when it locks.`;
-  }
-  if(state.disposedAt == null || !state.disposedFully){
-    return `<b>Straight into the sharps container, the whole unit.</b> Route around the patient, not over them, and don't put it down anywhere on the way.`;
-  }
-  return `<b>Done safely.</b> Pressure on the site comes next.`;
-}
 
 export function renderWithdrawalCoach(host, o){
   const { state, result, mode } = o;
@@ -191,6 +194,7 @@ export function renderWithdrawalCoach(host, o){
     state.surfaceActivated, state.recapAttempted, state.exposedSetDown,
     state.disposedAt != null, state.disposedFully, state.trashAttempts,
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
 
   const live = o.live || { tourniquetOn: false, tourniquetSeconds: null, tourniquetReleased: true };
@@ -212,21 +216,25 @@ export function renderWithdrawalCoach(host, o){
       </div>
 
       ${guided
-        ? `<div class="stg-msg ${clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${clean
-              ? `<b>${esc(nextAction(state, { tourniquetReleased: live.tourniquetReleased }, mode))}</b>`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, { tourniquetReleased: live.tourniquetReleased }, mode))}
-          </div>`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            /* `clean` is ready AND unblocked; readiness itself is the coarser
+               `ready`, which is what ends the step. */
+            ready,
+            tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now.") : ""),
+            line: clean || !issue
+              ? nextAction(state, { tourniquetReleased: live.tourniquetReleased }, mode)
+              : issue.message,
+            how: HOW[mode] || "",
+          })
+        : stepHintHTML(o.hint, ready)}
 
-      ${listView
-        ? controlsHTML(state, { tourniquetReleased: live.tourniquetReleased })
-        : `${guided ? `<p class="stg-help">${helpHTML(state, { tourniquetReleased: live.tourniquetReleased })}</p>` : ""}`}
+      ${listView ? controlsHTML(state, { tourniquetReleased: live.tourniquetReleased }) : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="wdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? esc(READY_LABELS[mode] || "Continue ▶") : "Not finished yet") : "Carry on ▶"}
-      </button>
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S — see cleaningCoach.js for why. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="wdReady">Carry on ▶</button>`}
+
     </div>`;
 
   const h = o.handlers || {};

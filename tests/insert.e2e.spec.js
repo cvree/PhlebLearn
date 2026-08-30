@@ -10,7 +10,7 @@
    be clean.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -40,6 +40,10 @@ async function open(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("insert", ["lightblue","lavender"], m, "straight-antecubital"), mode||"teach");
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.insertAnchors()), null, { timeout:10000 });
@@ -52,7 +56,20 @@ const anchors = page=>page.evaluate(()=>window.__phlebTest.insertAnchors());
 const radiusAt = (page, x)=>page.evaluate(xx=>window.__phlebTest.insertLimbRadiusAt(xx), x);
 const onLimb = (page, list)=>page.evaluate(l=>window.__phlebTest.screenPointsOnInsertLimb(l), list);
 
-/** Drags a two-point (down, up) gesture through the limb-surface projector. */
+/**
+ * Drags a two-point (down, up) gesture through the limb-surface projector.
+ *
+ * Settles the camera on the way OUT, not just the way in. Anchoring the vein
+ * and then approaching it are two drags in the same test, and anchoring is
+ * exactly the kind of state change this step's own render loop reframes
+ * around — a re-frame request issued on the NEXT rendered frame after the
+ * gesture, not synchronously inside the pointerup handler. A caller that
+ * immediately re-projects its next target is projecting through a camera
+ * that has only just been told where to go, not one that has arrived —
+ * `tests/collection.e2e.spec.js` failed 8 of 20 with exactly this shape of
+ * gap (a second drag landing beside its target) before every chained-gesture
+ * helper in this suite got the same fix.
+ */
 async function dragLimb(page, from, to, steps){
   const [a, b] = await onLimb(page, [from, to]);
   await page.mouse.move(a.x, a.y);
@@ -60,6 +77,7 @@ async function dragLimb(page, from, to, steps){
   await page.mouse.move(b.x, b.y, { steps: steps || 24 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
 /**
@@ -162,7 +180,7 @@ test("a natural straight carry from the ready pose to the mark lands in the idea
   expect(snap.inVein).toBe(true);
   expect(snap.flashAt).not.toBeNull();
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#insReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 
@@ -302,7 +320,7 @@ test("the controls anchor and insert with the same rules, scene torn down", asyn
   snap = await snapshot(page);
   expect(snap.inVein).toBe(true);
   expect(snap.ready).toBe(true);
-  await expect(page.locator("#insReady")).toBeEnabled();
+  await expectStepReady(page, true);
   expect(errors).toEqual([]);
 });
 

@@ -14,7 +14,7 @@
    these open a shift rather than jumping to a step id.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, holdSteps } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -44,6 +44,10 @@ async function open(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.locator(mode === "play" ? "#modePlay" : "#modeLearn").click();
   await expect(page.locator(".arrival")).toBeVisible({ timeout:10000 });
 }
@@ -87,7 +91,9 @@ test("the room opens with nothing said, and a draw that cannot be started", asyn
   // Nothing said yet, so there is no conversation to show — an empty room
   // rather than a paragraph explaining that the room is empty.
   await expect(page.locator(".arr-said")).toHaveCount(0);
-  await expect(page.locator("#arrStart")).toBeDisabled();
+  // The gate is unchanged; a gate you cannot pass shows no button at all now
+  // rather than a full-width disabled bar reading "Identify them first (0/2)".
+  await expect(page.locator("#arrStart")).toHaveCount(0);
   // …and two or three live things to say, not thirteen.
   const acts = page.locator(".arr-act");
   expect(await acts.count()).toBeGreaterThan(0);
@@ -155,7 +161,9 @@ test("one identifier is not enough to proceed", async ({ page }) => {
   }
   expect(s.identifiers).toEqual(["name"]);
   expect(s.blocking).toContain("oneIdentifier");
-  await expect(page.locator("#arrStart")).toBeDisabled();
+  // The gate is unchanged; a gate you cannot pass shows no button at all now
+  // rather than a full-width disabled bar reading "Identify them first (0/2)".
+  await expect(page.locator("#arrStart")).toHaveCount(0);
 });
 
 /* -------------------------------------------------------------------------
@@ -330,7 +338,9 @@ test("Play does not tell you what to say next, or anything else", async ({ page 
   await expect(page.locator(".arrival .stg-msg")).toHaveCount(0);
   await expect(page.locator(".lesson")).toHaveCount(0);
   expect(await page.locator(".arr-act").count()).toBeGreaterThan(0);
-  await expect(page.locator("#arrStart")).toBeDisabled();
+  // The gate is unchanged; a gate you cannot pass shows no button at all now
+  // rather than a full-width disabled bar reading "Identify them first (0/2)".
+  await expect(page.locator("#arrStart")).toHaveCount(0);
 
   // …and once identified, it does not stop you starting a draw done badly.
   for(let i = 0; i < 8; i++){

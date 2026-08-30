@@ -9,7 +9,7 @@
    from the event logs the steps were already keeping.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, holdSteps, chooseRoute } from "./benchHelpers.js";
 // The number of rubric rows is a POLICY decision, not a fact about the app —
 // policy.js exists precisely so a programme can add or remove one. Reading it
 // here means adding a row (Phase 3b added two) updates these tests instead of
@@ -63,11 +63,19 @@ async function finishDrawIn(page, mode, upTo){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1], "straight-antecubital"),
     [upTo || "invert", mode]);
   await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
   await page.evaluate(()=>window.__phlebTest.finishDraw());
-  await expect(page.locator("#vpToLabel")).toBeVisible({ timeout:10000 });
+  // The draw ends at the chair with unlabelled tubes in your hand. There is
+  // no "Draw complete" screen in front of that any more — it was a second
+  // verdict on the same encounter, delivered two clicks before the debrief
+  // said all of it again.
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
 }
 
 /**
@@ -75,33 +83,45 @@ async function finishDrawIn(page, mode, upTo){
  *
  * It used to print the moment the needle was out — before the tubes were
  * labelled, before the patient had been answered — and was then followed two
- * clicks later by a second grading screen. The draw now ends with a recap of
- * what it measured and every judgement lands together, once, at the end.
+ * clicks later by a second grading screen. Every judgement lands together,
+ * once, at the end.
  */
 async function reportAtEnd(page, mode, upTo){
   await finishDrawIn(page, mode, upTo);
-  await page.locator("#vpToLabel").click();
   await finishLabelling(page);
   await answerAnyQuestion(page);
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await openBreakdown(page);
+}
+
+/**
+ * Opens the debrief's breakdown, which is where the report and the
+ * per-category tiles live.
+ *
+ * The debrief is four acts and then a button; everything a test in this file
+ * asserts is behind that button, deliberately — the acts are the verdict and
+ * the report is the reference under it.
+ */
+async function openBreakdown(page){
+  const body = page.locator("#dbDetailsBody");
+  if(await body.count() && await body.isHidden()){
+    await page.locator("#dbDetails").click();
+  }
   await expect(page.locator(".scoregrid")).toBeVisible({ timeout:10000 });
 }
 
-/** Ticks every label field, picks a routing option, and sends the batch. */
+/** Checks the printed label, picks a routing option, and sends the batch. */
 async function finishLabelling(page){
+  // One check, not four ticks: either the label matches or one line on it
+  // does not. Whether this run's label is flawed is rolled per patient, so
+  // the test simply makes the call and moves on — what it is exercising is
+  // the path to the report, not the perception.
+  const match = page.locator("#lblMatch");
+  if(await match.count()) await match.click();
   const label = page.locator("#print");
   if(!(await label.count())) return;
-  for(const k of ["name", "iddob", "datetime", "initials"]){
-    const row = page.locator(`#lr-${k}`);
-    if(await row.count()) await row.click();
-  }
   // Learn mode refuses a wrong routing choice, so try each until it sticks.
-  const routes = page.locator("[data-route]");
-  const n = await routes.count();
-  for(let i = 0; i < n; i++){
-    await routes.nth(i).click();
-    await page.waitForTimeout(80);
-    if(await page.locator("[data-route].good").count()) break;
-  }
+  await chooseRoute(page);
   await label.click();
   await page.waitForTimeout(200);
 }
@@ -109,7 +129,7 @@ async function finishLabelling(page){
 /** Walks the post-draw conversation, if this patient had one. */
 async function answerAnyQuestion(page){
   for(let i = 0; i < 8; i++){
-    if(await page.locator(".scoregrid").count()) return;
+    if(await page.locator(".debrief").count()) return;
     const opts = page.locator("#opts .opt");
     if(await opts.count()){ await opts.first().click(); }
     else {
@@ -218,6 +238,10 @@ async function playPalpationThenFinish(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("palpate", ["lightblue","lavender"], m, "straight-antecubital"), mode);
   await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.screenPointOverVessel("median-cubital")),
@@ -231,15 +255,14 @@ async function playPalpationThenFinish(page, mode){
   await page.waitForTimeout(540);
   await page.mouse.up();
   await page.waitForTimeout(150);
-  await carryOn(page, "#plpReady");
+  await carryOn(page);
 
   await page.evaluate(()=>window.__phlebTest.finishDraw());
-  await expect(page.locator("#vpToLabel")).toBeVisible({ timeout:10000 });
-  // ...and on to the score screen, where the report and its replay are shown
-  await page.locator("#vpToLabel").click();
+  // ...and on to the debrief, whose breakdown holds the report and its replay
   await finishLabelling(page);
   await answerAnyQuestion(page);
-  await expect(page.locator(".scoregrid")).toBeVisible({ timeout:10000 });
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await openBreakdown(page);
 }
 
 test("the replay is merged from the event logs the steps already kept", async ({ page }) => {
@@ -271,11 +294,9 @@ test("each replay group is shown against the measurement that graded it", async 
    THE OTHER TWO MODES
    ------------------------------------------------------------------------- */
 
-test("Learn and Practice keep their chips and get a compact rubric line, not the report", async ({ page }) => {
+test("Learn gets a compact rubric line in the debrief, not the full report", async ({ page }) => {
   for(const mode of ["learn", "practice"]){
-    await finishDrawIn(page, mode);
-    await expect(page.getByRole("heading", { name: /Draw complete/i })).toBeVisible();
-    await expect(page.locator(".vp-scorewrap .vp-chip").first()).toBeVisible();
+    await reportAtEnd(page, mode);   // …which opens the breakdown
     // the compact summary is there…
     await expect(page.locator(".rep-head .rep-chip").first()).toBeVisible();
     // …but not the report's own sections
@@ -296,23 +317,27 @@ test("a Learn attempt can never claim an unaided Excellent", async ({ page }) =>
 });
 
 test("bests are kept per mode and never pooled", async ({ page }) => {
-  await finishDrawIn(page, "practice");
+  /* Keyed by the modes that EXIST. "practice" and "final" are the two legacy
+     names the seam still accepts, and `setMode` normalises them to learn and
+     play on the way in — so the progress record has never had a `practice`
+     key to read, and asking for one threw rather than asserting anything. */
+  await finishDrawIn(page, "learn");
   let p = await progress(page);
-  expect(p.practice.attempts).toBe(1);
-  expect(p.final).toBeUndefined();
+  expect(p.learn.attempts).toBe(1);
+  expect(p.play).toBeUndefined();
 
-  await reportAtEnd(page, "final");
+  await reportAtEnd(page, "play");
   p = await progress(page);
-  expect(p.practice.attempts).toBe(1);
-  expect(p.final.attempts).toBe(1);
-  await expect(page.locator(".rep-policy", { hasText: /Final Practical: attempt 1/ })).toBeVisible();
+  expect(p.learn.attempts).toBe(1);
+  expect(p.play.attempts).toBe(1);
+  await expect(page.locator(".rep-policy", { hasText: /Play: attempt 1/ })).toBeVisible();
 });
 
 test("returning to the report does not count a second attempt", async ({ page }) => {
-  await reportAtEnd(page, "final");
+  await reportAtEnd(page, "play");
   const before = await progress(page);
   await page.evaluate(()=>window.__phlebTest.finishDraw());
-  await expect(page.locator("#vpToLabel")).toBeVisible();
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
   const after = await progress(page);
-  expect(after.final.attempts).toBe(before.final.attempts);
+  expect(after.play.attempts).toBe(before.play.attempts);
 });

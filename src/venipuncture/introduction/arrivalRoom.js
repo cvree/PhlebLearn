@@ -43,6 +43,17 @@ import {
   ACT, ACT_DEFS, actDef, liveActs, mayStartDraw, nextAction, nextIssue,
   HYGIENE_GOOD_S, DRY_MIN_S, REQUIRED_IDENTIFIERS, identifiersObtained,
 } from "./introductionRules.js";
+import { stepGuideHTML, guideSignature } from "../stepGuide.js";
+
+/* How this room is worked — behind the one disclosure now rather than spread
+   across a teaching card on the panel and a paragraph under it. See
+   stepGuide.js. */
+const HOW = `<p><b>Ask them to state their name and date of birth</b> — ask, do not read it out for them to
+  agree with. A patient will agree to a name that is not theirs.</p>
+  <p><b>Check what they say against the requisition</b>, and read the whole order: name, DOB, tests, date,
+  provider. If something is missing or does not match, hold the draw and clarify before drawing.</p>
+  <p><b>Then wash your hands for the full ${HYGIENE_GOOD_S} seconds, let them dry, and glove.</b> Gloves
+  over wet hands tear, and anything you touch after gloving — a phone, a curtain — contaminates them.</p>`;
 
 function esc(s){
   return String(s == null ? "" : s).replace(/[&<>"]/g,
@@ -180,6 +191,7 @@ export function renderArrivalRoom(host, o){
     state.done[ACT.CHECK_WRISTBAND] ? 1 : 0,
     identifiersObtained(state).join(","), acts.join(","),
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
   if(host.dataset.arrSig === signature){ patchLive(host, state); return; }
   host.dataset.arrSig = signature;
@@ -189,11 +201,14 @@ export function renderArrivalRoom(host, o){
       ${conversationHTML(state)}
       ${readinessHTML(state)}
 
-      ${guided ? `<div class="stg-msg ${canStart ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-          ${canStart
-            ? `<b>You know who this is.</b> ${esc(nextAction(state))}`
-            : `<b>Not yet.</b> ${esc(issue ? issue.message : nextAction(state))}`}
-        </div>` : ""}
+      ${guided ? stepGuideHTML({
+          id: "introduce",
+          ready: canStart,
+          tone: canStart ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+          lead: canStart ? "You know who this is." : "Not yet.",
+          line: canStart ? nextAction(state) : (issue ? issue.message : nextAction(state)),
+          how: HOW,
+        }) : ""}
 
       ${acts.length ? `<div class="arr-acts">
         ${acts.map(id => {
@@ -210,9 +225,12 @@ export function renderArrivalRoom(host, o){
 
       ${sinkHTML(state)}
 
-      <button class="btn vp-tap" id="arrStart" ${canStart ? "" : "disabled style='opacity:.5'"}>
-        ${canStart ? "Prepare your work area ▶" : `Identify them first (${identifiersObtained(state).length}/${REQUIRED_IDENTIFIERS})`}
-      </button>
+      ${/* Same rule as the supply cart's: the button is here when there is
+           something to press it for. Before two identifiers match there is
+           nothing to press, and a disabled bar reading "Identify them first
+           (0/2)" was a third copy of what the readiness chips and the
+           guidance line both already say. */
+        canStart ? `<button class="btn vp-tap" id="arrStart">Prepare your work area ▶</button>` : ""}
     </div>`;
 
   const h = o.handlers || {};

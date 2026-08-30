@@ -12,7 +12,7 @@
    ========================================================================= */
 import { LAST } from "../config.js";
 import { pick } from "../utils.js";
-import { SS, saveSS, guided, reveal, buttonControls } from "../game/gameState.js";
+import { SS, SHIFT, saveSS, guided, reveal, buttonControls } from "../game/gameState.js";
 import { difficultyLevel } from "../game/saveSystem.js";
 import { challengeSetup } from "../game/activeChallenges.js";
 import {
@@ -34,6 +34,7 @@ import { buildSupplyCatalog } from "./staging/supplyCatalog.js";
 import { createStagingState, setHandedness, placeItem, inspectItem, HAND, ZONE } from "./staging/stagingState.js";
 import { createLayout, orientationForAspect, applyTrayOffset } from "./staging/stagingLayout.js";
 import { evaluateStaging } from "./staging/stagingRules.js";
+import { captureTray, restockPlan } from "./staging/trayCarryover.js";
 import { measureStaging } from "./staging/stagingScoring.js";
 import { renderStagingCoach } from "./staging/stagingCoach.js";
 import {
@@ -242,10 +243,41 @@ export function ensureSupplySession(c){
   const otherPatientName = `${pick(["R.","J.","M.","A.","D."])} ${pick(LAST.filter(n=>!patientName.endsWith(n)))}`;
   const catalog = buildSupplyCatalog({ requiredTubes:c.tubes, patientName, otherPatientName });
   const state = createStagingState({ catalog, requiredTubes:c.tubes, handedness:handednessOf() });
+
+  /* THE TRAY FROM THE LAST PATIENT, RESTOCKED.
+
+     A shift is six patients and the consumable half of this tray is the same
+     nine objects every time. You do not rebuild a work area from an empty
+     tray between two patients in the same room; you restock the cart you have
+     already been through. What does NOT come back is the tubes — those are
+     this patient's order, and they are the graded half of the step.
+
+     The restock is also not a guarantee: roughly one patient in three, one of
+     the things that comes back is something that should not be on the tray,
+     and nothing says so. See staging/trayCarryover.js. */
+  const restock = restockPlan({ catalog, tray: SHIFT ? SHIFT.tray : null });
+  for(const put of restock.items){
+    if(put.inspected) inspectItem(state, put.id);
+    placeItem(state, put.id, put.zone, {});
+  }
+  if(restock.items.length){
+    state.trayOffset = { x: restock.trayOffset.x, z: restock.trayOffset.z };
+    state.restocked = restock.items.map(i => i.id);
+    // Remembered so the coach can say a tray was restocked; never which item
+    // is the bad one, which is the learner's to find.
+    state.restockSuspect = restock.plantedId;
+    /* Nothing else to reset. `replacements` counts items LEAVING a staged
+       zone, and a restock only puts things into one — so taking the planted
+       item back off the tray still counts against the learner exactly as it
+       would if they had staged it themselves, which is right: they did commit
+       to it by starting the draw with it there. */
+  }
+
   const layout = createLayout({
     handedness: state.handedness, tubeCount: c.tubes.length,
     shelfCount: catalog.length, orientation: viewportOrientation(),
   });
+  applyTrayOffset(layout, state.trayOffset);
   c.supplies = { catalog, state, layout, measurements:null };
   return c.supplies;
 }
@@ -865,6 +897,10 @@ export const PHYSICAL_STEPS = {
       session.measurements = measureStaging(session.state, session.catalog, result);
       c.gatherOk = result.ready;   // honest on the recap chips, even when the learner chose to proceed anyway
       c.stagingMeasurements = session.measurements;
+      // What the next patient's tray starts as. Recorded here rather than at
+      // the end of the draw because this is the moment the learner said the
+      // work area was how they wanted it.
+      if(SHIFT) SHIFT.tray = captureTray(session.state, session.catalog);
       if(c.encounter){
         c.encounter.supplies = session;
         c.encounter.measurements.supplyStaging = session.measurements;

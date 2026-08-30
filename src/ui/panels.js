@@ -9,9 +9,9 @@ import { $, panel } from "../dom.js";
 import { FX, fxPanelIn, countUp, blurText } from "../fx.js";
 import { sfx } from "../audio/audioManager.js";
 import { musicForState } from "../audio/audioManager.js";
-import { toast, confetti, floatXP } from "./notifications.js";
-import { shuffle, pick, arraysEqual } from "../utils.js";
-import { TUBES, TESTS, HANDLING, CARD_LINKS, BADGE_NAMES } from "../config.js";
+import { toast, confetti } from "./notifications.js";
+import { shuffle, pick } from "../utils.js";
+import { TUBES, HANDLING, CARD_LINKS, BADGE_NAMES } from "../config.js";
 import {
   SS, ENC, setEnc, SHIFT, setShift, state, setState, setMode, saveSS,
   MODE, MODES, MODE_NAMES, guided, playMode, reveal,
@@ -27,13 +27,13 @@ import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
 import { getRoomLevel, canChooseProcedure, hasUpgrade } from "../game/progression.js";
 import {
-  STEP_XP, sectionScore, sectionReward, nextStreak, drawReward,
+  STEP_XP, sectionScore, sectionReward, nextStreak, drawReward, SECTION_CLEAN,
 } from "../game/rewards.js";
 import { PROCEDURE, PROCEDURES, indicatedProcedure } from "../venipuncture/procedure.js";
-import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint, clearHint } from "../game/dialogue.js";
+import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint } from "../game/dialogue.js";
 import { getScene } from "../rendering/scene.js";
-import { spawnPatient, removePatient, reactMascot } from "../world/patient.js";
-import { tubeMeshes, resetTubeSelection } from "../world/tubeRack.js";
+import { spawnPatient, removePatient } from "../world/patient.js";
+import { resetTubeSelection } from "../world/tubeRack.js";
 import { createProcedureState, renderCurrentStep } from "../venipuncture/accessibilityFallback.js";
 import { clearAutoAdvance } from "../venipuncture/autoAdvance.js";
 import { ensureArmSession, runArrivalRoom } from "../venipuncture/physicalSteps.js";
@@ -41,8 +41,8 @@ import { closeBench } from "../bench/benchSession.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
 import { VP_TIPS, VP_ICON } from "../venipuncture/questions.js";
+import { setGuideStep, markStepTaught } from "../venipuncture/stepGuide.js";
 import { startComplicationWatch, finishComplications } from "../venipuncture/complications/complicationRuntime.js";
-import { complicationSummaryHTML } from "../venipuncture/complications/complicationCoach.js";
 import { assessSpecimens, applySpecimenOutcome } from "../venipuncture/specimen/specimenQuality.js";
 import { fbCard } from "./coachLayer.js";
 import { buildDebrief, sectionScores } from "../game/debrief.js";
@@ -127,6 +127,16 @@ const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PLAY]:6 };
 
 function renderIdle(){
   const line = m => summaryLine(SS.modeProgress, m);
+  /* WHICH BUTTON GLOWS IS AN ANSWER TO A QUESTION THE PLAYER IS ASKING.
+
+     Play used to be the pulsing one on every save, including a save that had
+     never drawn anything. So the game's own emphasis walked a first-time
+     learner into the mode that deliberately says NOTHING — no instruction, no
+     hint, no verdict — where a beginner cannot tell a mistake from the design.
+     On a save with nothing on it, Learn is the call to action; from the second
+     visit onwards it is Play again, which is right for someone who has already
+     been taught. */
+  const fresh = !SS.shifts && !SS.xp;
   panel.innerHTML=`
     <h2>🩺 Clock in</h2>
     <div class="tubechips">
@@ -138,13 +148,13 @@ function renderIdle(){
       ${equipmentPills()}
     </div>
 
-    <button class="btn alt modecard" id="modeLearn">
+    <button class="btn ${fresh ? "cta-pulse starborder" : "alt"} modecard" id="modeLearn">
       <span class="mc-title">🎓 Learn</span>
       <span class="mc-sub">Talked through, step by step. Replay any section that went badly.</span>
-      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}</span>
+      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}${fresh ? " · start here" : ""}</span>
     </button>
 
-    <button class="btn cta-pulse starborder modecard" id="modePlay">
+    <button class="btn ${fresh ? "alt" : "cta-pulse starborder"} modecard" id="modePlay">
       <span class="mc-title">🩸 Play</span>
       <span class="mc-sub">A real shift. Nothing is said until the report.</span>
       <span class="mc-stat">${line(MODES.PLAY)}</span>
@@ -186,9 +196,14 @@ function masteryLine(){
   const m = normaliseMastery(SS.mastery);
   const worst = weakestTrack(m);
   const stars = TRACKS.map(t => `${t.label} ${"★".repeat(m[t.id].stars)}${"☆".repeat(5 - m[t.id].stars)}`);
-  const head = worst && worst.rec.stars < 5
-    ? `Weakest right now: <b>${worst.track.label}</b>.`
-    : "Every technique at five stars.";
+  /* On a save with no draws behind it every track is at zero, so "weakest
+     right now" would pick one arbitrarily and present a tie as a verdict. */
+  const anyEarned = TRACKS.some(t => m[t.id].stars > 0);
+  const head = !anyEarned
+    ? "Nothing recorded yet — every technique starts at zero stars."
+    : worst && worst.rec.stars < 5
+      ? `Weakest right now: <b>${worst.track.label}</b>.`
+      : "Every technique at five stars.";
   return `${head} <span class="mastery-strip">${stars.join(" · ")}</span>`;
 }
 /* The kit the learner owns, shown on the clock-in screen because it changes
@@ -262,7 +277,9 @@ function startShift(mode){
   armChallenges(chosenChallenges());
   lockLoadout();
   setMode(mode);
-  setShift({len:SHIFT_LEN[MODE]||1,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[]});
+  // `tray:null` — a new shift starts at an empty cart, whatever the last one
+  // ended with. See venipuncture/staging/trayCarryover.js.
+  setShift({len:SHIFT_LEN[MODE]||1,index:0,patients:[],ratings:[],orderAllOk:true,safetyAllOk:true,coins:0,startMs:Date.now(),patientTimes:[],missed:[],tray:null});
   nextPatient();
 }
 function nextPatient(){
@@ -313,21 +330,26 @@ function renderReview(){
     "Morning! Hope this is quick.",
   ]);
 
+  /* The teaching card that used to sit here said the same three things the
+     room's own guidance says — ask rather than read, check against the
+     requisition, hold a flawed order. It is the body of the room's one
+     disclosure now. See venipuncture/stepGuide.js. */
+  setGuideStep("introduce");
   panel.innerHTML = `
     <h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
     ${says(p.first, pEmoji(p), greet, p.mood)}
-    ${guided() ? teach("review") : ""}
     <div class="vp-stage" id="arrivalStage" data-reveal="${MODE}"></div>`;
 
   // The room runs its own frame loop for the hygiene clock, so its cleanup
   // has to go with the encounter's — same slot renderCollect uses.
-  if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+  releaseStepLease();
   const stop = runArrivalRoom(c, $("arrivalStage"), ()=>{
-    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+    releaseStepLease();
     /* `reqChoice` used to be the answer to a quiz. It is now what the learner
        actually DID about a flawed order: held it, or did not. deriveChoices()
        reads it for the score screen's "your answer / best answer" card, which
        therefore contains a decision rather than a guess. */
+    markStepTaught("introduce");
     ENC.reqChoice = p.reqIssue ? !!c.reqHeld : !c.reqHeld;
     (ENC.answers = ENC.answers || {}).requisition = {
       your: c.reqHeld ? "Held the draw to clarify the order." : "Read the order and proceeded.",
@@ -338,6 +360,24 @@ function renderReview(){
     afterRequisition();
   });
   ENC._collectCleanup = stop;
+}
+
+/**
+ * Tears down whatever the current step is holding open, and forgets it.
+ *
+ * RELEASED AND FORGOTTEN, always both. A step's cleanup is stored in one slot
+ * that the next step overwrites, so a cleanup that has been run but not
+ * cleared is still reachable — the next screen to reach for the slot calls a
+ * teardown a second time on a session that no longer exists. The mirror of
+ * that mistake, leaving a lease live because nothing released it, is what let
+ * the supply cart swallow every bench gesture aimed at a later step; see
+ * main.js's gotoProcedureStep. One helper, so no call site can do half of it.
+ */
+function releaseStepLease(){
+  if(!ENC || !ENC._collectCleanup) return;
+  const stop = ENC._collectCleanup;
+  ENC._collectCleanup = null;
+  try{ stop(); }catch(e){ console.warn("step cleanup failed", e); }
 }
 
 /* ---------- into the draw ------------------------------------------------------ */
@@ -418,14 +458,18 @@ function renderCollect(){
   const section = sectionForStep(id);
   const pctDone = Math.round(done/total*100);
   const r = reveal();
-  // Learn teaches the step. Practice is reminded what the step is FOR.
-  // The Final Practical is told the step's name and nothing else — the
-  // examiner does not read you the tip sheet.
-  const lesson = r.instruction
-    ? `<div class="lesson"><span class="modetag">🎓 TEACHING</span><span class="lh">${VP_ICON[id]} ${info.t}</span>${info.tip}<br><span class="why">Why it matters: ${info.why}</span></div>`
-    : r.hints
-      ? `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b> ${info.tip}</div>`
-      : "";
+  /* THE TEACHING CARD IS GONE FROM HERE.
+
+     It used to print the step's tip and its "why it matters" above the coach,
+     permanently, on every frame of every step — and the coach underneath it
+     then said the same thing again as a verdict, again as a next action, and
+     again as a how-to paragraph. Four voices, one instruction.
+
+     The same content is now the body of the step's own disclosure (see
+     venipuncture/stepGuide.js), which opens itself the first time a learner
+     meets a step and is shut after that. Nothing was deleted; it is spent
+     once instead of shouted forever. */
+  setGuideStep(id);
 
   /* THE CHROME IS THE MODE.
 
@@ -443,7 +487,6 @@ function renderCollect(){
     <h2>🩸 ${section ? section.label : "Venipuncture"} <span class="vp-count">step ${done+1}/${total}</span></h2>
     <div class="vp-bar"><div class="vp-bar-fill" style="width:${pctDone}%"></div></div>
     <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%</span></div>
-    ${lesson}
     <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
     <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`
   : `
@@ -459,16 +502,53 @@ function renderCollect(){
     hasMidDrawEvent: ()=> !!(ENC.p.drawEvent && ENC.p.drawEvent.when==="mid" && !ENC.drawEventHandled),
     onMidDrawEvent: (resumeStep)=>{ ENC.drawResumeBeat=resumeStep; go("drawresp"); },
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
-    onStepFinished: (finishedId, nextId)=> rewardStep(c, finishedId, nextId),
-    onCleanup: ()=>{ if(ENC._collectCleanup) ENC._collectCleanup(); },
-    // Learn only. The driver asks; the mode decision lives here.
+    onStepFinished: (finishedId, nextId)=>{
+      /* Taught on the way OUT, so the disclosure stays open for the whole of
+         the first attempt — including the part where the learner is stuck,
+         which is when they would actually want it. */
+      markStepTaught(finishedId);
+      rewardStep(c, finishedId, nextId);
+    },
+    onCleanup: releaseStepLease,
+    /* Learn only. The driver asks; the mode decision lives here.
+
+       AND IT ONLY STOPS FOR WORK THAT IS WORTH STOPPING FOR.
+
+       Every section used to end on a full screen: the measurement cards, a
+       "Carry on ▶", and a "↺ Repeat this section". Eleven of them in a draw.
+       On a good draw that is eleven modal interruptions telling the learner
+       that the thing they just did well went well, each one costing a click,
+       and each one offering to replay a section there is no reason to replay.
+
+       The screen exists to offer the replay. Offering it for work that was
+       good is the redundancy — so a section at or above the "clean" bar, with
+       nothing recorded against it, says so in a line and the draw carries on.
+       A section below it stops, exactly as before, which is the only time the
+       replay was ever the point. */
     sectionFeedbackFor: (finishedId, nextId)=>{
       if(!reveal().sectionFeedback) return null;
       if(!endsSection(finishedId, nextId)) return null;
       const section = sectionForStep(finishedId);
       const readings = sectionMeasurements(c, section);
       if(!readings.length) return null;
-      return { section, readings, done: !nextId };
+      const score = sectionScore(readings);
+      const mistakes = readings.reduce((n, r)=>n + ((r.measurement.mistakes||[]).length), 0);
+      if(score >= SECTION_CLEAN && !mistakes && nextId){
+        /* Said, not staged. The number is the same one the card would have
+           shown, and the draw does not stop to show it.
+
+           The streak goes with it. It has been accumulating in `c.streak`
+           since the beginning and was invisible until the debrief, which is
+           right for a scored shift — nothing is said there at all — and a
+           waste in a lesson, where three clean sections in a row is the
+           thing that makes the fourth one feel worth doing well. */
+        /* Already incremented: the driver runs onStepFinished (which pays the
+           section and advances the streak) before it asks for feedback. */
+        const run = c.streak || 0;
+        toast(`${section.label} · ${score}/100 ✓${run >= 3 ? `  🔥 ${run} clean in a row` : ""}`);
+        return null;
+      }
+      return { section, readings, done: !nextId, score };
     },
     onSectionFeedback: renderSectionFeedback,
   });
@@ -488,7 +568,10 @@ function renderCollect(){
    later sessions are built from the earlier ones: a re-done insertion with a
    stale collection session would draw from a puncture that no longer exists.
    ------------------------------------------------------------------------- */
-function renderSectionFeedback({ section, readings, done }){
+/* Reached only when a section is worth stopping for — below the clean bar,
+   or with something recorded against it, or because the draw has ended. See
+   sectionFeedbackFor above. */
+function renderSectionFeedback({ section, readings, done, score }){
   const cards = readings.map(({ key, measurement:m })=>`
     <div class="sec-card">
       <div class="sec-head">
@@ -501,8 +584,10 @@ function renderSectionFeedback({ section, readings, done }){
         : `<p class="sec-narrative"><b>Nothing was recorded against this section.</b></p>`}
     </div>`).join("");
   panel.innerHTML=`
-    <h2>🔁 ${section.label}</h2>
-    <p class="sub">Section finished. This is what was measured — the same numbers the report is built from.</p>
+    <h2>🔁 ${section.label}${score!=null?` <span class="vp-count">${score}/100</span>`:""}</h2>
+    <p class="sub">${done
+      ? "The draw is finished. This is what the last piece of it measured."
+      : "This one is worth another look — here is what it measured, and you can do it again."}</p>
     ${cards}
     <div class="sec-actions">
       <button class="btn" id="secOn">${done?"Finish the draw ▶":"Carry on ▶"}</button>
@@ -513,7 +598,7 @@ function renderSectionFeedback({ section, readings, done }){
   $("secAgain").onclick=()=>{
     sfx("click");
     const c=ENC.collect;
-    if(ENC._collectCleanup) ENC._collectCleanup();
+    releaseStepLease();
     const index = resetFromSection(c, section.id);
     if(index < 0){ renderCollect(); return; }
     c.step = index;
@@ -629,7 +714,7 @@ function watchComplications(c){
       // Everything the current step was holding open goes, exactly as it does
       // when a draw is abandoned — the difference is that this one was the
       // right call, and the report says so.
-      if(ENC._collectCleanup) ENC._collectCleanup();
+      releaseStepLease();
       captureStagingIfUnmeasured();
       go("collect");
     },
@@ -663,7 +748,7 @@ function wireLeaveDraw(){
     }
     sfx("bad");
     clearAutoAdvance();
-    if(ENC._collectCleanup) ENC._collectCleanup();
+    releaseStepLease();
     ENC.drawAbandoned=true;
     // capture whatever preparation was done before they walked away
     captureStagingIfUnmeasured();
@@ -672,38 +757,31 @@ function wireLeaveDraw(){
   };
 }
 
-/* ---------- the recap chips ------------------------------------------------
-   Phase 3b's brief: the chips report REAL MEASUREMENTS, not booleans. Every
-   value below is read off the step's own measurement object — the same number
-   the rubric is graded from — so "Tourniquet timing ✓" becomes "Tourniquet
-   38s", which is a thing a learner can actually act on next time.
+/* =========================================================================
+   THE DRAW ENDS. THERE IS NO SCREEN FOR IT.
 
-   A chip with no measurement behind it (the step never ran) says so rather
-   than showing a zero it did not earn.
-   -------------------------------------------------------------------------- */
-function recapChips(c){
-  const n = (v, unit, dp) => v == null ? null : `${dp ? Number(v).toFixed(dp) : Math.round(v)}${unit || ""}`;
-  const ins = c.insertMeasurements, tq = c.tourniquetMeasurements, col = c.collectionMeasurements;
-  const cl = c.cleaningMeasurements, pd = c.postDrawMeasurements, wd = c.withdrawalMeasurements;
-  const inv = c.inversionMeasurements, sm = c.stagingMeasurements, cx = c.complicationMeasurements;
+   There used to be: "Draw complete", with the recap chips, the laboratory's
+   verdict on every tube, the work-area card, the rubric summary and the
+   payout line — and a button to carry on to labelling. Two clicks later the
+   debrief said all of it again, better, paced as four acts, which is where
+   this game already decided its feedback belongs.
 
-  return [
-    { label: "Supplies staged", ok: c.gatherOk, value: sm ? `${sm.correctItems} right / ${sm.incorrectItems} wrong` : null },
-    { label: "Tourniquet", ok: c.tqGood, value: tq ? `${n(tq.secondsOn, "s")} · ${n(tq.heightAboveSiteInches, "″", 1)} above` : null },
-    { label: "Vein selected", ok: c.veinOk, value: c.site && c.site.vesselLabel ? c.site.vesselLabel : null },
-    { label: "Site antisepsis", ok: c.cleanOk, value: cl ? `${n(cl.coveragePct, "%")} covered · dried ${n(cl.dryingSeconds, "s")}` : null },
-    { label: "Insertion angle", ok: c.insertOk, value: ins ? `${n(ins.angleDeg, "°")} · ${n(ins.depthMm, "mm", 1)} deep` : null },
-    { label: "Re-approaches", ok: ins ? ins.reapproaches === 0 : false, value: ins ? String(ins.reapproaches) : null },
-    { label: "Order of draw", ok: c.tubeOrderOk, value: col ? `${n(col.orderAccuracy*100, "%")}` : null },
-    { label: "Blood collected", ok: c.fillGood, value: col ? `${n(col.totalDrawnMl, " mL", 1)}` : null },
-    { label: "Needle movement", ok: col ? col.peakNeedleShiftMm <= 1 : false, value: col ? `${n(col.peakNeedleShiftMm, "mm", 1)}` : null },
-    { label: "Sharp exposed", ok: c.safetyOk, value: wd ? `${n(wd.exposedSeconds, "s", 1)}` : null },
-    { label: "Pressure held", ok: c.pressureOk, value: pd ? `${n(pd.effectiveSeconds, "s")} of ${n(pd.requiredSeconds, "s")}` : null },
-    { label: "Tubes mixed", ok: c.mixOk, value: inv ? `${inv.tubesUsable}/${inv.tubesRequired} usable` : null },
-    { label: "Complications", ok: c.complicationsOk !== false, value: cx ? (cx.total ? `${cx.managedCount}/${cx.total} handled` : "none") : null },
-  ];
-}
+   That is two verdicts on one encounter, the first of them delivered in the
+   middle of the job, with the tubes still unlabelled in your hand. The
+   comment on the old function said so out loud — "THE REPORT COMES AT THE
+   END, NOT HERE" — and then printed the report anyway.
 
+   So this is a function and not a screen now. Everything it COMPUTES is
+   untouched and still happens exactly here, at the moment the attempt
+   genuinely ended: the complication watch closes, the laboratory looks at the
+   specimens, the lump sum is added to what the sections accrued, and the
+   rubric grades the attempt. What is gone is the page it printed.
+
+   Where the recap went: the lab is act 2 of the debrief, the technique
+   numbers are act 3, the payout is act 4, and the rubric report and the
+   per-category tiles are behind the debrief's own breakdown — in BOTH modes
+   now, because Learn's copy of the rubric used to live only on this screen.
+   ========================================================================= */
 function vpFinish(){
   clearAutoAdvance();
   const c=ENC.collect;
@@ -712,10 +790,7 @@ function vpFinish(){
   // reachable more than once.
   finishComplications(c);
   if(!c.specimenQuality) applySpecimenOutcome(c, assessSpecimens(c, { orders: ENC.p.orders }));
-  const chips = recapChips(c);
-  const items=[["gatherOk","Supplies gathered"],["veinOk","Vein selected"],["cleanOk","Site cleaned"],["assembleOk","Needle assembled"],["uncapOk","Uncapped"],
-    ["insertOk","Clean insertion"],["fillGood","Filled to line"],["tqGood","Tourniquet timing"],["tubeOrderOk","Order of draw"],
-    ["pressureOk","Pressure held"],["disposeOk","Sharps disposed"],["mixOk","Tubes inverted"]];
+
   // The steps and sections have been paying as they went, so this is the
   // small end-of-draw part: how much got finished, and the three outcomes a
   // lump sum is actually good at recognising. See game/rewards.js.
@@ -738,98 +813,14 @@ function vpFinish(){
     held.notes = payout.notes;
     c.awarded = true;
   }
-  const hasPostDraw = !!ENC.p.drawEvent && ENC.p.drawEvent.when!=="mid" && !ENC.drawEventHandled;
-  const sm = c.stagingMeasurements;
-  // Teaching mode reports technique immediately; a scored shift holds it back
-  // to the encounter score, after the patient interaction is over.
-  const stagingBlock = (sm && guided()) ? `
-    <div class="vp-technique">
-      <div class="vt-head"><span class="vt-title">🧺 Work-area preparation</span><span class="vt-score">${sm.score}/100</span></div>
-      <p class="vt-narrative">${sm.narrative}</p>
-      ${sm.mistakes && sm.mistakes.length ? `<ul class="vt-mistakes">${sm.mistakes.map(m=>`<li>${m.item?`<b>${m.item}</b> — `:""}${m.message}</li>`).join("")}</ul>` : ""}
-      <div class="vt-metrics">
-        <span>Correct items <b>${sm.correctItems}</b></span>
-        <span>Wrong items <b>${sm.incorrectItems}</b></span>
-        <span>Unsafe items <b>${sm.unsafeItems}</b></span>
-        <span>Order of draw <b>${Math.round(sm.tubeOrderAccuracy*100)}%</b></span>
-        <span>Packages checked <b>${sm.inspectionsBeforeStaging}/${sm.stagedCount}</b></span>
-        <span>Replacements <b>${sm.replacements}</b></span>
-        <span>Sharps reachable <b>${sm.sharpsAccessible?"yes":"no"}</b></span>
-        <span>Staging time <b>${fmtDuration(sm.timeMs)}</b></span>
-      </div>
-    </div>` : "";
-  // The rubric is built for EVERY mode, because per-mode bests need it — but
-  // only the Final Practical is shown the full report. Learn and Practice keep
-  // the chips they have always had, with a compact rubric line under them;
-  // the report is the Final Practical's output, not a replacement for
-  // in-line coaching.
-  const { report, replay, progressLine } = gradeAttempt(c);
-  const haltNote = c.complicationHalt ? `
-    <div class="fb no"><b>You stopped the draw.</b> That was the right call for a
-    ${(c.complicationMeasurements && (c.complicationMeasurements.events.find(e=>e.id===c.complicationHalt.id)||{}).label) || "complication"},
-    and the report below is built from what was actually collected before it — not from what was ordered.</div>` : "";
-  // THE REPORT COMES AT THE END, NOT HERE.
-  //
-  // The Final Practical used to print its whole rubric report the moment the
-  // needle was out — before the tubes were labelled, before the patient had
-  // been answered, and then followed it two clicks later with a second
-  // grading screen. That is two verdicts on one encounter, delivered in the
-  // middle of the job. The draw now ends with a recap of what it measured,
-  // and every judgement lands together on the score screen once the patient
-  // is finished with. `gradeAttempt()` still runs here, because this is the
-  // moment the attempt genuinely ended.
-  const body = playMode()
-    ? `${haltNote}
-       <div class="fb"><b>Draw complete.</b> Your practical report follows once you have finished with the patient.</div>
-       <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
-       ${labReceivingHTML(c.specimenQuality)}`
-    : `${haltNote}
-       <div class="fb"><b>Nicely done.</b> +${payout.xp} XP · +${payout.coins} 🪙 for a ${payout.completion}% complete draw${payout.notes.length?` — ${payout.notes.join(", ")}`:""}.</div>
-       ${c.cleanSections?`<div class="hint">${c.cleanSections} of ${c.sectionsDone} sections were clean, and they paid as you went.</div>`:""}
-       ${stagingBlock}
-       <div class="vp-scorewrap">${chips.filter(ch=>ch.ok || ch.value).map(ch=>`<span class="vp-chip ${ch.ok?'ok':'mid'}">${ch.ok?'✓':'•'} ${ch.label}${ch.value?` <b>${ch.value}</b>`:""}</span>`).join("")}</div>
-       ${complicationSummaryHTML(c.complicationMeasurements)}
-       ${labReceivingHTML(c.specimenQuality)}
-       ${renderRubricSummary(report)}
-       ${progressLine?`<div class="rep-policy">${progressLine}</div>`:""}
-       ${guided()?`<div class="lesson"><span class="lh">You ran the full venipuncture sequence!</span>Hygiene → gather → tourniquet → palpate → clean → assemble (while it dries) → uncap → insert → fill &amp; switch in order of draw → release → withdraw → safety → sharps → pressure → bandage → invert. Every step protects the patient and the specimen.</div>`:""}`;
-  panel.innerHTML=`
-    <h2>${playMode()?`📋 Practical report — ${ENC.p.first}`:`✅ Draw complete — ${ENC.p.first}`}</h2>
-    ${body}
-    <button class="btn vp-tap" id="vpToLabel">${hasPostDraw?"⚠️ Something needs attention ▶":"🏷️ Continue to labeling ▶"}</button>`;
-  $("vpToLabel").onclick=()=>{ sfx("tap"); go(hasPostDraw?"drawresp":"label"); };
-}
+  // Graded HERE, because this is the moment the attempt genuinely ended —
+  // before the tubes are labelled and before the patient is answered. Only
+  // the reporting of it moved.
+  gradeAttempt(c);
 
-/* ---------- the laboratory's own verdict -------------------------------------
-   Shown in every mode, unlike the coaching, because it is not feedback about
-   the learner — it is what happened to the specimens. A rejected tube means a
-   real person gets stuck again tomorrow, and that is the part of the job the
-   patient actually experiences.
-   ---------------------------------------------------------------------------- */
-function labReceivingHTML(q){
-  if(!q || !q.total) return "";
-  // A clean delivery is one line. There is nothing to read tube by tube when
-  // every tube was accepted as drawn, and making the learner scroll past it
-  // to reach the next button is friction with no lesson in it.
-  if(!q.rejectedCount && !q.flaggedCount){
-    return `<div class="lab-receiving lab-clean">
-      <div class="lab-head"><span class="lab-title">🧫 Specimen receiving</span><span class="lab-score">${q.score}/100</span></div>
-      <p class="vt-narrative">All ${q.total} tube${q.total===1?"":"s"} accepted as drawn. ${q.testsOrdered.length?`${q.testsOrdered.join(", ")} can be reported.`:""}</p>
-    </div>`;
-  }
-  const rows = q.tubes.map(t=>`
-    <li class="lab-row lab-${t.verdict}">
-      <span class="lab-tube">${t.name}</span>
-      <span class="lab-verdict">${t.verdict === "accepted" ? "✓ accepted" : t.verdict === "flagged" ? "⚠ accepted with comment" : "✗ rejected"}</span>
-      <span class="lab-fill">${Math.round(t.fillFraction*100)}% full</span>
-      <span class="lab-why">${t.headline}</span>
-    </li>`).join("");
-  return `<div class="lab-receiving">
-    <div class="lab-head"><span class="lab-title">🧫 Specimen receiving</span><span class="lab-score">${q.score}/100</span></div>
-    <p class="vt-narrative">${q.narrative}</p>
-    <ul class="lab-list">${rows}</ul>
-    ${q.redrawRequired?`<div class="fb no"><b>Redraw required.</b> ${q.lostTests.join(", ")} cannot be reported from this collection.</div>`:""}
-  </div>`;
+  const hasPostDraw = !!ENC.p.drawEvent && ENC.p.drawEvent.when!=="mid" && !ENC.drawEventHandled;
+  sfx("good");
+  go(hasPostDraw ? "drawresp" : "label");
 }
 
 /**
@@ -872,16 +863,76 @@ function gradeAttempt(c){
   return { report, replay, progressLine:c.progressLine };
 }
 
-/* ---------- labeling and routing ------------------------------------------------
-   One screen, not two. Labeling at the bedside and deciding how the batch
-   travels are the same moment of work — you are standing at the chair with the
-   tubes in your hand — and splitting them cost a screen and a click without
-   teaching anything the second half did not already teach.
-   ------------------------------------------------------------------------------ */
+/* =========================================================================
+   LABELLING: ONE CHECK, NOT FOUR RUBBER STAMPS.
+
+   This screen used to be four checkboxes — patient name, ID/DOB, date and
+   time, your initials — each of which the learner ticked, none of which had a
+   wrong answer, and all four of which had to be ticked before the button
+   would work. Four clicks with one possible outcome is not a decision; it is
+   a form, and a form does not teach the thing this screen exists for.
+
+   What it exists for is the single most consequential error in the whole job:
+   a tube that leaves the chair carrying the wrong information. So the label
+   is PRINTED now, filled in from the order, and the learner does what they
+   would actually do — read it against the patient in front of them and say
+   what is wrong with it, if anything.
+
+   One tap. Either you saw it or you did not. A label that goes out wrong goes
+   out wrong, and the score reads the label rather than the ticking.
+
+   Routing travels with it, unchanged: labelling at the bedside and deciding
+   how the batch travels are the same moment of work, and splitting them cost
+   a screen and a click without teaching anything.
+   ========================================================================= */
+
+/** Two digits. */
+function two(n){ return String(n).padStart(2, "0"); }
+
+/**
+ * The label as the printer produced it, and what — if anything — is wrong
+ * with it.
+ *
+ * Rolled once per encounter and kept, because re-rolling it on every
+ * re-render would move the error under the learner's finger.
+ */
+function labelDraft(){
+  if(ENC.labelDraft) return ENC.labelDraft;
+  const p = ENC.p;
+  const now = new Date();
+  const yesterday = new Date(Date.now() - 86400000);
+  const stamp = d => `${two(d.getMonth()+1)}/${two(d.getDate())}/${d.getFullYear()} ${two(d.getHours())}:${two(d.getMinutes())}`;
+  const initials = `${(p.first||"A")[0]}${(p.last||"P")[0]}`.toUpperCase();
+
+  /* A label goes out wrong more often than anyone would like, which is why
+     checking it is a competency. Rather more than half of them here are
+     clean — a screen where something is always wrong teaches "tap the odd
+     one out", not "read the label". */
+  const FLAWS = [
+    { field:"name",     why:`The order is for ${p.name}. This label is somebody else's.` },
+    { field:"iddob",    why:"A label with no date of birth is a label with one identifier on it." },
+    { field:"datetime", why:"That is yesterday's date — this was pre-labelled, or the clock is wrong. Either way the lab cannot tell when the sample was taken." },
+    { field:"initials", why:"Nobody has signed for this collection. The lab cannot ask who drew it." },
+  ];
+  const flaw = Math.random() < 0.55 ? pick(FLAWS) : null;
+  const bad = f => flaw && flaw.field === f;
+
+  ENC.labelDraft = {
+    flaw,
+    fields: [
+      { key:"name",     label:"Patient",  value: bad("name") ? `${p.first} ${p.decoyLast}` : p.name },
+      { key:"iddob",    label:"DOB · ID", value: bad("iddob") ? `— · ${p.id}` : `${p.dob} · ${p.id}` },
+      { key:"datetime", label:"Collected",value: bad("datetime") ? stamp(yesterday) : stamp(now) },
+      { key:"initials", label:"Drawn by", value: bad("initials") ? "—" : initials },
+    ],
+  };
+  return ENC.labelDraft;
+}
+
 function renderLabel(){
   const p=ENC.p, ev=p.event;
   const note = ev.type==="label" ? `<div class="fb no"><b>Heads up:</b> ${ev.prompt} ${ev.why}</div>`:"";
-  const f=ENC.labelFields;
+  const draft = labelDraft();
   if(!ENC.handlingOptions){
     ENC.handlingOptions = shuffle([
       {key:"routine",t:pick(HANDLING.routine.labels),ok:p.handling==="routine"},
@@ -891,24 +942,92 @@ function renderLabel(){
   }
   const opts = ENC.handlingOptions;
   const chosen = ENC.handlingChoice;
+  const checked = !!ENC.labelChecked;
+  const verdict = ENC.labelVerdict || null;
+
   panel.innerHTML=`
     <h2>🏷️ Label and route</h2>
-    ${teach("label")}
-    ${guided()?says(DOT.name,DOT.emoji,pick(["Label right here at the chair, before we go anywhere.","Last thing at the bedside: label every tube fully, then decide how they travel.","Don't leave the chair unlabeled! Check each field, then pick the transport."]),"your guide"):""}
+    ${/* Picked once per patient, not once per render: this screen re-renders
+         on every tap, and a coach whose sentence changes each time reads as
+         a different coach each time. */
+      guided()?says(DOT.name,DOT.emoji,(ENC.labelCoachLine = ENC.labelCoachLine || pick([
+        "Read it against the person in front of you, not against what you expect.",
+        "Last thing at the bedside: check the label, then decide how they travel.",
+        "Never leave the chair with a label you have not read.",
+      ])),"your guide"):""}
     ${note}
-    <div id="fields">
-      ${labelRow("name","Patient full name",f.name)}
-      ${labelRow("iddob","ID number / DOB",f.iddob)}
-      ${labelRow("datetime","Date & time of collection",f.datetime)}
-      ${labelRow("initials","Your (phlebotomist) initials",f.initials)}
+
+    <div class="lbl-card${checked ? " done" : ""}">
+      <div class="lbl-head">Printed label · ${(ENC.collect && ENC.collect.tubes ? ENC.collect.tubes.length : 1)} tube(s)</div>
+      ${draft.fields.map(f=>{
+        const isFlaw = !!(draft.flaw && draft.flaw.field === f.key);
+        /* Corrected only if it was actually CAUGHT. A line the learner walked
+           past still says what it said — the tube went to the lab like that,
+           and a label that quietly fixed itself would be the game lying about
+           the one thing this screen exists to teach. */
+        /* And in a scored shift the card does not mark itself up either:
+           "corrected" and a struck-through line are both verdicts. */
+        const caught = guided() && checked && isFlaw && verdict && verdict.ok;
+        const missed = guided() && checked && isFlaw && !(verdict && verdict.ok);
+        return `
+        <button class="lbl-row${caught ? " fixed" : ""}${missed ? " missed" : ""}"
+                data-field="${f.key}" ${checked ? "disabled" : ""}>
+          <span class="lbl-lab">${f.label}</span>
+          <span class="lbl-val">${esc(caught ? "corrected" : f.value)}</span>
+        </button>`;
+      }).join("")}
+      <div class="lbl-band">${esc(p.name)} · ${esc(p.dob)} · ${esc(p.id)}<span class="lbl-bandlab">wristband</span></div>
     </div>
+
+    ${checked
+      ? /* THE VERDICT IS LEARN'S. A scored shift says nothing here for the
+           same reason it says nothing anywhere else: the label went to the
+           lab as you sent it, and the debrief is where that is answered. */
+        (guided()
+          ? `<div class="stg-msg ${verdict && verdict.ok ? "ready" : "block"}">${verdict ? verdict.text : ""}</div>`
+          : `<p class="sub lbl-hint">Label printed.</p>`)
+      : `<button class="btn alt" id="lblMatch">✓ Everything on it matches — print it</button>
+         <p class="sub lbl-hint">…or tap the line that does not match the wristband.</p>`}
+
     <div class="route-head">📦 How does this batch travel to the lab?</div>
     <div id="routeOpts">${opts.map(o=>`<button class="opt${chosen===o.key?" good":""}" data-route="${o.key}">${o.t}</button>`).join("")}</div>
-    <button class="btn gold" id="print">🖨️ Print labels &amp; send ▶</button>
+    ${checked ? `<button class="btn gold" id="print">🖨️ Send to the lab ▶</button>` : ""}
   `;
-  ["name","iddob","datetime","initials"].forEach(k=>{
-    $("lr-"+k).onclick=()=>{ ENC.labelFields[k]=!ENC.labelFields[k]; sfx("click"); renderLabel(); };
+
+  /* One decision, made once. `labelFields` is still the four booleans the
+     score reads — what changed is that they now describe the LABEL rather
+     than describing which boxes got ticked. */
+  const settle = (calledField)=>{
+    const flaw = draft.flaw;
+    const right = flaw ? calledField === flaw.field : calledField === null;
+    ENC.labelChecked = true;
+    ENC.labelFields = { name:true, iddob:true, datetime:true, initials:true };
+    /* Whatever is wrong with the label as it LEAVES: the flaw they walked
+       past, or the correct line they "fixed" on a label that had nothing
+       wrong with it. Either way one field is not what the patient says. */
+    if(!right) ENC.labelFields[flaw ? flaw.field : calledField] = false;
+    ENC.labelVerdict = right
+      ? { ok:true, text: flaw
+          ? `<b>Caught it.</b> ${flaw.why} Corrected before it left the chair.`
+          : "<b>Checked and correct.</b> Name, date of birth, collection time and your initials all match." }
+      : { ok:false, text: flaw
+          ? `<b>That one was fine.</b> ${flaw.why} It went to the lab as printed.`
+          : "<b>That line was correct.</b> The whole label matched — and it has been altered on the way out." };
+    (ENC.answers=ENC.answers||{}).labeling = {
+      your: flaw ? (right ? `Caught the ${flaw.field} on the label` : `Sent a label with the ${flaw.field} wrong`)
+                 : (right ? "Checked the label and found nothing wrong" : "Altered a line that was already correct"),
+      correct: flaw ? `The ${flaw.field} on this label did not match the patient` : "Every field on this label matched",
+    };
+    sfx(right ? "good" : "bad");
+    renderLabel();
+  };
+
+  panel.querySelectorAll("[data-field]").forEach(b=>{
+    b.onclick=()=>{ if(!ENC.labelChecked) settle(b.dataset.field); };
   });
+  const match = $("lblMatch");
+  if(match) match.onclick=()=>settle(null);
+
   panel.querySelectorAll("[data-route]").forEach(b=>{
     b.onclick=()=>{
       const o = opts.find(x=>x.key===b.dataset.route);
@@ -923,111 +1042,134 @@ function renderLabel(){
       renderLabel();
     };
   });
-  $("print").onclick=()=>{
-    const f2=ENC.labelFields, miss=[];
-    if(guided()){
-      if(!f2.name)miss.push("full name"); if(!f2.iddob)miss.push("ID/DOB");
-      if(!f2.datetime)miss.push("date & time"); if(!f2.initials)miss.push("your initials");
-      if(miss.length){ toast("A complete label still needs: "+miss.join(", ")+"."); sfx("bad"); return; }
-    }
+  const print = $("print");
+  if(print) print.onclick=()=>{
     if(!ENC.handlingChoice){ toast("Choose how these specimens travel to the lab."); sfx("bad"); return; }
     sfx("tap");
     if(p.event.type==="respond" && p.eventWhen==="post"){ ENC.respondReturn="score"; go("respond"); }
     else runScoreEncounter();
   };
 }
-function labelRow(k,label,on){return `<div class="chk ${on?'on':''}" id="lr-${k}"><div class="box">${on?'✓':''}</div>${label}</div>`;}
 
-/* ---------- professional response (event) ---------------------------------------- */
+/* =========================================================================
+   THE PATIENT SAYS SOMETHING, AND YOU ANSWER. ONE SCREEN.
+
+   This was three, in sequence: a bubble with one line and a "▶ …" button, for
+   as many lines as the event had; then the same bubble again with the options
+   under it; then the reply and the lesson, with a Continue. Five clicks, on a
+   good day, around ONE decision.
+
+   Clicking "▶ …" to hear the second half of a sentence is not pacing, it is a
+   turnstile. So the exchange is on screen at once — which is how you would
+   actually hear it, because a patient does not pause for your input between
+   clauses — the options sit under it, and answering reveals the reply and
+   what it taught in place. One decision, one confirmation.
+   ========================================================================= */
 function renderRespond(){
   const ev=ENC.p.event;
-  if(!ENC.convo) ENC.convo={phase:"lines",idx:0,chosen:null};
+  if(!ENC.convo) ENC.convo={chosen:null};
   const c=ENC.convo;
   const who=ENC.p.first, ava=ev.emoji||"🙂";
   const lines=ev.lines||[ev.prompt||"…"];
-  const head=`<h2>💬 ${who} says…</h2>${guided()?teach("respond"):""}`;
-  const bubble=(txt,sub)=>`<div class="dlg"><div class="ava">${ava}</div><div class="bubble"><div class="who">${who}${sub?` • ${sub}`:""}</div>${txt}</div></div>`;
+  renderExchange({
+    head:`<h2>💬 ${who} says…</h2>${guided()?teach("respond"):""}`,
+    who, ava, mood: ENC.p.mood, lines, ev, convo: c,
+    rerender: renderRespond,
+    onChoose:(o)=>{
+      ENC.respondChoice=o.ok;
+      (ENC.answers=ENC.answers||{}).professional={your:o.t,correct:(ev.options.find(x=>x.ok)||{}).t};
+    },
+    onDone:()=>{
+      ENC.convo=null;
+      if(ENC.respondReturn==="collect"){ ENC.preRespondDone=true; go("collect"); }
+      else { runScoreEncounter(); }
+    },
+  });
+}
 
-  if(c.phase==="lines"){
-    panel.innerHTML=head+bubble(lines[c.idx], c.idx===0?ENC.p.mood:"")+
-      `<button class="btn alt" id="next">${c.idx<lines.length-1?"▶ …":"💬 Respond"}</button>`;
-    $("next").onclick=()=>{ sfx("tap"); if(c.idx<lines.length-1){c.idx++;} else {c.phase="choose";} renderRespond(); };
-    return;
-  }
-  if(c.phase==="choose"){
-    panel.innerHTML=head+bubble(lines[lines.length-1])+
-      `<p class="sub">How do you respond?</p><div id="opts"></div>`;
+/**
+ * One exchange: everything they said, the options, and — once answered — the
+ * reply and the lesson, without changing screens.
+ *
+ * Shared by the two places a patient says something the learner has to
+ * answer, because they were the same three-phase machine written twice.
+ */
+function renderExchange(o){
+  const { ev, convo, lines } = o;
+  const bubble=(txt,sub)=>`<div class="dlg"><div class="ava${o.dotAva?" dot":""}">${o.ava}</div>
+    <div class="bubble"><div class="who">${o.who}${sub?` • ${sub}`:""}</div>${txt}</div></div>`;
+  const said = lines.map((l,i)=>bubble(l, i===0 && o.mood ? o.mood : "")).join("");
+
+  if(!convo.chosen){
+    panel.innerHTML=`${o.head}${said}
+      <p class="sub">${o.prompt || "How do you respond?"}</p><div id="opts"></div>`;
     const box=$("opts");
-    shuffle(ev.options).forEach((o,i)=>{
-      const b=document.createElement("button"); b.className="opt"; b.textContent=o.t; b.style.animationDelay=(i*55)+"ms";
+    shuffle(ev.options).forEach((opt,i)=>{
+      const b=document.createElement("button"); b.className="opt"; b.textContent=opt.t;
+      b.style.animationDelay=(i*55)+"ms";
       b.onclick=()=>{
-        if(guided() && !o.ok){ b.classList.add("bad"); sfx("bad");
-          showHint(box, (o.reply?('They\'d react: "'+o.reply+'", '):"")+(ev.why||"Try a kinder, safer response.")); return; }
-        b.classList.add(o.ok?"good":"bad"); sfx(o.ok?"good":"bad");
-        ENC.respondChoice=o.ok; (ENC.answers=ENC.answers||{}).professional={your:o.t,correct:(ev.options.find(x=>x.ok)||{}).t}; c.chosen=o; c.phase="reaction"; setTimeout(()=>renderRespond(),280);
+        if(guided() && !opt.ok){
+          b.classList.add("bad"); sfx("bad");
+          showHint(box, (opt.reply?(`They'd react: "${opt.reply}", `):"")+(o.wrongWhy || ev.why || "Try a kinder, safer response."));
+          return;
+        }
+        b.classList.add(opt.ok?"good":"bad"); sfx(opt.ok?"good":"bad");
+        if(o.onChoose) o.onChoose(opt);
+        convo.chosen=opt;
+        setTimeout(o.rerender, 280);
       };
       box.appendChild(b);
     });
     return;
   }
-  const o=c.chosen;
-  panel.innerHTML=head+bubble(o.reply||(o.ok?"Thank you.":"Hmm, okay."))+
-    `<div class="learn"><b>📚 You learned:</b> ${ev.learn||ev.why||""}</div>
-     <button class="btn" id="doneR">Continue ▶</button>`;
-  $("doneR").onclick=()=>{ sfx("tap"); ENC.convo=null; if(ENC.respondReturn==="collect"){ ENC.preRespondDone=true; go("collect"); } else { runScoreEncounter(); } };
+
+  const chosen = convo.chosen;
+  panel.innerHTML=`${o.head}${said}
+    <div class="dlg dlg-you"><div class="bubble you"><div class="who">You</div>${esc(chosen.t)}</div></div>
+    ${bubble(chosen.reply || (chosen.ok ? "Thank you." : "Hmm, okay."))}
+    <div class="learn"><b>📚 You learned:</b> ${ev.learn||ev.why||""}</div>
+    <button class="btn" id="exDone">${o.doneLabel || "Continue ▶"}</button>`;
+  $("exDone").onclick=()=>{ sfx("tap"); o.onDone(); };
 }
 
-/* ---------- draw complication (recognition + high-level response) ------------------ */
+/* ---------- draw complication (recognition + high-level response) ------------------
+   The same one-screen exchange as renderRespond, for the same reason: this
+   one interrupts a needle that is IN a vein, and making the learner click
+   "▶ …" twice to hear the end of "I feel a bit funny" while it is in there is
+   the worst possible place for a turnstile.
+   ---------------------------------------------------------------------------------- */
 function renderDrawResp(){
   const ev=ENC.p.drawEvent;
   if(!ev){ return go(ENC.drawResumeBeat!=null?"collect":"label"); }
-  if(!ENC.dconvo) ENC.dconvo={phase:"lines",idx:0,chosen:null};
-  const c=ENC.dconvo;
+  if(!ENC.dconvo) ENC.dconvo={chosen:null};
   const patient = ev.who==="patient";
-  const who = patient ? ENC.p.first : (ev.who||"⚠️ Heads up");
-  const ava = patient ? (ev.emoji||pEmoji(ENC.p)) : (ev.emoji||"⚠️");
-  const lines=ev.lines||["…"];
-  const head=`<h2>🩺 During the draw…</h2>`;
-  const dotCls = patient ? "" : " dot";
-  const bubble=(txt)=>`<div class="dlg"><div class="ava${dotCls}">${ava}</div><div class="bubble"><div class="who">${who}</div>${txt}</div></div>`;
-
-  if(c.phase==="lines"){
-    panel.innerHTML=head+bubble(lines[c.idx])+
-      `<button class="btn alt" id="next">${c.idx<lines.length-1?"▶ …":"💬 Respond"}</button>`;
-    $("next").onclick=()=>{ sfx("tap"); if(c.idx<lines.length-1){c.idx++;} else {c.phase="choose";} renderDrawResp(); };
-    return;
-  }
-  if(c.phase==="choose"){
-    panel.innerHTML=head+bubble(lines[lines.length-1])+
-      `<p class="sub">What do you do?</p><div id="opts"></div>`;
-    const box=$("opts");
-    shuffle(ev.options).forEach((o,i)=>{
-      const b=document.createElement("button"); b.className="opt"; b.textContent=o.t; b.style.animationDelay=(i*55)+"ms";
-      b.onclick=()=>{
-        if(guided() && !o.ok){ b.classList.add("bad"); sfx("bad");
-          showHint(box, (o.reply?('"'+o.reply+'", '):"")+(ev.learn||"Choose the safest response.")); return; }
-        b.classList.add(o.ok?"good":"bad"); sfx(o.ok?"good":"bad");
-        ENC.drawChoice=o.ok; (ENC.answers=ENC.answers||{}).draw={your:o.t,correct:(ev.options.find(x=>x.ok)||{}).t}; c.chosen=o; c.phase="reaction"; setTimeout(()=>renderDrawResp(),280);
-      };
-      box.appendChild(b);
-    });
-    return;
-  }
-  const o=c.chosen;
   const resuming = ENC.drawResumeBeat!=null;
-  panel.innerHTML=head+bubble(o.reply||(o.ok?"Handled well.":"Let's reconsider that."))+
-    `<div class="learn"><b>📚 You learned:</b> ${ev.learn||""}</div>
-     <button class="btn" id="doneD">${resuming?"🩹 Back to the draw ▶":"🏷️ Continue to labeling ▶"}</button>`;
-  $("doneD").onclick=()=>{
-    sfx("tap"); ENC.drawEventHandled=true; ENC.dconvo=null;
-    if(ENC.drawResumeBeat!=null){
-      if(ENC.collect) ENC.collect.step=ENC.drawResumeBeat;
-      ENC.drawResumeBeat=null;
-      go("collect");
-    } else {
-      go("label");
-    }
-  };
+  renderExchange({
+    head:`<h2>🩺 During the draw…</h2>`,
+    who: patient ? ENC.p.first : (ev.who||"⚠️ Heads up"),
+    ava: patient ? (ev.emoji||pEmoji(ENC.p)) : (ev.emoji||"⚠️"),
+    dotAva: !patient,
+    lines: ev.lines||["…"],
+    ev, convo: ENC.dconvo,
+    prompt: "What do you do?",
+    wrongWhy: ev.learn || "Choose the safest response.",
+    doneLabel: resuming ? "🩹 Back to the draw ▶" : "🏷️ Continue to labeling ▶",
+    rerender: renderDrawResp,
+    onChoose:(o)=>{
+      ENC.drawChoice=o.ok;
+      (ENC.answers=ENC.answers||{}).draw={your:o.t,correct:(ev.options.find(x=>x.ok)||{}).t};
+    },
+    onDone:()=>{
+      ENC.drawEventHandled=true; ENC.dconvo=null;
+      if(ENC.drawResumeBeat!=null){
+        if(ENC.collect) ENC.collect.step=ENC.drawResumeBeat;
+        ENC.drawResumeBeat=null;
+        go("collect");
+      } else {
+        go("label");
+      }
+    },
+  });
 }
 
 /* ---------- scoring screen ----------------------------------------------------------- */
@@ -1043,6 +1185,35 @@ function celebrateStickers(wins){
   });
   if(wins.length>3) setTimeout(()=>toast(`…and ${wins.length-3} more sticker milestone${wins.length-3>1?"s":""}! 🎉`), 360+3*900);
 }
+/**
+ * The work-area card, which used to be printed in Learn on the "Draw
+ * complete" screen and nowhere else.
+ *
+ * It is in the debrief's breakdown now, in both modes, because it is the same
+ * kind of thing as every other row down there: the measurement, its narrative
+ * and what it caught. Nothing here is new — this is the block that screen
+ * printed, moved to where the rest of the reference lives.
+ */
+function stagingBreakdown(sm){
+  if(!sm) return "";
+  return `
+    <div class="vp-technique">
+      <div class="vt-head"><span class="vt-title">🧺 Work-area preparation</span><span class="vt-score">${sm.score}/100</span></div>
+      <p class="vt-narrative">${sm.narrative}</p>
+      ${sm.mistakes && sm.mistakes.length ? `<ul class="vt-mistakes">${sm.mistakes.map(m=>`<li>${m.item?`<b>${m.item}</b> — `:""}${m.message}</li>`).join("")}</ul>` : ""}
+      <div class="vt-metrics">
+        <span>Correct items <b>${sm.correctItems}</b></span>
+        <span>Wrong items <b>${sm.incorrectItems}</b></span>
+        <span>Unsafe items <b>${sm.unsafeItems}</b></span>
+        <span>Order of draw <b>${Math.round(sm.tubeOrderAccuracy*100)}%</b></span>
+        <span>Packages checked <b>${sm.inspectionsBeforeStaging}/${sm.stagedCount}</b></span>
+        <span>Replacements <b>${sm.replacements}</b></span>
+        <span>Sharps reachable <b>${sm.sharpsAccessible?"yes":"no"}</b></span>
+        <span>Staging time <b>${fmtDuration(sm.timeMs)}</b></span>
+      </div>
+    </div>`;
+}
+
 function starHTML(stars){
   let s='<div class="stars">';
   for(let i=0;i<5;i++){ s+=`<span style="animation-delay:${i*90}ms">${i<stars?'⭐':'☆'}</span>`; }
@@ -1124,15 +1295,33 @@ function renderScore(){
   const s = ENC.scores, cats = Object.keys(s);
   const correct = cats.filter(k => s[k]).length;
   const pct = Math.round(correct/cats.length*100);
-  const practical = (playMode() && c.report)
-    ? `<h3 class="rep-sec rep-title">📋 Practical report</h3>${renderPracticalReport(c.report, c.replay, { progress: c.progressLine })}`
-    : "";
+  /* THE RUBRIC, IN BOTH MODES. Learn's copy of it used to live on the
+     "Draw complete" screen, which no longer exists — and it was never right
+     for it to be somewhere else anyway. Play gets the full practical report
+     with its replay; Learn gets the compact summary it always had. Both are
+     behind the breakdown, because the four acts are the debrief and this is
+     the reference underneath it. */
+  const practical = !c.report ? ""
+    : playMode()
+      ? `<h3 class="rep-sec rep-title">📋 Practical report</h3>${renderPracticalReport(c.report, c.replay, { progress: c.progressLine })}`
+      : `<h3 class="rep-sec rep-title">📋 Rubric</h3>${renderRubricSummary(c.report)}
+         ${c.progressLine ? `<div class="rep-policy">${c.progressLine}</div>` : ""}`;
+
+  /* Stopping a draw is often the right answer, and it really does stop it —
+     so the debrief has to say that the specimens below are what was actually
+     collected, not what was ordered. It used to say so on the screen that
+     went; it belongs here, above the acts, where the verdict is. */
+  const haltNote = c.complicationHalt ? `
+    <div class="db-halt"><b>You stopped the draw.</b> That was the right call for a
+    ${(c.complicationMeasurements && (c.complicationMeasurements.events.find(e=>e.id===c.complicationHalt.id)||{}).label) || "complication"},
+    and everything below is built from what was actually collected before it.</div>` : "";
 
   const lab = debrief.acts[1], tech = debrief.acts[2];
   const lastLabel = SHIFT.index+1 >= SHIFT.len;
 
   panel.innerHTML = `
     <div class="debrief" id="debrief">
+      ${haltNote}
       <section class="db-act db-patient" data-act="0">
         <p class="db-verdict">${debrief.acts[0].line}</p>
       </section>
@@ -1182,6 +1371,7 @@ function renderScore(){
         <div class="scoregrid">
           ${cats.map((k,i)=>`<button type="button" class="scorecell ${s[k]?'ok':'no'}" data-cat="${k}" style="animation-delay:${i*60}ms"><div class="lab">${FEEDBACK[k].label}</div>${s[k]?'✓ Good':'✗ Review'}<span class="more">Tap for details</span></button>`).join("")}
         </div>
+        ${stagingBreakdown(c.stagingMeasurements)}
         ${practical}
         <div id="fbs"></div>
       </div>
@@ -1327,7 +1517,7 @@ function renderSummary(){
     ${teaching?"":`<div class="req"><b>🕒 Turnaround Time (TAT)</b><br>
       <span class="sub">Shift TAT, clock-in to clock-out: ${shiftTAT}</span><br>
       <span class="sub">Avg per-draw TAT, bedside collection to dispatch: ${avgDrawTAT}</span></div>`}
-    <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):", "}</div>
+    <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):`<span class="sub">None yet — they arrive as you finish shifts cleanly.</span>`}</div>
     ${SHIFT.missed&&SHIFT.missed.length?`<div class="req"><b>📚 Queued for Learn Mode (${SHIFT.missed.length})</b><br><span class="sub">These are the steps you missed this shift, now lined up for review: ${SHIFT.missed.join(", ")}</span></div>`:""}
     ${sameAgainHTML(lastMode)}
     <button class="btn alt" id="again">🚪 Back to clock-in</button>

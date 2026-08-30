@@ -88,6 +88,13 @@ export function techniqueLines(c){
   const out = [];
   const push = (label, value, ok) => { if(value != null) out.push({ label, value, ok }); };
 
+  /* The vein you settled on, and whether it was the one to settle on. The
+     draw-complete screen used to carry this as a recap chip; that screen is
+     gone (it was a second verdict, delivered mid-job) and this is where its
+     measurements live now. */
+  const plp = c.palpationMeasurements;
+  if(plp && plp.chosenLabel) push("vein", plp.chosenLabel, !!plp.choseIdeal);
+
   const tq = c.tourniquetMeasurements;
   if(tq){
     push("band on", `${Math.round(tq.secondsOn)} s`, tq.withinMinute);
@@ -126,6 +133,15 @@ export function techniqueLines(c){
 
   const inv = c.inversionMeasurements;
   if(inv) push("tubes mixed", `${inv.tubesUsable}/${inv.tubesRequired}`, inv.tubesUsable >= inv.tubesRequired);
+
+  /* What the patient's body did, and what you did about it. Also from the
+     recap chips. A draw where nothing went wrong says so rather than being
+     silent about it, because "nothing went wrong" is a result. */
+  const cx = c.complicationMeasurements;
+  if(cx){
+    push("complications", cx.total ? `${cx.managedCount}/${cx.total} handled` : "none",
+      cx.missedCount === 0 && cx.worsenedCount === 0 && !cx.fainted);
+  }
 
   return out;
 }

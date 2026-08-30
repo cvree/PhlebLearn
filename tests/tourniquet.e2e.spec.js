@@ -18,7 +18,7 @@
    camera moved two pixels.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -48,6 +48,10 @@ async function openTourniquet(page, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(m=>window.__phlebTest.gotoProcedureStep("tourniquet", ["lightblue","lavender"], m, "straight-antecubital"), mode||"teach");
   // NOTE: forced straight-antecubital so this arm-mesh/3D-drag suite is not
   // occasionally routed to the hand draw's controls-only, no-mesh path.
@@ -409,11 +413,10 @@ test("teaching mode will not start the draw on a bad band, and will on a good on
   // two full applications, each a real drag through the browser
   test.setTimeout(90000);
   await openTourniquet(page, "teach");
-  const ready = page.locator("#tqReady");
 
   await wrapBand(page, { bandX:0.089, sweepBy:3.2 });
   await tensionAndTuck(page, { pull:0.090 });   // too tight
-  await expect(ready).toBeDisabled();
+  await expectStepReady(page, false);
 
   // pull it off by the tail and do it properly — error recovery on the arm
   // itself, without leaving the patient
@@ -421,7 +424,7 @@ test("teaching mode will not start the draw on a bad band, and will on a good on
   expect((await snapshot(page)).phase).toBe("loose");
 
   await applyGoodBand(page);
-  await expect(ready).toBeEnabled();
+  await expectStepReady(page, true);
 });
 
 test("a scored shift lets the learner commit to a bad band and carries it forward", async ({ page })=>{
@@ -429,8 +432,7 @@ test("a scored shift lets the learner commit to a bad band and carries it forwar
   await wrapBand(page, { bandX:0.030, sweepBy:3.2 });
   await tensionAndTuck(page, { pull:0.048 });
 
-  const ready = page.locator("#tqReady");
-  await expect(ready).toBeEnabled();
+  await expect(page.locator("#tqReady")).toBeEnabled();
 
   // The band is clinically unacceptable — far too close to the site — and the
   // learner is allowed to proceed anyway. Asserted on the measured height
@@ -441,7 +443,7 @@ test("a scored shift lets the learner commit to a bad band and carries it forwar
   expect(before.heightAboveSite).toBeLessThan(0.064);
   expect(before.blocking.length).toBeGreaterThan(0);
 
-  await ready.click();
+  await carryOn(page);
   await page.waitForTimeout(400);
 
   // the draw moved on, and the band went with it — still on, still wrong
@@ -461,7 +463,7 @@ test("the band survives leaving the step — it is the same strap, still on the 
   // advance into the next step, then read the encounter's strap again.
   // tourniquetSnapshot reads ENC.collect.tourniquet, which is deliberately
   // NOT torn down when the step's scene is disposed.
-  await carryOn(page, "#tqReady");
+  await carryOn(page);
   await page.waitForTimeout(400);
 
   const stillOn = await snapshot(page);
@@ -492,7 +494,7 @@ test("the controls path produces the same measurements as the drag", async ({ pa
   expect(snap.tuck).toBe("proximal");
   expect(snap.ready).toBe(true);
   expect(snap.distension).toBeGreaterThan(0.6);
-  await expect(page.locator("#tqReady")).toBeEnabled();
+  await expectStepReady(page, true);
 });
 
 test("the controls path can produce a wrong band too — it is not an easier game", async ({ page })=>{
@@ -507,7 +509,7 @@ test("the controls path can produce a wrong band too — it is not an easier gam
   const snap = await snapshot(page);
   expect(snap.blocking.length).toBeGreaterThan(0);
   expect(snap.ready).toBe(false);
-  await expect(page.locator("#tqReady")).toBeDisabled();
+  await expectStepReady(page, false);
 });
 
 test("nudging the band moves it in real centimetres without re-applying", async ({ page })=>{

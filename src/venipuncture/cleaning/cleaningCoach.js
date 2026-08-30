@@ -8,6 +8,15 @@
 import {
   nextIssue, nextAction, COVERAGE_TARGET, OUTWARD_GOOD, DRY_SECONDS,
 } from "./cleaningRules.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed — behind the step's disclosure now rather than
+   printed under every frame of it. See stepGuide.js. */
+const HOW = `<p><b>Open the alcohol pad</b>, then <b>scrub from the puncture point outward, in widening
+  circles.</b> The wet patch on the arm is exactly the skin you have disinfected — cover the whole marked
+  field. Going back inward drags the dirty edge over skin you just cleaned.</p>
+  <p>Then <b>take your hands off and let it air-dry</b> for the full ${DRY_SECONDS} seconds: do not fan it,
+  blot it, or re-palpate it. Build the needle while it dries.</p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
@@ -66,6 +75,7 @@ export function renderCleaningCoach(host, o){
     issue ? issue.code : "-",
     result.coverage >= COVERAGE_TARGET,
     result.dryness >= 1,
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.clnSig === signature){ patchLive(host, state, result); return; }
@@ -83,28 +93,36 @@ export function renderCleaningCoach(host, o){
       ${fieldHTML(state, result)}
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>Clean and dry.</b> The whole field was scrubbed, worked outward, and left the full ${DRY_SECONDS} seconds. Do not touch it again.`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, result))}
-          </div>
-          <p class="tq-next">${esc(nextAction(state, result))}</p>`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            ready: ready,
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Clean and dry."
+                        : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
+            line: ready
+              ? `The whole field was scrubbed, worked outward, and left the full ${DRY_SECONDS} seconds. Do not touch it again.`
+              : (issue ? issue.message : nextAction(state, result)),
+            how: HOW,
+          })
+        : stepHintHTML(o.hint, ready)}
 
-      ${listView ? controlsHTML(state) : `${guided ? `<p class="stg-help">
-        ${!state.swabOpen
-          ? `<b>Open the alcohol pad first.</b>`
-          : `<b>Scrub from the puncture point outward, in widening circles.</b> The wet patch on the arm is exactly the skin
-             you have disinfected — cover the whole marked field. Going back inward drags the dirty edge over skin you just
-             cleaned. Then <b>take your hands off and let it air-dry</b>: do not fan it, blot it, or re-palpate it.`}
-      </p>` : ""}`}
+      ${listView ? controlsHTML(state) : ""}
+
+      ${/* PLAY'S ESCAPE HATCH, AND ONLY PLAY'S.
+
+           A scored shift has to let the learner move on from work that is not
+           right — a band too close to the site, a site half-scrubbed — and
+           carry the mistake forward to the report. Nothing else can end those
+           steps, because implicit advancement asks whether the step is DONE
+           and a bad band is not.
+
+           Learn has no button at all now. It is gated on being right by
+           design, and the step ends itself the moment it is — so the control
+           that used to sit here was a full-width primary bar reading "Not
+           ready yet" for the whole of the step, and nothing else, ever. */
+        guided ? "" : `<button class="btn vp-tap quiet" id="clnReady">Carry on ▶</button>`}
 
       ${!listView && !state.swabOpen ? `<button class="btn ghost vp-tap" id="clnOpen">Open the alcohol pad</button>` : ""}
 
-      <button class="btn vp-tap${guided ? "" : " quiet"}" id="clnReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
-        ${guided ? (ready ? "Site prepped — assemble the needle ▶" : "Not ready yet") : "Carry on ▶"}
-      </button>
     </div>`;
 
   const h = o.handlers || {};

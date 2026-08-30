@@ -8,6 +8,7 @@ import { SS, DARK, REDUCED, setReduced, saveSS } from "../game/gameState.js";
 import { sfx } from "../audio/audioManager.js";
 import { musicOn, toggleMusic, setMusicVol, musicVolNow, updateMusicBtn } from "../audio/audioManager.js";
 import { toast } from "./notifications.js";
+import { overlayOpened, overlayClosed } from "./overlayFocus.js";
 import {
   hasUpgrade, ownedUpgradeCount, getRoomLevel, roomLevelIndex, nextRoomLevel, upgradeTag, buyUpgrade,
   stickerCount, nextMilestone, stickerTotals
@@ -95,11 +96,86 @@ export function toggleReduced(){ setReduced(!REDUCED); syncSettingsLabels(); sfx
 // sharps reach zone (see venipuncture/staging/stagingLayout.js).
 export function toggleHandedness(){ SS.handedness = SS.handedness==="left"?"right":"left"; saveSS(); syncSettingsLabels(); sfx("tap"); }
 export function toggleAssistedSnapping(){ SS.assistedSnapping = !SS.assistedSnapping; saveSS(); syncSettingsLabels(); sfx("tap"); }
-export function openSettings(){ const o=$("settings"); if(o){ o.classList.add("show"); syncSettingsLabels(); } }
-export function closeSettings(){ const o=$("settings"); if(o) o.classList.remove("show"); refreshIdle(); }
+export function openSettings(){ const o=$("settings"); if(o){ o.classList.add("show"); syncSettingsLabels(); overlayOpened(o, "Settings"); } }
+export function closeSettings(){ const o=$("settings"); if(o){ o.classList.remove("show"); overlayClosed(o); } refreshIdle(); }
 export function toggleSettings(){ const o=$("settings"); if(!o)return; o.classList.contains("show")?closeSettings():openSettings(); }
 export function toggleMusicAndSync(){ toggleMusic(); syncSettingsLabels(); }
 export function toggleThemeAndSync(){ toggleTheme(); syncSettingsLabels(); }
+
+/* =========================================================================
+   HOW THIS WORKS — the one thing a first-time player was never told.
+
+   This game is a physical simulation wearing a cozy coat, and the clock-in
+   screen used to offer two mode buttons and no way of knowing that the arm on
+   screen is a thing you DRAG, that a step can also be worked entirely from
+   buttons, or which of the two modes a beginner should be in. Everything
+   below is a fact about how to operate the game — not a tutorial, not a tour,
+   and not a wall the player has to click through: it opens once on a fresh
+   save and lives in Settings after that.
+   ========================================================================= */
+export function helpOpen(){ const o=$("helpOverlay"); return !!(o && o.classList.contains("show")); }
+export function closeHelp(){
+  const o=$("helpOverlay");
+  if(o){ o.classList.remove("show"); overlayClosed(o); }
+  /* Marked as seen on the way OUT rather than on the way in, so a player who
+     reloads while it is open still gets it. */
+  if(!SS.seenHelp){ SS.seenHelp = true; saveSS(); }
+  refreshIdle();
+}
+export function openHelp(){
+  const o=$("helpOverlay"), box=$("helpContent");
+  if(!o || !box) return;
+  box.innerHTML = `
+    <div class="help-head">
+      <h3>🩸 How this works</h3>
+      <button class="shop-close" id="helpClose">Got it</button>
+    </div>
+
+    <div class="help-lede">You do the draw — you are not answering questions about
+      it. The band is tied by pulling it, the vein is found with a fingertip, and
+      the angle you enter at is measured in degrees.</div>
+
+    <div class="help-row">
+      <span class="help-ico">🖐️</span>
+      <div><b>Work in the room.</b> Drag on the scene: pick a thing up, bring it
+      where it goes, push it home. Turn an item over to read its label.</div>
+    </div>
+    <div class="help-row">
+      <span class="help-ico">🎛️</span>
+      <div><b>Or use buttons.</b> Steps carry a <b>Use controls</b> toggle —
+      <b>Use a list</b> at the supply cart. Same work, graded the same.</div>
+    </div>
+    <div class="help-row">
+      <span class="help-ico">🎓</span>
+      <div><b>Start in Learn.</b> It names the error and will not let you past a
+      step until it is right. <b>Play</b> says nothing until the report.</div>
+    </div>
+    <div class="help-row">
+      <span class="help-ico">🩹</span>
+      <div><b>Things go wrong on purpose,</b> because of something you did.
+      Stopping the draw is often the right answer.</div>
+    </div>
+
+    <div class="help-keys">
+      <span><b>Esc</b> settings</span>
+      <span><b>🔄 Recenter</b> puts the camera back</span>
+      <span><b>🗔</b> hides the panel</span>
+    </div>`;
+  o.classList.add("show");
+  overlayOpened(o, "How this works");
+  const c=$("helpClose"); if(c) c.onclick=()=>{ sfx("tap"); closeHelp(); };
+}
+
+/**
+ * Opens it once, on a save that has never played. Called from the clock-in
+ * screen rather than from boot, so it lands after the room has appeared
+ * instead of over a loading screen.
+ */
+export function maybeOpenHelp(){
+  if(SS.seenHelp || SS.shifts || SS.xp) return false;
+  openHelp();
+  return true;
+}
 
 /* ---------- upgrade shop ---------------------------------------------------- */
 export function renderUpgradeShop(){
@@ -128,6 +204,7 @@ export function renderUpgradeShop(){
     <button class="shop-next" id="arrangeBtn" style="cursor:pointer;border-color:var(--plum);color:var(--plum)">🧩 Rearrange the room</button>
     <div class="shop-list">${rows}</div>`;
   overlay.classList.add("show");
+  overlayOpened(overlay, "Office upgrades");
   $("shopClose").onclick=()=>{ sfx("tap"); closeUpgradeShop(); };
   const ab=$("arrangeBtn"); if(ab) ab.onclick=()=>{ sfx("tap"); closeUpgradeShop(); arrangeStart(); };
   box.querySelectorAll("[data-buy]").forEach(btn=>btn.onclick=()=>{
@@ -137,12 +214,12 @@ export function renderUpgradeShop(){
     else if(result.reason==="cant-afford"){ sfx("bad"); toast("Need "+result.short+" more coins for "+result.upgrade.name+"."); }
   });
 }
-export function closeUpgradeShop(){ const overlay=$("shopOverlay"); if(overlay)overlay.classList.remove("show"); }
+export function closeUpgradeShop(){ const overlay=$("shopOverlay"); if(overlay){ overlay.classList.remove("show"); overlayClosed(overlay); } }
 
 /* ---------- sticker book ---------------------------------------------------- */
 export function stickerBookOpen(){ const o=$("stickerOverlay"); return !!(o&&o.classList.contains("show")); }
-export function openStickerBook(){ const o=$("stickerOverlay"); if(!o)return; renderStickerBook(); o.classList.add("show"); }
-export function closeStickerBook(){ const o=$("stickerOverlay"); if(o) o.classList.remove("show"); }
+export function openStickerBook(){ const o=$("stickerOverlay"); if(!o)return; renderStickerBook(); o.classList.add("show"); overlayOpened(o, "Sticker book"); }
+export function closeStickerBook(){ const o=$("stickerOverlay"); if(o){ o.classList.remove("show"); overlayClosed(o); } }
 function renderStickerBook(){
   const host=$("stickerContent"); if(!host) return;
   const tot=stickerTotals();

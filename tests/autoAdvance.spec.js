@@ -1,9 +1,13 @@
 /* =========================================================================
-   IMPLICIT ADVANCEMENT — how a Play draw stops being a slideshow.
+   IMPLICIT ADVANCEMENT — how a draw stops being a slideshow.
 
-   In Learn a step ends when the learner presses a button. In Play it ends
-   because the action that ends it happened: you tie the band and the draw is
-   on the band, the last tube comes off and the draw is on the withdrawal.
+   A step ends because the action that ends it happened: you tie the band and
+   the draw is on the band, the last tube comes off and the draw is on the
+   withdrawal. Both modes work this way now. Learn used to keep a confirm
+   button, which gated nothing — a step becomes ready when it is RIGHT, so the
+   button was only ever pressable once the gate had already opened. What Learn
+   keeps is the BEAT: it holds a finished step, and the line saying what was
+   good about it, roughly three times as long before moving on.
 
    Three properties matter more than the mechanism, and each has cost a real
    bug in a game that tried this:
@@ -23,7 +27,8 @@ import assert from "node:assert/strict";
 
 import { setMode, MODES } from "../src/game/gameState.js";
 import {
-  reportStepReady, tickAutoAdvance, clearAutoAdvance, autoAdvanceState, SETTLE_MS,
+  reportStepReady, tickAutoAdvance, clearAutoAdvance, autoAdvanceState,
+  SETTLE_MS, LEARN_SETTLE_MS, settleMs,
 } from "../src/venipuncture/autoAdvance.js";
 
 /** Reports readiness and lets `ms` of wall time pass, then ticks. */
@@ -39,13 +44,30 @@ function fresh(mode){
   setMode(mode);
 }
 
-test("Learn never advances by itself — the button is the lesson's own beat", () => {
+test("Learn advances on the action too, but holds the beat first", () => {
   fresh(MODES.LEARN);
   let fired = 0;
-  for(let i = 0; i < 5; i++) reportStepReady("tourniquet", true, ()=>fired++);
-  assert.equal(hold("tourniquet", true, ()=>fired++, SETTLE_MS + 60), false);
+  const finish = ()=>fired++;
+  assert.equal(settleMs(), LEARN_SETTLE_MS);
+
+  reportStepReady("tourniquet", false, finish);      // the step opens, not done
+  reportStepReady("tourniquet", true, finish);        // the band goes on
+
+  // Play's settle is not enough here: the learner is being told what was good
+  // about that band, and that sentence is the thing the button used to buy.
+  assert.equal(hold("tourniquet", true, finish, SETTLE_MS + 60), false);
   assert.equal(fired, 0);
-  assert.equal(autoAdvanceState(), null, "nothing is even being watched");
+
+  assert.equal(hold("tourniquet", true, finish, LEARN_SETTLE_MS - SETTLE_MS + 60), true);
+  assert.equal(fired, 1);
+});
+
+test("Learn's beat is longer than Play's, and Play's is unchanged", () => {
+  fresh(MODES.LEARN);
+  assert.equal(settleMs(), LEARN_SETTLE_MS);
+  fresh(MODES.PLAY);
+  assert.equal(settleMs(), SETTLE_MS);
+  assert.ok(LEARN_SETTLE_MS > SETTLE_MS);
 });
 
 test("Play advances once the completing action has held for a moment", () => {
@@ -147,13 +169,17 @@ test("it reports what it is waiting on, for anyone debugging a stuck draw", () =
   assert.ok(s.heldMs >= 0);
 });
 
-test("switching to Learn mid-draw hands the button back immediately", () => {
+test("switching to Learn mid-draw lengthens the beat rather than cancelling it", () => {
   fresh(MODES.PLAY);
   let fired = 0;
   const finish = ()=>fired++;
   reportStepReady("clean", false, finish);
   reportStepReady("clean", true, finish);
   setMode(MODES.LEARN);
+  // Play's settle would have fired by now; Learn's has not elapsed yet.
   assert.equal(hold("clean", true, finish, SETTLE_MS + 60), false);
   assert.equal(fired, 0);
+  // …and it still lands, on Learn's clock.
+  assert.equal(hold("clean", true, finish, LEARN_SETTLE_MS - SETTLE_MS + 60), true);
+  assert.equal(fired, 1);
 });

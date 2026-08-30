@@ -255,6 +255,8 @@ export function benchStats(){
         leases: bench.leases.size, props: [...bench.props.keys()],
         /** has the camera finished easing? see armScene's cameraSettled */
         settled: !!bench.view.cameraSettled,
+        /** where it is easing TOWARD right now — see cameraWantSignature */
+        wantSig: bench.view.cameraWantSignature,
       }
-    : { open: false, key: null, mode: null, modes: [], leases: 0, props: [], settled: false };
+    : { open: false, key: null, mode: null, modes: [], leases: 0, props: [], settled: false, wantSig: null };
 }

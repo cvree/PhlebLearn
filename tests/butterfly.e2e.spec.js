@@ -17,7 +17,7 @@
    would use them.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, holdSteps, chooseRoute } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -47,6 +47,10 @@ async function openAs(page, stepId, mode, procedureId){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(a=>window.__phlebTest.gotoProcedureStep(a[0], ["lightblue","lavender"], a[1], a[2]),
     [stepId, mode || "final", procedureId]);
   await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
@@ -128,7 +132,7 @@ test("the hand vessel set survives the tourniquet step, not silently swapped bac
   await openAs(page, "tourniquet", "final", "butterfly-hand");
   const before = await procedure(page);
   await page.locator("#tqApply").click();
-  await carryOn(page, "#tqReady");
+  await carryOn(page);
   await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
   const after = await procedure(page);
   expect(after.armVessels.sort()).toEqual(before.armVessels.sort());
@@ -153,7 +157,7 @@ test("choosing a hand vein sets the site the rest of the draw inherits", async (
   // Choosing is an action on one of the learner's own traces now — there is
   // no way to commit to a spot that was never pressed.
   await page.locator("[data-choose-trace]").first().click();
-  await carryOn(page, "#plpReady");
+  await carryOn(page);
   await expect(page.locator(".cln-coach")).toBeVisible({ timeout:10000 });   // cleaning's coach
 });
 
@@ -240,7 +244,7 @@ test("a taped-down line barely moves the tip through ordinary tube changes", asy
   await openAs(page, "insert", "final", "butterfly-hand");
   await enterAndSecure(page);
   await page.locator('[data-wing="secure"]').click();
-  await carryOn(page, "#insReady");
+  await carryOn(page);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });   // collection's coach
 
   await page.locator('[data-col^="take:"]').first().click();
@@ -257,7 +261,7 @@ test("a loose, unsecured line transmits far more of the same tube changes", asyn
   await openAs(page, "insert", "final", "butterfly-hand");
   await enterAndSecure(page);
   // deliberately never taped down
-  await carryOn(page, "#insReady");
+  await carryOn(page);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
 
   await page.locator('[data-col^="take:"]').first().click();
@@ -280,24 +284,38 @@ test("a butterfly-hand attempt's report names the device and site it actually us
   await openAs(page, "insert", "final", "butterfly-hand");
   await enterAndSecure(page);
   await page.locator('[data-wing="secure"]').click();
-  await carryOn(page, "#insReady");
+  await carryOn(page);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
 
   await page.locator('[data-col^="take:"]').first().click();
   await page.locator('[data-col="push-braced"]').click();
   for(let i = 0; i < 8; i++){ await page.locator('[data-col="wait"]').click(); await page.waitForTimeout(60); }
   await page.locator('[data-col="remove-braced"]').click();
-  await carryOn(page, "#colReady");
+  await carryOn(page);
 
-  // release -> withdraw -> safety -> dispose -> pressure -> bandage -> invert,
-  // via the generic "Carry on" the Final Practical always shows
-  for(let i = 0; i < 8; i++){
-    const h2 = await page.locator("h2").innerText();
-    if(/report/i.test(h2)) break;
-    const btn = page.locator("#vpStage").getByRole("button", { name: /Carry on|▶/ }).first();
-    if(await btn.count()) await btn.click();
-    await page.waitForTimeout(250);
-  }
+  /* Straight to the end of the draw. This used to walk release → withdraw →
+     safety → dispose → pressure → bandage → invert by pressing the generic
+     "Carry on", reading the panel's <h2> each time to know when to stop —
+     and Play has no <h2> during a draw (it is a HUD), so the loop was
+     waiting on an element that only appears once the draw is over. What the
+     test is actually about is the REPORT naming the procedure it was given,
+     and the report is graded the moment the draw ends however it ends. */
+  await page.evaluate(()=>window.__phlebTest.finishDraw());
+
+  // …and it is a report you can actually reach: label the tubes, route them,
+  // answer whatever they asked, and open the debrief's breakdown.
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
+  const match = page.locator("#lblMatch");
+  if(await match.count()) await match.click();
+  await chooseRoute(page);
+  const print = page.locator("#print");
+  if(await print.count()) await print.click();
+  const opt = page.locator("#opts .opt").first();
+  if(await opt.count()) await opt.click();
+  const exDone = page.locator("#exDone");
+  if(await exDone.count()) await exDone.click();
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await page.locator("#dbDetails").click();
   await expect(page.getByRole("heading", { name: /Practical report/i })).toBeVisible({ timeout:10000 });
 
   const report = await page.evaluate(()=>window.__phlebTest.practicalReport());
@@ -314,7 +332,7 @@ test("a straight-needle attempt's technique row never mentions the winged set", 
   await page.locator("#insView").click();   // 3D is available and default here; switch to controls
   await page.locator('[data-ins="anchor-ideal"]').click();
   await page.locator('[data-ins="insert-ideal"]').click();
-  await carryOn(page, "#insReady");
+  await carryOn(page);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.evaluate(()=>window.__phlebTest.finishDraw());
   const report = await page.evaluate(()=>window.__phlebTest.practicalReport());
