@@ -205,7 +205,11 @@ export function renderPalpationCoach(host, o){
               : issue ? `<b>${issue.severity === "block" ? "Not that one." : "Worth knowing."}</b> ${esc(issue.message)}`
                       : esc(nextAction(state))}
           </div>
-          <p class="tq-next">${esc(nextAction(state))}</p>`
+          ${/* Only when the status box above is saying something ELSE. With no
+                issue and not yet ready it falls back to the next action, and
+                printing that action again directly underneath it said the
+                same sentence twice in two different styles. */
+             (ready || issue) ? `<p class="tq-next">${esc(nextAction(state))}</p>` : ""}`
         : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
 
       ${listView ? controlsHTML(state, guided, o.vessels) : `${guided ? `<p class="stg-help">

@@ -315,6 +315,193 @@ straight from a bad approach into a fresh one crashed on the very next move
 event — caught only because the browser suite drives that exact recovery path
 and the unit tests, working in plain numbers, cannot.
 
+### Two traps that make a bench gesture do nothing, silently
+
+Both of these produce the same symptom, and it is the worst symptom a browser
+suite can have: the drag runs, the camera does not move, nothing throws, no
+console error appears — and the state under test is unchanged. It reads as a
+broken mechanic and is not one. `tests/assembly.e2e.spec.js` went from 2 of 19
+passing to 19 of 19 when both were fixed, having changed nothing about
+assembly.
+
+**1. Jumping past a step does not release that step's lease.**
+`renderCurrentStep` runs a step's cleanup from `advance()` and nowhere else, so
+setting `c.step` by hand and re-rendering leaves the old step's session live
+and simply overwrites `ENC._collectCleanup`. `gotoProcedureStep` renders step 0
+before it jumps, which means the SUPPLY CART stays up behind every step a test
+opens. That matters because of `STEP_RUNTIMES`: staging is first in the table,
+Learn offers a pointerdown to the first live runtime only, and the cart
+therefore claims every gesture aimed at anything else. The claim is why the
+camera stays put — `beginGesture` returned an owner, so orbit never sees the
+event. Both seam functions now release the lease before they move the step;
+`jumpToStep` always did.
+
+**Any new seam function that changes `c.step` must do the same.**
+
+**2. `page.waitForFunction` does not await an async predicate.**
+Every seam function is `async` — it reaches its module through a dynamic
+import — so a predicate that calls one returns a Promise, and a Promise is
+truthy. `settleBench` was written that way and therefore returned on its first
+poll, every time, having waited for nothing. It now runs its sampling loop
+inside the page and has the runner wait on a plain boolean.
+
+The same rewrite fixed the reason the helper exists in the first place —
+though it took TWO attempts to land on a correct fix, and the first attempt is
+worth recording because it looked right and passed assembly cleanly.
+
+`cameraSettled` answers "is the rig where it currently *wants* to be?", and
+that is true in the window between the entry ease finishing and the coach
+panel's layout moving the target — measured at up to **52px** of further drift
+after the flag first went true, which is a drag that starts beside the object
+it meant to grab.
+
+*First attempt (wrong):* require `settled` AND the on-screen projection of one
+fixed point — `[0.02, θ=0, r=0.001]`, close to the arm's surface near its
+local origin — to hold still for several samples. This passed `assembly.e2e`
+19/19 and looked like the fix. It was a fix for assembly specifically: every
+object assembly's tests touch sits close to the surface near the arm's
+origin, which is exactly the region a point THAT close to the origin is
+insensitive to change in. A re-frame that is mostly a ZOOM (a `dist`/`fov`
+change) moves a point near the optical centre very little while moving a
+point 6cm off the surface — where `collection`'s holder mouth and `insert`'s
+ready pose actually are (`READY_HEIGHT = 0.014`, `HOLDER_LEN = 0.062`) — by
+tens of pixels. The check reported "stable" while the geometry those tests
+were about to reach for was still sliding. `tests/collection.e2e.spec.js`
+failed 8 of 20 with exactly this signature (a gesture that runs, claims the
+pointer, and changes nothing) under this fix.
+
+*Second attempt (correct):* stop inferring stability from any one point in
+the scene, and ask the camera rig directly. `armScene.js` exports
+`cameraWantSignature` — a fingerprint of `rig.want.look/dist/fov` plus the
+current framing name, i.e. where `fitCamera()` last told the rig to go —
+threaded through `benchStats().wantSig`. `settleBench` now holds `settled`
+true AND an UNCHANGED `wantSig` for four samples over 400ms, which is
+independent of where in the scene a test happens to be looking. Entering a
+step costs about half a second before a gesture may be driven; that is the
+honest price of the camera never cutting.
+
+### A gesture that lands correctly can still be aimed at a STALE target
+
+The two traps above are about the FIRST gesture in a test — the one `open()`
+settles for. A large, separate class of failures turned out to be the SECOND
+gesture in a test that chains two: pick a tube up, then push it onto the
+holder; anchor the vein, then approach it; lift a tube into the hand, then
+swing it. Each of those first actions is a state change the step's OWN render
+loop reframes around on the NEXT frame it draws — not synchronously inside the
+pointer handler that caused it — so a test that immediately fetches fresh
+anchors for the second gesture is fetching anchors for a camera that has only
+just been told to move, not one that has arrived.
+
+Measured directly (`collection.e2e.spec.js`'s `carryToHolder` → `seatDrag`):
+**45px** of drift in the holder mouth's screen position between the anchor
+fetch used to carry a tube up and the fetch used, moments later, to seat it —
+enough that the seating drag started beside the flange and moved nothing.
+Adding one `await settleBench(page)` at the end of the first gesture, before
+the second one's anchor fetch, took `seatDepth` from `0` to the expected
+`0.0165` with nothing else changed.
+
+The same shape of fix went into every chained-gesture helper this pattern
+turned up in — with different results, honestly reported:
+
+- **`collection.e2e.spec.js`** (`carryToHolder`, `seatDrag`): confirmed
+  fixed. 19 of 20 passing, up from 12 of 20 — the one remainder is the
+  unrelated `.stg-msg` gap below. This is the file the fix was diagnosed
+  against.
+- **`insert.e2e.spec.js`** (`dragLimb`, the shared primitive both
+  `anchorDrag` and `approachDrag` funnel through): **added, and confirmed
+  NOT sufficient.** The same eight tests still fail — `entryX: null`, the
+  identical symptom — in a clean, uncontended re-run. Whatever breaks the
+  ready-pose-to-mark approach here is not (or not only) the gap this fix
+  closes for collection; it was not root-caused further within this branch's
+  time budget. The fix is left in because it is harmless (four passing tests
+  in this file carry it at no cost beyond the wait) and may still matter for
+  cases this branch did not happen to exercise — but do not read its
+  presence as this file being fixed.
+- **`inversion.e2e.spec.js`** (`pickUp`, `rackIt` — whose own `settle()` had
+  the SAME broken-async-predicate bug as trap 2 above, independently, and
+  now imports the fixed `settleBench` instead of a local copy): partial
+  improvement, not confirmed complete — a clean, uncontended re-run was not
+  finished within this branch's time budget.
+- **`postdraw.e2e.spec.js`** / **`withdrawal.e2e.spec.js`**: same
+  broken-local-`settle()` story for postdraw, same fix, plus the
+  chained-gesture settle added to `pressHoldRelease`, `pullTail`,
+  `gauzeToSite`, `withdrawDrag`, `shieldSlide`, `carryUnitTo` — "release,
+  withdraw, safety, sharps" is four of these in a row in one test. **Not
+  independently confirmed** — every run of these two files in this branch's
+  history ran concurrently with either the `origin/main` baseline comparison
+  or another test process on this single-core machine, and both showed bare
+  `Test timeout of 90000ms exceeded` failures inside `page.mouse.move` under
+  that contention — a resource artifact, not an assertion failure, but one
+  that makes every count from those runs unusable as a verdict on whether
+  the fix works. Left in on the same reasoning as insert's: harmless,
+  plausibly correct by the same mechanism proven on collection, not proven.
+
+**What this means for whoever picks this up next.** Re-run
+`insert.e2e.spec.js`, `inversion.e2e.spec.js`, `postdraw.e2e.spec.js` and
+`withdrawal.e2e.spec.js` ALONE — nothing else contending for the renderer —
+before trusting any pass/fail count from them. `insert.e2e.spec.js`
+specifically still has a real, undiagnosed bug behind its eight failures;
+start from `entryX: null` after `approachDrag`, not from the settle-timing
+story above, which this file's own evidence rules out as the whole
+explanation.
+
+**Confirmed pre-existing, not a regression.** A worktree of pristine
+`origin/main`, built and run through the identical suite, fails
+`collection.e2e.spec.js` on the exact same eleven tests, including the ones
+whose assertions were already vacuously true (e.g. `seatDepth < 0.006`, which
+`0` also satisfies) and so looked like passes. This bug has been in the suite
+since before any of the work this document otherwise describes; it was never
+visible because the suite had apparently never been run to completion here
+before — every prior verification in this project's history either ran a
+single spec file in isolation or was interrupted partway through a full run
+(see git history around this document). Running it to completion for the
+first time is what surfaced a category of bug three specs deep in chained
+gestures across half the step files in this game.
+
+### Two more pre-existing categories, found the same way, not fixed here
+
+Chasing every remaining browser-suite failure was out of scope for the branch
+that found this — the categories above accounted for the overwhelming
+majority of them, and both of the two below were confirmed by direct
+inspection to be unrelated to anything in that branch's diff:
+
+- **A `.stg-msg` reading "assessed after the patient" that no coach has ever
+  rendered.** Six tests across `postdraw.e2e.spec.js`, `withdrawal.e2e.spec.js`,
+  `collection.e2e.spec.js` and `inversion.e2e.spec.js` assert this text
+  appears in a scored (Play) shift. `stepHint(c)` in `physicalSteps.js`
+  returns `null` whenever `!reveal().hints` — which is always, in Play — so
+  the `.stg-msg.neutral` block these tests are waiting for can never render
+  in the mode they test it in. Either a feature was removed after these tests
+  were written, or it was never built; either way, `grep -rn "assessed after
+  the patient" src/` returns nothing.
+- **`.scoregrid` is hidden by design, and several `report.e2e.spec.js` tests
+  don't know it.** The debrief screen's category breakdown sits inside
+  `<div class="db-details" id="dbDetailsBody" hidden>`, revealed only by
+  clicking "Show the full breakdown" (`ui/panels.js`'s `renderScore()`).
+  `reportAtEnd()`'s helper asserts `.scoregrid` visible immediately after
+  finishing a draw, with no click in between — a leftover from before the
+  four-act debrief redesign that collapsed this section by default.
+
+Both are real product-or-test gaps worth a maintainer's attention, and neither
+is this document's problem to solve by inventing new coach copy or rewriting
+a redesigned screen's tests on a branch about something else.
+
+### The first-run card is held back by the seam
+
+`?e2e=1` suppresses "How this works". Every browser test starts with an empty
+`localStorage`, which is precisely the state that opens it, so without this it
+would sit over the canvas that 250 pointer-driven tests are aiming at. It is
+the same class of thing the seam already holds back — a pinned patient, a
+fixed step — rather than an exemption invented for it.
+
+Tests that navigate WITHOUT the seam (all of `smoke.spec.js`, two in
+`modes.e2e.spec.js`) do see it, and call `dismissHelp(page)` from
+`benchHelpers.js` right after `goto`, which is what a real first-time player
+does. The card's own behaviour — it appears, it says the two things a screen
+with two buttons on it cannot say for itself, it does not come back, and it
+stays reachable from Settings — is covered in `modes.e2e.spec.js` on the real
+path, with no seam at all.
+
 ## The 8 "urgent sequencing bugs" — what was actually wrong
 
 Before extracting `venipuncture/`, the Phase 0 review specifically asked to
@@ -460,15 +647,26 @@ were crops rather than a layout bug.
 
 ## Known-bad on this machine
 
-`tests/assembly.e2e.spec.js` fails **six** of its nineteen tests here — all six
-in the `uncap` group — and fails the identical six at `6c2f18d`, the commit
-before any of the rebuild. Verified by checking out that commit and running the
-whole file under the same config. They are environmental: this runner has no
-GPU, and the six are the ones whose assertions depend on precise screen↔bench
-projection.
+`tests/assembly.e2e.spec.js` used to be recorded here as failing **six** of its
+nineteen — all six in the `uncap` group, failing identically at `6c2f18d`, the
+commit before any of the rebuild — and that reproduction at an older commit was
+read as proof they were environmental: no GPU, and the six were the ones whose
+assertions depend on precise screen↔bench projection.
 
-Do not treat that set as a regression without re-checking it the same way. Do
-treat a SEVENTH failure as real.
+**All six were real, and all six now pass.** The reproduction was sound and the
+conclusion drawn from it was not: an old commit fails them too because the
+fault was in the harness, and the harness was the same at both commits. They
+were `settleBench` never actually waiting — see "Two traps that make a bench
+gesture do nothing, silently" above — which starts the drag while the camera is
+still easing, so the pointer grabs beside the sheath. The slower the renderer,
+the wider that window, which is what made it look like a property of the
+machine. It was the property of the machine that made a latent harness bug
+visible.
+
+The lesson worth keeping: *reproducing a failure at an older commit proves it
+is not a regression. It does not prove it is environmental.* An assertion
+failure is real until something explains it. The three signatures below are
+explained; nothing else here is.
 
 **The crash signature.** When a Playwright assertion reports
 `Received: undefined` for a locator that plainly exists, the PAGE has gone,

@@ -3,6 +3,7 @@
    check maps to in the Phase 0 requirements, and why the two three.js
    deprecation warnings below are allowlisted rather than fixed. */
 import { test, expect } from "@playwright/test";
+import { dismissHelp } from "./benchHelpers.js";
 
 // three.js 0.185 warns about two APIs we deliberately haven't migrated yet
 // (see docs/ARCHITECTURE.md's "known warnings" section): THREE.Clock ->
@@ -43,6 +44,7 @@ function attachDiagnostics(page){
 test("production build loads with a Three.js canvas and no fatal errors", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
   await expect(page.locator("#panel")).toBeVisible();
   expect(errors, `Unexpected console/page errors:\n${errors.join("\n")}`).toEqual([]);
@@ -51,6 +53,7 @@ test("production build loads with a Three.js canvas and no fatal errors", async 
 test("main interaction panel shows Clock In and offers the two modes", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
   await expect(page.locator("#modeLearn")).toBeVisible();
   await expect(page.locator("#modePlay")).toBeVisible();
@@ -62,6 +65,7 @@ test("main interaction panel shows Clock In and offers the two modes", async ({ 
 test("the patient is met in a room, not on a screen that asks about them", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   await page.locator("#modeLearn").click();
 
   /* Two screens went, for the same reason: if the draw already makes the
@@ -85,6 +89,7 @@ test("the patient is met in a room, not on a screen that asks about them", async
 test("the draw cannot be entered until two identifiers are in hand", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   await page.locator("#modeLearn").click();
   await expect(page.locator(".arrival")).toBeVisible({ timeout: 5000 });
 
@@ -122,6 +127,7 @@ test("the draw cannot be entered until two identifiers are in hand", async ({ pa
 test("camera receives pointer input (orbit drag changes the room framing)", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   const canvas = page.locator("canvas");
   await expect(canvas).toBeVisible({ timeout: 15000 });
   // boundingBox() can momentarily return null while the compositor is busy;
@@ -148,6 +154,7 @@ test("the room's tube rack is scenery now, and clicking it breaks nothing", asyn
   // hits on it are inert rather than throwing.
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   await page.locator("#modeLearn").click();
   const canvas = page.locator("canvas");
   const box = await canvas.boundingBox();
@@ -166,6 +173,7 @@ test("audio and asset requests do not 404", async ({ page }) => {
     if(/\/assets\//.test(url) && res.status() === 404){ badResponses.push(`${res.status()} ${url}`); }
   });
   await page.goto("/");
+  await dismissHelp(page);
   await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
   expect(badResponses, badResponses.join("\n")).toEqual([]);
 });
@@ -173,9 +181,39 @@ test("audio and asset requests do not 404", async ({ page }) => {
 test("refreshing the page does not leave the application unusable", async ({ page }) => {
   const { errors } = attachDiagnostics(page);
   await page.goto("/");
+  await dismissHelp(page);
   await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
   await page.reload();
   await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
   await expect(page.locator("canvas")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("an overlay takes the keyboard and gives it back", async ({ page }) => {
+  const { errors } = attachDiagnostics(page);
+  await page.goto("/");
+  await dismissHelp(page);
+  await expect(page.getByRole("heading", { name: /Clock in/i })).toBeVisible({ timeout: 15000 });
+
+  /* Settings, the shop, the sticker book and the help card are modal in every
+     respect a mouse notices. Before this they were not modal to a keyboard:
+     opening one left focus on the button behind it, so the first Tab walked
+     into the game underneath. */
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#settings")).toHaveAttribute("aria-modal", "true");
+  const inside = () => page.evaluate(() =>
+    !!document.getElementById("settings").contains(document.activeElement));
+  expect(await inside()).toBe(true);
+
+  // Tab does not leave the card, in either direction
+  for(let i = 0; i < 14; i++) await page.keyboard.press("Tab");
+  expect(await inside()).toBe(true);
+  for(let i = 0; i < 4; i++) await page.keyboard.press("Shift+Tab");
+  expect(await inside()).toBe(true);
+
+  // and closing hands the keyboard back to the control that opened it
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#settings.show")).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe("settingsBtn");
   expect(errors).toEqual([]);
 });

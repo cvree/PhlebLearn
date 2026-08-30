@@ -127,6 +127,16 @@ const SHIFT_LEN = { [MODES.LEARN]:3, [MODES.PLAY]:6 };
 
 function renderIdle(){
   const line = m => summaryLine(SS.modeProgress, m);
+  /* WHICH BUTTON GLOWS IS AN ANSWER TO A QUESTION THE PLAYER IS ASKING.
+
+     Play used to be the pulsing one on every save, including a save that had
+     never drawn anything. So the game's own emphasis walked a first-time
+     learner into the mode that deliberately says NOTHING — no instruction, no
+     hint, no verdict — where a beginner cannot tell a mistake from the design.
+     On a save with nothing on it, Learn is the call to action; from the second
+     visit onwards it is Play again, which is right for someone who has already
+     been taught. */
+  const fresh = !SS.shifts && !SS.xp;
   panel.innerHTML=`
     <h2>🩺 Clock in</h2>
     <div class="tubechips">
@@ -138,13 +148,13 @@ function renderIdle(){
       ${equipmentPills()}
     </div>
 
-    <button class="btn alt modecard" id="modeLearn">
+    <button class="btn ${fresh ? "cta-pulse starborder" : "alt"} modecard" id="modeLearn">
       <span class="mc-title">🎓 Learn</span>
       <span class="mc-sub">Talked through, step by step. Replay any section that went badly.</span>
-      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}</span>
+      <span class="mc-stat">${SHIFT_LEN[MODES.LEARN]} patients · ${line(MODES.LEARN)}${fresh ? " · start here" : ""}</span>
     </button>
 
-    <button class="btn cta-pulse starborder modecard" id="modePlay">
+    <button class="btn ${fresh ? "alt" : "cta-pulse starborder"} modecard" id="modePlay">
       <span class="mc-title">🩸 Play</span>
       <span class="mc-sub">A real shift. Nothing is said until the report.</span>
       <span class="mc-stat">${line(MODES.PLAY)}</span>
@@ -186,9 +196,14 @@ function masteryLine(){
   const m = normaliseMastery(SS.mastery);
   const worst = weakestTrack(m);
   const stars = TRACKS.map(t => `${t.label} ${"★".repeat(m[t.id].stars)}${"☆".repeat(5 - m[t.id].stars)}`);
-  const head = worst && worst.rec.stars < 5
-    ? `Weakest right now: <b>${worst.track.label}</b>.`
-    : "Every technique at five stars.";
+  /* On a save with no draws behind it every track is at zero, so "weakest
+     right now" would pick one arbitrarily and present a tie as a verdict. */
+  const anyEarned = TRACKS.some(t => m[t.id].stars > 0);
+  const head = !anyEarned
+    ? "Nothing recorded yet — every technique starts at zero stars."
+    : worst && worst.rec.stars < 5
+      ? `Weakest right now: <b>${worst.track.label}</b>.`
+      : "Every technique at five stars.";
   return `${head} <span class="mastery-strip">${stars.join(" · ")}</span>`;
 }
 /* The kit the learner owns, shown on the clock-in screen because it changes
@@ -321,9 +336,9 @@ function renderReview(){
 
   // The room runs its own frame loop for the hygiene clock, so its cleanup
   // has to go with the encounter's — same slot renderCollect uses.
-  if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+  releaseStepLease();
   const stop = runArrivalRoom(c, $("arrivalStage"), ()=>{
-    if(ENC._collectCleanup){ ENC._collectCleanup(); ENC._collectCleanup = null; }
+    releaseStepLease();
     /* `reqChoice` used to be the answer to a quiz. It is now what the learner
        actually DID about a flawed order: held it, or did not. deriveChoices()
        reads it for the score screen's "your answer / best answer" card, which
@@ -338,6 +353,24 @@ function renderReview(){
     afterRequisition();
   });
   ENC._collectCleanup = stop;
+}
+
+/**
+ * Tears down whatever the current step is holding open, and forgets it.
+ *
+ * RELEASED AND FORGOTTEN, always both. A step's cleanup is stored in one slot
+ * that the next step overwrites, so a cleanup that has been run but not
+ * cleared is still reachable — the next screen to reach for the slot calls a
+ * teardown a second time on a session that no longer exists. The mirror of
+ * that mistake, leaving a lease live because nothing released it, is what let
+ * the supply cart swallow every bench gesture aimed at a later step; see
+ * main.js's gotoProcedureStep. One helper, so no call site can do half of it.
+ */
+function releaseStepLease(){
+  if(!ENC || !ENC._collectCleanup) return;
+  const stop = ENC._collectCleanup;
+  ENC._collectCleanup = null;
+  try{ stop(); }catch(e){ console.warn("step cleanup failed", e); }
 }
 
 /* ---------- into the draw ------------------------------------------------------ */
@@ -460,7 +493,7 @@ function renderCollect(){
     onMidDrawEvent: (resumeStep)=>{ ENC.drawResumeBeat=resumeStep; go("drawresp"); },
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
     onStepFinished: (finishedId, nextId)=> rewardStep(c, finishedId, nextId),
-    onCleanup: ()=>{ if(ENC._collectCleanup) ENC._collectCleanup(); },
+    onCleanup: releaseStepLease,
     // Learn only. The driver asks; the mode decision lives here.
     sectionFeedbackFor: (finishedId, nextId)=>{
       if(!reveal().sectionFeedback) return null;
@@ -513,7 +546,7 @@ function renderSectionFeedback({ section, readings, done }){
   $("secAgain").onclick=()=>{
     sfx("click");
     const c=ENC.collect;
-    if(ENC._collectCleanup) ENC._collectCleanup();
+    releaseStepLease();
     const index = resetFromSection(c, section.id);
     if(index < 0){ renderCollect(); return; }
     c.step = index;
@@ -629,7 +662,7 @@ function watchComplications(c){
       // Everything the current step was holding open goes, exactly as it does
       // when a draw is abandoned — the difference is that this one was the
       // right call, and the report says so.
-      if(ENC._collectCleanup) ENC._collectCleanup();
+      releaseStepLease();
       captureStagingIfUnmeasured();
       go("collect");
     },
@@ -663,7 +696,7 @@ function wireLeaveDraw(){
     }
     sfx("bad");
     clearAutoAdvance();
-    if(ENC._collectCleanup) ENC._collectCleanup();
+    releaseStepLease();
     ENC.drawAbandoned=true;
     // capture whatever preparation was done before they walked away
     captureStagingIfUnmeasured();
@@ -1327,7 +1360,7 @@ function renderSummary(){
     ${teaching?"":`<div class="req"><b>🕒 Turnaround Time (TAT)</b><br>
       <span class="sub">Shift TAT, clock-in to clock-out: ${shiftTAT}</span><br>
       <span class="sub">Avg per-draw TAT, bedside collection to dispatch: ${avgDrawTAT}</span></div>`}
-    <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):", "}</div>
+    <div class="req"><b>Badges</b><br>${newBadges.length?newBadges.map(b=>`<span class="pill">${b}</span>`).join(""):`<span class="sub">None yet — they arrive as you finish shifts cleanly.</span>`}</div>
     ${SHIFT.missed&&SHIFT.missed.length?`<div class="req"><b>📚 Queued for Learn Mode (${SHIFT.missed.length})</b><br><span class="sub">These are the steps you missed this shift, now lined up for review: ${SHIFT.missed.join(", ")}</span></div>`:""}
     ${sameAgainHTML(lastMode)}
     <button class="btn alt" id="again">🚪 Back to clock-in</button>

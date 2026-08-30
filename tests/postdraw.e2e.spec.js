@@ -9,7 +9,7 @@
    gesture that put it on.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { carryOn } from "./benchHelpers.js";
+import { carryOn, settleBench } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -45,28 +45,7 @@ async function open(page, mode, step){
     [step || "pressure", TUBES, mode || "teach"]);
   await expect(page.locator(".asm-coach")).toBeVisible({ timeout:10000 });
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.postDrawAnchors()), null, { timeout:10000 });
-  await settle(page);
-}
-
-/**
- * Waits for the camera to stop moving.
- *
- * fitCamera re-frames on the first rendered frame and every 30 after it, so
- * anchors read the instant the scene appears are projected against a camera
- * that is about to move — and two such reads agree with each other, so
- * stability alone is not enough. Requiring frames to have actually rendered
- * first is what makes this real. A press aimed with stale anchors lands off the
- * puncture, which is a failure of the test rather than of the mechanic.
- */
-async function settle(page){
-  await page.evaluate(()=>{ delete window.__pdPrevAnchor; });
-  await page.waitForFunction(async ()=>{
-    const a = await window.__phlebTest.postDrawAnchors();
-    if(!a || a.frame < 4) return false;
-    const prev = window.__pdPrevAnchor;
-    window.__pdPrevAnchor = a.site;
-    return !!prev && Math.hypot(prev.x - a.site.x, prev.y - a.site.y) < 0.5;
-  }, null, { timeout: 15000 });
+  await settleBench(page);
 }
 
 const snapshot = page=>page.evaluate(()=>window.__phlebTest.postDrawSnapshot());
@@ -104,6 +83,10 @@ async function pressHoldRelease(page, depth, seconds, o){
   await fastForward(page, seconds == null ? 40 : seconds);
   await page.mouse.up();
   await page.waitForTimeout(150);
+  // settle for whatever the caller does next — a dressing drag reads fresh
+  // anchors immediately afterward, and pressure easing off is itself a state
+  // change this step's render loop can reframe around.
+  await settleBench(page);
 }
 
 /* ---------- the step is real ------------------------------------------------------ */

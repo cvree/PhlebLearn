@@ -1,9 +1,28 @@
 /* ================= PANELS: the bottom-sheet coach layer + its overlays ==== */
 .panel{position:absolute;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:2px solid var(--line);
-  border-radius:20px 20px 0 0;box-shadow:0 -8px 30px rgba(80,60,140,.18);padding:14px 16px 18px;
-  max-height:62vh;overflow:auto}
+  border-radius:20px 20px 0 0;box-shadow:0 -8px 30px rgba(80,60,140,.18);
+  /* As a bottom sheet the panel owns the bottom edge of the screen, so its own
+     padding is what keeps the last button clear of a home indicator. */
+  padding:14px calc(16px + var(--safe-r)) calc(18px + var(--safe-b)) calc(16px + var(--safe-l));
+  max-height:62vh;overflow:auto;overscroll-behavior:contain}
+/* SCROLL SHADOWS. The panel is capped at 62vh (80vh on a wide viewport) and a
+   long coaching step overruns it — which meant the button that ends the step
+   could sit below the fold, cut off mid-card, with nothing saying so. These
+   four layers are the classic trick: the two `local` gradients scroll with the
+   content and mask the shadow at the very top and very bottom, so the two
+   `scroll` shadows are visible only while there is actually more in that
+   direction. No JavaScript, and nothing to keep in sync with the content. */
+.panel{
+  background:
+    linear-gradient(var(--card) 30%, rgba(255,253,254,0)) top    / 100% 20px no-repeat local,
+    linear-gradient(rgba(255,253,254,0), var(--card) 70%) bottom / 100% 20px no-repeat local,
+    radial-gradient(farthest-side at 50% 0,    rgba(80,60,140,.30), rgba(80,60,140,0)) top    / 100% 15px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(80,60,140,.30), rgba(80,60,140,0)) bottom / 100% 15px no-repeat scroll,
+    var(--card);
+}
 @media(min-width:760px){
-  .panel{left:auto;right:14px;bottom:14px;width:380px;border-radius:18px;border:2px solid var(--line);max-height:80vh}
+  .panel{left:auto;right:calc(14px + var(--safe-r));bottom:calc(14px + var(--safe-b));width:380px;
+    border-radius:18px;border:2px solid var(--line);max-height:80vh;padding:14px 16px 18px}
 }
 .panel h2{margin:0 0 4px;font-size:18px}
 .panel .sub{margin:0 0 10px;color:var(--ink-soft);font-size:13px;font-weight:700;line-height:1.4}
@@ -132,6 +151,28 @@
 .shop-tags button.buy:hover{filter:brightness(1.05)}
 .shop-close{border:1.5px solid var(--line);background:#f3ecfb;color:var(--plum);border-radius:12px;padding:7px 12px;font-family:inherit;font-weight:900;cursor:pointer;flex:0 0 auto}
 @media(max-width:620px){.shop-card{padding:15px}}
+
+/* ---- "how this works" overlay ----
+   Same shell as the shop, deliberately: one overlay grammar in this game
+   (dimmed backdrop, rounded card, Done button top-right, click-outside and
+   Esc both close it) rather than a bespoke one per panel. */
+.help-overlay{position:fixed;inset:0;z-index:32;display:none;align-items:center;justify-content:center;
+  background:rgba(20,18,33,.5);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  padding:calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l))}
+.help-overlay.show{display:flex;animation:fadeIn .18s ease both}
+.help-card{background:var(--card);border:2px solid var(--line);border-radius:22px;box-shadow:0 18px 50px rgba(0,0,0,.28);
+  width:min(470px,94vw);max-height:88vh;overflow:auto;overscroll-behavior:contain;padding:18px}
+.help-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.help-head h3{margin:0;font-size:21px;color:var(--ink);font-weight:900}
+.help-lede{font-size:13.5px;font-weight:800;color:var(--plum);line-height:1.5;margin:0 0 12px}
+.help-row{display:flex;gap:11px;align-items:flex-start;border:2px solid var(--line);border-radius:16px;
+  background:#fff;padding:11px 13px;margin-bottom:9px;font-size:13px;font-weight:700;line-height:1.5;color:var(--ink)}
+.help-row b{color:var(--plum)}
+.help-ico{flex:0 0 auto;width:36px;height:36px;border-radius:11px;background:#efe9fb;display:grid;place-items:center;font-size:19px}
+.help-keys{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.help-keys span{font-size:11.5px;font-weight:800;color:var(--ink-soft);background:#f3ecfb;border:1px solid var(--line);
+  border-radius:999px;padding:4px 10px}
+.help-keys b{color:var(--plum)}
 
 /* ---- settings: grouped, because a flat list of nine rows is a search ---- */
 .setgroup{

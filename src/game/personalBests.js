@@ -65,6 +65,18 @@ export function offerBests(bests, readings, context){
     const v = readings[b.id];
     if(typeof v !== "number" || !isFinite(v)) continue;
     if(b.requires && !b.requires(ctx)) continue;
+    /* A HIGHER-IS-BETTER RECORD OF ZERO IS NOT A RECORD.
+
+       Every reading beat an unset record, and on a first draw every record is
+       unset — so a learner whose first attempt had a tube rejected was
+       congratulated, at the payout, with "🥇 Longest flawless streak — new
+       personal best" for a streak of nought, and "🥇 Most consecutive accepted
+       specimens" for none. The debrief is where this game says what the draw
+       was worth; a medal for the worst available outcome is the one thing it
+       must not say. Zero coverage, zero streak and zero accepted specimens are
+       all the absence of the thing being recorded rather than a low score at
+       it. Nothing is stored either, so the first real one still announces. */
+    if(!b.lower && v <= 0) continue;
     const prev = bests[b.id];
     const better = prev == null || (b.lower ? v < prev : v > prev);
     if(!better) continue;

@@ -23,7 +23,7 @@
 body[data-staging="on"] #resetCam,
 body[data-staging="on"] #shopBtn,
 body[data-staging="on"] #stickerBtn{display:none}
-body[data-staging="on"] #settingsBtn{top:54px}
+body[data-staging="on"] #settingsBtn{top:calc(var(--safe-t) + var(--fb-top))}
 
 /* Collapsing the coach panel gives the whole canvas to the work area. The
    staging camera re-frames itself from the panel's real bounding box, so

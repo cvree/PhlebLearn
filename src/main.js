@@ -56,7 +56,8 @@ import { toast, confetti } from "./ui/notifications.js";
 import {
   openSettings, closeSettings, toggleSettings, toggleReduced, toggleThemeAndSync, toggleMusicAndSync,
   toggleHandedness, toggleAssistedSnapping, toggleButtonControls,
-  renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen
+  renderUpgradeShop, closeUpgradeShop, openStickerBook, closeStickerBook, stickerBookOpen,
+  openHelp, closeHelp, helpOpen, maybeOpenHelp
 } from "./ui/settings.js";
 import { go, syncTop } from "./ui/panels.js";
 import { initReactBits, initLenis, initVanta, destroyVantaLoad } from "./ui/dynamicEffects.js";
@@ -152,7 +153,16 @@ function setupInput(canvasEl){
   const sb=document.getElementById("settingsBtn"); if(sb) sb.onclick=()=>{ sfx("tap"); openSettings(); };
   const sh=document.getElementById("shopBtn"); if(sh) sh.onclick=()=>{ sfx("tap"); renderUpgradeShop(); };
   const skb=document.getElementById("stickerBtn"); if(skb) skb.onclick=()=>{ sfx("coin"); openStickerBook(); };
-  const chip=document.getElementById("coinChip"); if(chip) chip.onclick=()=>{ sfx("tap"); renderUpgradeShop(); };
+  /* The XP/coins chip is a shortcut into the shop. It carries role="button"
+     and a tab stop, so it needs the keyboard activation a real <button> would
+     have given it for free — it is a <div> because it is also a live readout
+     that countUp() writes into. */
+  const chip=document.getElementById("coinChip");
+  if(chip){
+    const openShop=()=>{ sfx("tap"); renderUpgradeShop(); };
+    chip.onclick=openShop;
+    chip.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openShop(); } };
+  }
   const st=document.getElementById("setTheme"); if(st) st.onclick=()=>toggleThemeAndSync();
   const sm=document.getElementById("setMotion"); if(sm) sm.onclick=()=>toggleReduced();
   const su=document.getElementById("setMusic"); if(su) su.onclick=()=>toggleMusicAndSync();
@@ -160,11 +170,13 @@ function setupInput(canvasEl){
   const snp=document.getElementById("setSnap"); if(snp) snp.onclick=()=>toggleAssistedSnapping();
   const dir=document.getElementById("setDirect"); if(dir) dir.onclick=()=>toggleButtonControls();
   const sv=document.getElementById("setMusicVol"); if(sv) sv.oninput=()=>{ setMusicVol((+sv.value||0)/100); };
+  const hs=document.getElementById("openHelpSettings"); if(hs) hs.onclick=()=>{ sfx("tap"); closeSettings(); openHelp(); };
   const ss=document.getElementById("openShopSettings"); if(ss) ss.onclick=()=>{ sfx("tap"); closeSettings(); renderUpgradeShop(); };
   const sc=document.getElementById("setClose"); if(sc) sc.onclick=()=>{ sfx("tap"); closeSettings(); };
   const ov=document.getElementById("settings"); if(ov) ov.addEventListener("click",e=>{ if(e.target===ov) closeSettings(); });
   const shopOv=document.getElementById("shopOverlay"); if(shopOv) shopOv.addEventListener("click",e=>{ if(e.target===shopOv) closeUpgradeShop(); });
   const stickOv=document.getElementById("stickerOverlay"); if(stickOv) stickOv.addEventListener("click",e=>{ if(e.target===stickOv) closeStickerBook(); });
+  const helpOv=document.getElementById("helpOverlay"); if(helpOv) helpOv.addEventListener("click",e=>{ if(e.target===helpOv) closeHelp(); });
   const arrDone=document.getElementById("arrangeDone"); if(arrDone) arrDone.onclick=()=>{ sfx("tap"); arrangeStop(); };
   updateMusicBtn();
 
@@ -173,7 +185,8 @@ function setupInput(canvasEl){
   addEventListener("keydown",e=>{
     kick();
     if(e.key==="Escape"){
-      if(stickerBookOpen()){ closeStickerBook(); }
+      if(helpOpen()){ closeHelp(); }
+      else if(stickerBookOpen()){ closeStickerBook(); }
       else if(arrangeIsOpen()) arrangeClose();
       else { const shop=document.getElementById("shopOverlay"); if(shop&&shop.classList.contains("show")) closeUpgradeShop(); else toggleSettings(); }
     }
@@ -319,7 +332,7 @@ function boot(){
   try{ migrateSave(SS); saveSS(); }catch(e){ console.warn("save migration skipped", e); }
   try{ startThree(); }
   catch(e){ const m=document.getElementById("loadingMsg"); if(m) m.innerHTML='<span class="err">3D failed to start: '+(e.message||e)+'</span>'; return; }
-  document.getElementById("loading").style.display="none";
+  dismissLoading();
   try{ if(!localStorage.getItem("phleb_shift_3d_v1") && prefersReduced()) SS.reduceMotion=true; }catch(e){}
   applyReducedFlag();
   syncTop();
@@ -327,8 +340,19 @@ function boot(){
   try{ initLenis(); }catch(e){}
   try{ destroyVantaLoad(); }catch(e){}
   armAudioUnlock();
-  installTestSeam();
+  const e2e = installTestSeam();
   go("idle");
+  /* After go("idle"), not before: it opens over the clock-in screen it is
+     explaining, rather than over a loading screen. Once per save.
+
+     Not under ?e2e=1. That seam exists to put the app in a fixed state — it
+     already rolls a pinned patient and jumps to a named step — and a modal
+     that appears on a fresh save and never again is exactly the kind of
+     first-run chrome it is there to hold back: every browser test starts with
+     an empty localStorage, so without this the card would sit over the canvas
+     that 250 pointer-driven tests are aiming at. The real first-run path is
+     covered without the seam, in tests/modes.e2e.spec.js. */
+  if(!e2e){ try{ maybeOpenHelp(); }catch(e){} }
 }
 /* ---------- test seam ------------------------------------------------------
    Opt-in via ?e2e=1 only. Playwright uses this to jump straight to a step
@@ -352,10 +376,11 @@ function projectLocal(view, local, rect){
   return { x: p.x, y: p.y };
 }
 
+/** @returns true when the seam is installed, i.e. this is an ?e2e=1 page. */
 function installTestSeam(){
   let e2e = false;
   try{ e2e = new URLSearchParams(location.search).get("e2e")==="1"; }catch(_){}
-  if(!e2e) return;
+  if(!e2e) return false;
   window.__phlebTest = {
     /** Jumps into the venipuncture procedure at a given step id. */
     /**
@@ -404,7 +429,24 @@ function installTestSeam(){
       });
       go("collect");
       const idx = ENC.collect ? ENC.collect.steps.indexOf(stepId) : -1;
-      if(idx > 0){ ENC.collect.step = idx; go("collect"); }
+      if(idx > 0){
+        /* Let step 0 tear its own lease down before step `idx` takes the
+           bench — exactly what jumpToStep() does, and for the same reason.
+
+           Without it the first go("collect") leaves the supply cart's session
+           live: `renderCurrentStep` only runs a step's cleanup from advance(),
+           and jumping past a step is not advancing past it, so the second
+           go() simply OVERWROTE `_collectCleanup` and the cart was never
+           stopped. A live staging session then sits in front of every other
+           runtime in the STEP_RUNTIMES table, and Learn offers a pointerdown
+           to the first live runtime only — so the cart quietly swallowed
+           every drag meant for the step under test, from tourniquet all the
+           way to inversion. The camera did not move (the gesture WAS claimed)
+           and nothing threw, so it looked exactly like a broken gesture. */
+        if(ENC._collectCleanup){ try{ ENC._collectCleanup(); }catch(_){} ENC._collectCleanup = null; }
+        ENC.collect.step = idx;
+        go("collect");
+      }
       return true;
     },
     /**
@@ -1471,6 +1513,20 @@ function installTestSeam(){
       return true;
     },
   };
+  return true;
+}
+
+/**
+ * The room is up. Fade the loading screen out rather than cutting it, then
+ * take it out of the layout once the fade has finished so nothing is left
+ * painting over the canvas. Reduced motion gets the cut it asked for.
+ */
+function dismissLoading(){
+  const el = document.getElementById("loading");
+  if(!el) return;
+  if(REDUCED || prefersReduced()){ el.style.display = "none"; return; }
+  el.classList.add("done");
+  setTimeout(()=>{ el.style.display = "none"; }, 400);
 }
 
 function prefersReduced(){ try{return matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(e){return false;} }

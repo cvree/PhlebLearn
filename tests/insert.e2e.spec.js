@@ -52,7 +52,20 @@ const anchors = page=>page.evaluate(()=>window.__phlebTest.insertAnchors());
 const radiusAt = (page, x)=>page.evaluate(xx=>window.__phlebTest.insertLimbRadiusAt(xx), x);
 const onLimb = (page, list)=>page.evaluate(l=>window.__phlebTest.screenPointsOnInsertLimb(l), list);
 
-/** Drags a two-point (down, up) gesture through the limb-surface projector. */
+/**
+ * Drags a two-point (down, up) gesture through the limb-surface projector.
+ *
+ * Settles the camera on the way OUT, not just the way in. Anchoring the vein
+ * and then approaching it are two drags in the same test, and anchoring is
+ * exactly the kind of state change this step's own render loop reframes
+ * around — a re-frame request issued on the NEXT rendered frame after the
+ * gesture, not synchronously inside the pointerup handler. A caller that
+ * immediately re-projects its next target is projecting through a camera
+ * that has only just been told where to go, not one that has arrived —
+ * `tests/collection.e2e.spec.js` failed 8 of 20 with exactly this shape of
+ * gap (a second drag landing beside its target) before every chained-gesture
+ * helper in this suite got the same fix.
+ */
 async function dragLimb(page, from, to, steps){
   const [a, b] = await onLimb(page, [from, to]);
   await page.mouse.move(a.x, a.y);
@@ -60,6 +73,7 @@ async function dragLimb(page, from, to, steps){
   await page.mouse.move(b.x, b.y, { steps: steps || 24 });
   await page.mouse.up();
   await page.waitForTimeout(120);
+  await settleBench(page);
 }
 
 /**

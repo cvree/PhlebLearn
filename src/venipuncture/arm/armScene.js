@@ -738,6 +738,26 @@ export function buildArmScene(o){
         && Math.abs(rig.have.dist - rig.want.dist) < 0.0015
         && Math.abs(rig.have.fov - rig.want.fov) < 0.05;
     },
+    /**
+     * A cheap fingerprint of WHERE THE CAMERA IS CURRENTLY EASING TOWARD.
+     *
+     * `cameraSettled` answers "has the rig arrived?" and says nothing about
+     * whether the TARGET it arrived at is the last one it will ever be given.
+     * A step's entry ease finishes, `cameraSettled` goes true, and then the
+     * coach panel measures its own layout and calls `frameBeat()`/`fitCamera()`
+     * again with a new `want` — `cameraSettled` drops back to false for that
+     * second ease, but only for however many frames it takes to notice.
+     *
+     * A test-only acceptance signal, existing so `tests/benchHelpers.js` can
+     * require BOTH "arrived" and "asked to go somewhere else since the last
+     * check" to be false before trusting a projected screen point — arriving
+     * at a target that is about to change again is not the same as arriving
+     * at the one a gesture will actually be measured against.
+     */
+    get cameraWantSignature(){
+      const w = rig.want;
+      return `${w.look.x.toFixed(5)},${w.look.y.toFixed(5)},${w.look.z.toFixed(5)}|${w.dist.toFixed(5)}|${w.fov.toFixed(3)}|${rig.framing}`;
+    },
     ARM_Y,
   };
 }

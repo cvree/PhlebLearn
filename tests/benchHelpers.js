@@ -19,7 +19,7 @@
    ========================================================================= */
 
 /**
- * Blocks until the bench camera has settled and stayed settled.
+ * Blocks until the bench camera has settled and STAYED settled.
  *
  * Polled INSIDE the page rather than from the test.
  * The first version of this ran one `page.evaluate` per sample, and on this
@@ -29,17 +29,79 @@
  * and it timed out tests that were doing nothing wrong. In-page polling costs
  * one round trip in total.
  *
- * @param {import("@playwright/test").Page} page
+ * THREE THINGS THIS HAS TO GET RIGHT, each learned by watching it fail.
+ *
+ * 1. THE SAMPLING LOOP RUNS INSIDE THE PAGE, DRIVEN BY THE PAGE.
+ *
+ *    Not by `waitForFunction`. Every question this helper asks — benchStats —
+ *    goes through the test seam, and every seam function is `async` because it
+ *    reaches its module through a dynamic import. A `waitForFunction` predicate
+ *    that returns a promise hands the runner a Promise object, which is
+ *    truthy, so the wait finished on its first poll and this helper returned
+ *    having waited for nothing at all.
+ *
+ * 2. THE `settled` FLAG ALONE IS NOT ENOUGH.
+ *
+ *    `cameraSettled` answers "is the rig where it currently WANTS to be?",
+ *    and that is true in the window between the entry ease finishing and the
+ *    coach panel finishing its own layout — at which point
+ *    measureObstruction() moves the want and the rig eases again.
+ *
+ * 3. NEITHER IS "settled PLUS a projected point holding still" — the fix
+ *    this replaced. It picked ONE point close to the arm's surface near its
+ *    local origin, and a re-frame that is mostly a ZOOM (a `dist`/`fov`
+ *    change) moves a point near the optical centre very little while moving
+ *    a point 6cm off the surface — where collection's holder mouth and
+ *    insert's ready pose actually are — by tens of pixels. The check reported
+ *    "stable" while the geometry a test was about to reach for was still
+ *    sliding. `tests/collection.e2e.spec.js` failed 8 of 20 with exactly this
+ *    signature (a gesture that runs, claims the pointer, and changes nothing)
+ *    before this was found — assembly and tourniquet never showed it, because
+ *    everything they touch sits close to the surface near the arm's origin,
+ *    which is precisely the blind spot in the point that was chosen.
+ *
+ *    So this waits on the CAMERA'S OWN TARGET instead of on the screen effect
+ *    of one arbitrarily chosen point: `benchStats().wantSig` is a fingerprint
+ *    of where `fitCamera()` last told the rig to go (see armScene.js's
+ *    `cameraWantSignature`), and holding both `settled` AND an unchanged
+ *    `wantSig` for several samples means arrived, and not about to be told to
+ *    move again — independent of where in the scene any given test looks.
  */
 export async function settleBench(page){
-  await page.waitForFunction(async () => {
-    const t = window.__phlebTest;
-    if(!t || !t.benchStats) return true;          // not a bench step; nothing to wait for
-    const s = await t.benchStats();
-    if(!s || !s.open) return true;
-    window.__benchStill = s.settled ? (window.__benchStill || 0) + 1 : 0;
-    return window.__benchStill >= 3;
-  }, null, { timeout: 30000, polling: 120 }).catch(() => {});
+  await page.evaluate(() => {
+    const w = window;
+    /* Each call supersedes any loop still running from a previous step. */
+    const token = (w.__benchSettleToken = (w.__benchSettleToken || 0) + 1);
+    w.__benchSettleOk = false;
+    (async () => {
+      const done = () => { if(w.__benchSettleToken === token) w.__benchSettleOk = true; };
+      const t = w.__phlebTest;
+      if(!t || !t.benchStats) return done();      // not a bench step; nothing to wait for
+      let still = 0, from = 0, prevSig;
+      const deadline = performance.now() + 25000;
+      for(;;){
+        if(w.__benchSettleToken !== token) return;   // a later settleBench owns this now
+        let s = null;
+        try{ s = await t.benchStats(); }catch(_){}
+        if(!s || !s.open) return done();
+
+        // Arrived, AND not mid-flight to a newly issued target.
+        const holding = s.settled && s.wantSig != null && s.wantSig === prevSig;
+        if(holding){ if(still++ === 0) from = performance.now(); }
+        else still = 0;
+        prevSig = s.wantSig;
+
+        // Four still samples AND a real stretch of wall time, so a slow
+        // renderer cannot deliver four identical samples from inside one frame.
+        if(still >= 4 && performance.now() - from > 400) return done();
+        // Never hang a test on this: give up waiting and let the assertion
+        // that follows be the thing that reports the problem.
+        if(performance.now() > deadline) return done();
+        await new Promise(r => setTimeout(r, 120));
+      }
+    })();
+  });
+  await page.waitForFunction(() => window.__benchSettleOk === true, null, { timeout: 30000 }).catch(() => {});
 }
 
 /**
@@ -61,5 +123,27 @@ export async function carryOn(page, selector){
   if(!(await btn.count())) return false;
   if(!(await btn.isEnabled().catch(()=>false))) return false;
   await btn.click({ timeout: 5000 }).catch(()=>{});
+  return true;
+}
+
+/**
+ * Closes the first-run "How this works" card if it is up.
+ *
+ * A save that has never played gets it once, over the clock-in screen, which
+ * is exactly the state every test starting from `/` is in. Dismissing it is
+ * what a real player does on their first visit, so the tests do it too rather
+ * than the game hiding itself from them behind the `?e2e=1` seam.
+ *
+ * It waits for the app to boot first: the card is opened at the end of boot(),
+ * so asking for it the instant `goto` resolves would always miss it and leave
+ * an overlay to appear later, over the very button the test is about to press.
+ */
+export async function dismissHelp(page){
+  await page.waitForFunction(() => window.__tinyVialsBooted === true, null, { timeout: 20000 }).catch(()=>{});
+  const overlay = page.locator("#helpOverlay.show");
+  await overlay.waitFor({ state:"visible", timeout: 2500 }).catch(()=>{});
+  if(!(await overlay.count())) return false;                    // a save that has played already
+  await page.locator("#helpClose").click({ timeout: 5000 }).catch(()=>{});
+  await overlay.waitFor({ state:"hidden", timeout: 5000 }).catch(()=>{});
   return true;
 }
