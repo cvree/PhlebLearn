@@ -41,6 +41,7 @@ mock.module("../src/venipuncture/arm/armScene.js", {
         setLean(){}, setSway(){}, kickCamera(){},
         dispose(){ disposed++; },
         get framing(){ return null; },
+        get cameraWantSignature(){ return "stub"; },
       };
     },
   },
@@ -134,7 +135,7 @@ test("switching hands rebuilds, because the mirror is baked into the root", () =
 
 test("benchStats reports what is open, for the acceptance test to read", () => {
   assert.deepEqual(bench.benchStats(),
-    { open: false, key: null, mode: null, modes: [], leases: 0, props: [], settled: false });
+    { open: false, key: null, mode: null, modes: [], leases: 0, props: [], settled: false, wantSig: null });
   const v = bench.leaseBenchView({ mode: "cleaning", arm: ARM });
   v.benchProp("decal", () => ({ group: new Node("decal") }));
   const s = bench.benchStats();
@@ -147,6 +148,11 @@ test("benchStats reports what is open, for the acceptance test to read", () => {
      a clock before projecting a screen point. The stub view here has no rig,
      so all this asserts is that the field is reported at all. */
   assert.equal("settled" in s, true);
+  /* `wantSig` is a fingerprint of WHERE the camera is easing toward — see
+     armScene.js's cameraWantSignature — so tests/benchHelpers.js's
+     settleBench() can tell "arrived" from "arrived, but about to be told to
+     move again" without depending on any one point in the scene. */
+  assert.equal(s.wantSig, "stub");
 });
 
 /* =========================================================================
