@@ -711,6 +711,24 @@ function installTestSeam(){
         bandX: 0.089, wrap: "under", skew: 0, tension: 0.55, tuck: "proximal",
       });
     },
+    /**
+     * A band that PASSES but is not clean — routed under, tucked, tight
+     * enough, and crooked enough down the arm to be worth another go.
+     *
+     * A section at or above the clean bar with nothing recorded against it no
+     * longer stops the draw (see panels.js's sectionFeedbackFor), so a test of
+     * the section card and its replay needs a section that earns one.
+     */
+    async applyBandScruffily(){
+      const rt = await import("./venipuncture/tourniquet/tourniquetRuntime.js");
+      return !!rt.applyBandProgrammatically({
+        // 30 mm of drift across the wrap: past SKEW_LIMIT (22 mm) so the band
+        // is recorded as spiralled, well under the twist threshold so it is a
+        // note rather than a block, and the tension is the good one so nothing
+        // else is wrong with it.
+        bandX: 0.089, wrap: "under", skew: 0.030, tension: 0.55, tuck: "proximal",
+      });
+    },
     /** The tourniquet's state and the arm's response, as the rules see them. */
     async tourniquetSnapshot(){
       const { ENC } = await import("./game/gameState.js");

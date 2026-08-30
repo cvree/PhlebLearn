@@ -27,7 +27,7 @@ import { makePatient } from "../game/encounter.js";
 import { scoreEncounter, scoreDetailAnswer, FEEDBACK, fmtDuration } from "../game/scoring.js";
 import { getRoomLevel, canChooseProcedure, hasUpgrade } from "../game/progression.js";
 import {
-  STEP_XP, sectionScore, sectionReward, nextStreak, drawReward,
+  STEP_XP, sectionScore, sectionReward, nextStreak, drawReward, SECTION_CLEAN,
 } from "../game/rewards.js";
 import { PROCEDURE, PROCEDURES, indicatedProcedure } from "../venipuncture/procedure.js";
 import { runDialogue, optionStep, teach, says, DOT, pEmoji, showHint } from "../game/dialogue.js";
@@ -510,14 +510,36 @@ function renderCollect(){
       rewardStep(c, finishedId, nextId);
     },
     onCleanup: releaseStepLease,
-    // Learn only. The driver asks; the mode decision lives here.
+    /* Learn only. The driver asks; the mode decision lives here.
+
+       AND IT ONLY STOPS FOR WORK THAT IS WORTH STOPPING FOR.
+
+       Every section used to end on a full screen: the measurement cards, a
+       "Carry on ▶", and a "↺ Repeat this section". Eleven of them in a draw.
+       On a good draw that is eleven modal interruptions telling the learner
+       that the thing they just did well went well, each one costing a click,
+       and each one offering to replay a section there is no reason to replay.
+
+       The screen exists to offer the replay. Offering it for work that was
+       good is the redundancy — so a section at or above the "clean" bar, with
+       nothing recorded against it, says so in a line and the draw carries on.
+       A section below it stops, exactly as before, which is the only time the
+       replay was ever the point. */
     sectionFeedbackFor: (finishedId, nextId)=>{
       if(!reveal().sectionFeedback) return null;
       if(!endsSection(finishedId, nextId)) return null;
       const section = sectionForStep(finishedId);
       const readings = sectionMeasurements(c, section);
       if(!readings.length) return null;
-      return { section, readings, done: !nextId };
+      const score = sectionScore(readings);
+      const mistakes = readings.reduce((n, r)=>n + ((r.measurement.mistakes||[]).length), 0);
+      if(score >= SECTION_CLEAN && !mistakes && nextId){
+        // Said, not staged. The number is the same one the card would have
+        // shown, and the draw does not stop to show it.
+        toast(`${section.label} · ${score}/100 ✓`);
+        return null;
+      }
+      return { section, readings, done: !nextId, score };
     },
     onSectionFeedback: renderSectionFeedback,
   });
@@ -537,7 +559,10 @@ function renderCollect(){
    later sessions are built from the earlier ones: a re-done insertion with a
    stale collection session would draw from a puncture that no longer exists.
    ------------------------------------------------------------------------- */
-function renderSectionFeedback({ section, readings, done }){
+/* Reached only when a section is worth stopping for — below the clean bar,
+   or with something recorded against it, or because the draw has ended. See
+   sectionFeedbackFor above. */
+function renderSectionFeedback({ section, readings, done, score }){
   const cards = readings.map(({ key, measurement:m })=>`
     <div class="sec-card">
       <div class="sec-head">
@@ -550,8 +575,10 @@ function renderSectionFeedback({ section, readings, done }){
         : `<p class="sec-narrative"><b>Nothing was recorded against this section.</b></p>`}
     </div>`).join("");
   panel.innerHTML=`
-    <h2>🔁 ${section.label}</h2>
-    <p class="sub">Section finished. This is what was measured — the same numbers the report is built from.</p>
+    <h2>🔁 ${section.label}${score!=null?` <span class="vp-count">${score}/100</span>`:""}</h2>
+    <p class="sub">${done
+      ? "The draw is finished. This is what the last piece of it measured."
+      : "This one is worth another look — here is what it measured, and you can do it again."}</p>
     ${cards}
     <div class="sec-actions">
       <button class="btn" id="secOn">${done?"Finish the draw ▶":"Carry on ▶"}</button>

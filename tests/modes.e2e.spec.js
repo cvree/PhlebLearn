@@ -211,15 +211,18 @@ test("Learn colours a measured value; Play renders the same value plain", async 
    Section feedback and replay — Practice's two good ideas, now in Learn
    ------------------------------------------------------------------------- */
 
-test("Learn shows the section's own measurements when it ends, and can replay it", async ({ page }) => {
+test("a section worth another look stops the draw, with its measurements and a replay", async ({ page }) => {
   test.slow();
   const errors = attachDiagnostics(page);
   await openStep(page, "tourniquet", "learn");
 
-  /* Learn GATES its continue button — that is the mode — so the section has
-     to actually be done before it can end. The band goes on through the same
-     pure helpers the gesture writes through. */
-  await page.evaluate(()=>window.__phlebTest.applyBandWell());
+  /* Learn will not leave a step until it is right — that is the mode — so the
+     band has to actually go on. This one goes on ACCEPTABLY and no better:
+     under the arm, tucked, snug enough to pass, and crooked enough down the
+     limb to be worth doing again. A clean section does not stop the draw any
+     more (see panels.js's sectionFeedbackFor), which is the point of using a
+     scruffy one here. */
+  await page.evaluate(()=>window.__phlebTest.applyBandScruffily());
   await expectStepReady(page, true);
   await carryOn(page);
 
@@ -237,6 +240,24 @@ test("Learn shows the section's own measurements when it ends, and can replay it
   const snap = await page.evaluate(()=>window.__phlebTest.tourniquetSnapshot());
   expect(snap).not.toBeNull();
   expect(snap.bandX).toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test("a clean section does not stop the draw to tell you it went well", async ({ page }) => {
+  test.slow();
+  const errors = attachDiagnostics(page);
+  await openStep(page, "tourniquet", "learn");
+
+  await page.evaluate(()=>window.__phlebTest.applyBandWell());
+  await expectStepReady(page, true);
+  await carryOn(page);
+
+  /* Straight on to the next step. Eleven modal cards a draw, each telling the
+     learner that the thing they just did well went well and offering to replay
+     it, is eleven interruptions with no decision in any of them. */
+  await expect(page.locator(".sec-card")).toHaveCount(0);
+  await expect(page.locator("#vpStage")).toBeVisible({ timeout:10000 });
+  await expect(page.locator(".plp-coach")).toBeVisible({ timeout:10000 });
   expect(errors).toEqual([]);
 });
 
