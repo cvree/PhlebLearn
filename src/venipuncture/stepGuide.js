@@ -92,6 +92,10 @@ function whyHTML(id){
  *   phrasing of the instruction; those are what this module exists to delete.
  * @param {string} [o.how]   HTML: how the gesture is performed on this step
  * @param {boolean} [o.forceOpen]  keep the disclosure open regardless
+ * @param {boolean} [o.ready]  whether this step's completing action has
+ *   happened. Not shown — the line already says so in words — but published
+ *   on the wrapper so the browser tests have one handle for "is this step
+ *   finished?" now that there is no confirm button to read it off.
  */
 export function stepGuideHTML(o){
   const opt = o || {};
@@ -102,7 +106,7 @@ export function stepGuideHTML(o){
   const how = opt.how || "";
   const body = `${why}${how ? `<div class="sg-do">${how}</div>` : ""}`;
   const open = body && (opt.forceOpen || !hasSeenStep(id));
-  return `<div class="sg">
+  return `<div class="sg" data-step="${esc(id || "")}" data-ready="${(opt.ready != null ? opt.ready : tone === "ready") ? 1 : 0}">
     <div class="stg-msg ${tone}" role="status" aria-live="polite">${line}</div>
     ${opt.note ? `<p class="sg-note">${opt.note}</p>` : ""}
     ${body ? `<details class="sg-how"${open ? " open" : ""}>
@@ -117,10 +121,10 @@ export function stepGuideHTML(o){
  * mode already allowed itself. Kept here so a coach has one import and one
  * shape to render either way.
  */
-export function stepHintHTML(hint){
-  if(!hint) return "";
-  return `<div class="sg"><div class="stg-msg neutral" role="status" aria-live="polite">
-    <b>Reminder.</b> ${esc(hint)}</div></div>`;
+export function stepHintHTML(hint, ready){
+  return `<div class="sg" data-step="${esc(currentStep || "")}" data-ready="${ready ? 1 : 0}">${
+    hint ? `<div class="stg-msg neutral" role="status" aria-live="polite">
+      <b>Reminder.</b> ${esc(hint)}</div>` : ""}</div>`;
 }
 
 /**

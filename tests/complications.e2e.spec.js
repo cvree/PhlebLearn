@@ -9,6 +9,7 @@
    from the collection that actually happened.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
+import { holdSteps } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -43,6 +44,10 @@ async function open(page, step, mode){
   await page.goto("./?e2e=1");
   await expect(page.locator("canvas")).toBeVisible({ timeout:15000 });
   await page.waitForFunction(()=>!!window.__phlebTest, null, { timeout:15000 });
+  /* Hold the draw where the seam puts it. A step ends itself a beat after
+     its completing action happens, which would race every assertion below
+     about whether it is finished. See tests/benchHelpers.js. */
+  await holdSteps(page);
   await page.evaluate(([s, m])=>window.__phlebTest.gotoProcedureStep(s, ["lightblue","lavender"], m, "straight-antecubital"),
     [step || "insert", mode || "teach"]);
   await page.waitForFunction(()=>!!window.__phlebTest.complicationSnapshot(), null, { timeout:10000 });
@@ -102,7 +107,9 @@ test("answering correctly with a stop really does end the draw", async ({ page }
   // Learn mode shows the teaching first; dismissing it is what stops the draw
   const carryOn = page.locator(".cx-dismiss");
   if(await carryOn.count()) await carryOn.click();
-  await expect(page.locator("h2")).toContainText("Draw complete", { timeout:8000 });
+  // Stopping ends the draw and puts you at the chair with what you collected.
+  // There is no "Draw complete" verdict screen in front of that any more.
+  await expect(page.locator(".lbl-card, .dlg")).toBeVisible({ timeout:8000 });
   const s = await snapshot(page);
   expect(s.halted).toBe("blownVein");
   expect(s.measurements.managedCount).toBe(1);
@@ -130,24 +137,33 @@ test("the laboratory judges the tubes the draw actually produced", async ({ page
   expect(q.tubes.find(t=>t.key==="lavender").why).toMatch(/Inverted|ratio|never filled/i);
 });
 
-test("the draw-complete screen reports real measurements, not ticks", async ({ page })=>{
+test("stopping the draw says so in the debrief, and the lab judges what was collected", async ({ page })=>{
   const errors = attachDiagnostics(page);
   await open(page, "insert");
-  // any stop-type answer ends the draw and lands on the recap
+  // any stop-type answer ends the draw
   await trigger(page, "arterialPuncture");
   await answer(page, "Stop, take the needle out");
   const carryOn = page.locator(".cx-dismiss");
   if(await carryOn.count()) await carryOn.click();
-  await expect(page.locator("h2").first()).toContainText("Draw complete", { timeout:8000 });
 
-  // The chips carry measured values, not ticks — and a step that never ran
-  // shows no chip at all rather than a zero it did not earn, which is why a
-  // draw stopped this early has a short list of them.
-  const chips = await page.locator(".vp-chip").allTextContents();
-  expect(chips.length).toBeGreaterThan(0);
-  expect(chips.join(" | ")).toMatch(/\d+\/\d+|\d+(\.\d+)?\s*(°|s|mm|%|mL)/);
-  expect(chips.every(t=>/[\d]/.test(t) || /none/i.test(t))).toBe(true);
-  // and the laboratory's verdict is on the same screen
-  await expect(page.locator(".lab-receiving")).toBeVisible();
+  // straight to the chair — label what was collected, route it, and finish
+  await expect(page.locator(".lbl-card, .dlg")).toBeVisible({ timeout:8000 });
+  const match = page.locator("#lblMatch");
+  if(await match.count()) await match.click();
+  const route = page.locator("[data-route]").first();
+  if(await route.count()) await route.click();
+  const print = page.locator("#print");
+  if(await print.count()) await print.click();
+  // an exchange, if this patient had one: pick an answer, then continue
+  const opt = page.locator("#opts .opt").first();
+  if(await opt.count()){ await opt.click().catch(()=>{}); }
+  const done = page.locator("#exDone");
+  if(await done.count()){ await done.click().catch(()=>{}); }
+
+  // the debrief is where every judgement lands, and it says the draw was
+  // stopped — so the specimens below it are what was actually collected
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await expect(page.locator(".db-halt")).toContainText(/stopped the draw/i);
+  await expect(page.locator(".db-lab")).toBeVisible();
   expect(errors).toEqual([]);
 });
