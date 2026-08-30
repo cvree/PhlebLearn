@@ -19,39 +19,53 @@
    ========================================================================= */
 
 /**
- * Blocks until the bench camera has settled and STAYED settled, measured the
- * way the tests actually use it: by where a fixed point in the scene lands on
- * screen.
+ * Blocks until the bench camera has settled and STAYED settled.
  *
- * TWO THINGS THIS HAS TO GET RIGHT, both learned the hard way.
+ * Polled INSIDE the page rather than from the test.
+ * The first version of this ran one `page.evaluate` per sample, and on this
+ * runner a round trip is acknowledged only once the renderer's main thread
+ * gets to it — which is a frame, which is up to half a second. Fifty samples
+ * of that is half a minute of a ninety-second budget spent asking a question,
+ * and it timed out tests that were doing nothing wrong. In-page polling costs
+ * one round trip in total.
+ *
+ * THREE THINGS THIS HAS TO GET RIGHT, each learned by watching it fail.
  *
  * 1. THE SAMPLING LOOP RUNS INSIDE THE PAGE, DRIVEN BY THE PAGE.
  *
- *    Not by `waitForFunction`. Every question this helper asks — benchStats,
- *    a projection — goes through the test seam, and every seam function is
- *    `async` because it reaches its module through a dynamic import. A
- *    `waitForFunction` predicate that returns a promise hands the runner a
- *    Promise object, which is truthy, so the wait finished on its first poll
- *    and this helper returned having waited for nothing at all. It looked
- *    like it was working because the camera is usually PART of the way there
- *    by then; measured on a slow renderer the projection was still 52 pixels
- *    from where it would come to rest. So the loop lives in the page and the
- *    runner waits on a plain boolean, which cannot be accidentally truthy.
- *
- *    One round trip in total either way. The first version of this ran one
- *    `page.evaluate` per sample, and on this runner a round trip is
- *    acknowledged only once the renderer's main thread gets to it — which is
- *    a frame, which is up to half a second.
+ *    Not by `waitForFunction`. Every question this helper asks — benchStats —
+ *    goes through the test seam, and every seam function is `async` because it
+ *    reaches its module through a dynamic import. A `waitForFunction` predicate
+ *    that returns a promise hands the runner a Promise object, which is
+ *    truthy, so the wait finished on its first poll and this helper returned
+ *    having waited for nothing at all.
  *
  * 2. THE `settled` FLAG ALONE IS NOT ENOUGH.
  *
  *    `cameraSettled` answers "is the rig where it currently WANTS to be?",
  *    and that is true in the window between the entry ease finishing and the
  *    coach panel finishing its own layout — at which point
- *    measureObstruction() moves the want and the rig eases again. So this
- *    also requires the PROJECTION to hold still, which is the only property a
- *    projected drag actually depends on, and is immune to whatever moves the
- *    camera next.
+ *    measureObstruction() moves the want and the rig eases again.
+ *
+ * 3. NEITHER IS "settled PLUS a projected point holding still" — the fix
+ *    this replaced. It picked ONE point close to the arm's surface near its
+ *    local origin, and a re-frame that is mostly a ZOOM (a `dist`/`fov`
+ *    change) moves a point near the optical centre very little while moving
+ *    a point 6cm off the surface — where collection's holder mouth and
+ *    insert's ready pose actually are — by tens of pixels. The check reported
+ *    "stable" while the geometry a test was about to reach for was still
+ *    sliding. `tests/collection.e2e.spec.js` failed 8 of 20 with exactly this
+ *    signature (a gesture that runs, claims the pointer, and changes nothing)
+ *    before this was found — assembly and tourniquet never showed it, because
+ *    everything they touch sits close to the surface near the arm's origin,
+ *    which is precisely the blind spot in the point that was chosen.
+ *
+ *    So this waits on the CAMERA'S OWN TARGET instead of on the screen effect
+ *    of one arbitrarily chosen point: `benchStats().wantSig` is a fingerprint
+ *    of where `fitCamera()` last told the rig to go (see armScene.js's
+ *    `cameraWantSignature`), and holding both `settled` AND an unchanged
+ *    `wantSig` for several samples means arrived, and not about to be told to
+ *    move again — independent of where in the scene any given test looks.
  */
 export async function settleBench(page){
   await page.evaluate(() => {
@@ -63,7 +77,7 @@ export async function settleBench(page){
       const done = () => { if(w.__benchSettleToken === token) w.__benchSettleOk = true; };
       const t = w.__phlebTest;
       if(!t || !t.benchStats) return done();      // not a bench step; nothing to wait for
-      let still = 0, from = 0, prev = null;
+      let still = 0, from = 0, prevSig;
       const deadline = performance.now() + 25000;
       for(;;){
         if(w.__benchSettleToken !== token) return;   // a later settleBench owns this now
@@ -71,20 +85,11 @@ export async function settleBench(page){
         try{ s = await t.benchStats(); }catch(_){}
         if(!s || !s.open) return done();
 
-        /* A fixed point on the limb, through whichever bench mode is live —
-           every step leases the same bench, so this projects in all of them. */
-        let mark = null;
-        try{
-          const p = await t.screenPointsOnBenchLimb([[0.02, 0, 0.001]]);
-          if(p && p[0]) mark = p[0];
-        }catch(_){}
-
-        // Sub-pixel is "not moving". Anything else restarts the streak.
-        const holding = s.settled && mark && prev
-          && Math.hypot(mark.x - prev.x, mark.y - prev.y) < 0.75;
+        // Arrived, AND not mid-flight to a newly issued target.
+        const holding = s.settled && s.wantSig != null && s.wantSig === prevSig;
         if(holding){ if(still++ === 0) from = performance.now(); }
         else still = 0;
-        prev = mark;
+        prevSig = s.wantSig;
 
         // Four still samples AND a real stretch of wall time, so a slow
         // renderer cannot deliver four identical samples from inside one frame.
