@@ -911,11 +911,14 @@ function renderLabel(){
 
   panel.innerHTML=`
     <h2>🏷️ Label and route</h2>
-    ${guided()?says(DOT.name,DOT.emoji,pick([
-      "Read it against the person in front of you, not against what you expect.",
-      "Last thing at the bedside: check the label, then decide how they travel.",
-      "Never leave the chair with a label you have not read.",
-    ]),"your guide"):""}
+    ${/* Picked once per patient, not once per render: this screen re-renders
+         on every tap, and a coach whose sentence changes each time reads as
+         a different coach each time. */
+      guided()?says(DOT.name,DOT.emoji,(ENC.labelCoachLine = ENC.labelCoachLine || pick([
+        "Read it against the person in front of you, not against what you expect.",
+        "Last thing at the bedside: check the label, then decide how they travel.",
+        "Never leave the chair with a label you have not read.",
+      ])),"your guide"):""}
     ${note}
 
     <div class="lbl-card${checked ? " done" : ""}">
