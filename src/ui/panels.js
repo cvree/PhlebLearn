@@ -965,8 +965,10 @@ function renderLabel(){
            past still says what it said — the tube went to the lab like that,
            and a label that quietly fixed itself would be the game lying about
            the one thing this screen exists to teach. */
-        const caught = checked && isFlaw && verdict && verdict.ok;
-        const missed = checked && isFlaw && !(verdict && verdict.ok);
+        /* And in a scored shift the card does not mark itself up either:
+           "corrected" and a struck-through line are both verdicts. */
+        const caught = guided() && checked && isFlaw && verdict && verdict.ok;
+        const missed = guided() && checked && isFlaw && !(verdict && verdict.ok);
         return `
         <button class="lbl-row${caught ? " fixed" : ""}${missed ? " missed" : ""}"
                 data-field="${f.key}" ${checked ? "disabled" : ""}>
@@ -978,9 +980,14 @@ function renderLabel(){
     </div>
 
     ${checked
-      ? `<div class="stg-msg ${verdict && verdict.ok ? "ready" : "block"}">${verdict ? verdict.text : ""}</div>`
+      ? /* THE VERDICT IS LEARN'S. A scored shift says nothing here for the
+           same reason it says nothing anywhere else: the label went to the
+           lab as you sent it, and the debrief is where that is answered. */
+        (guided()
+          ? `<div class="stg-msg ${verdict && verdict.ok ? "ready" : "block"}">${verdict ? verdict.text : ""}</div>`
+          : `<p class="sub lbl-hint">Label printed.</p>`)
       : `<button class="btn alt" id="lblMatch">✓ Everything on it matches — print it</button>
-         <p class="sub lbl-hint">…or tap the line that is wrong.</p>`}
+         <p class="sub lbl-hint">…or tap the line that does not match the wristband.</p>`}
 
     <div class="route-head">📦 How does this batch travel to the lab?</div>
     <div id="routeOpts">${opts.map(o=>`<button class="opt${chosen===o.key?" good":""}" data-route="${o.key}">${o.t}</button>`).join("")}</div>
