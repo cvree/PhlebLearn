@@ -9,7 +9,7 @@
    ends up inside a real container — or is refused by the trash.
    ========================================================================= */
 import { test, expect } from "@playwright/test";
-import { settleBench, carryOn, holdSteps, expectStepReady } from "./benchHelpers.js";
+import { settleBench, carryOn, holdSteps, expectStepReady, pastSectionCard } from "./benchHelpers.js";
 
 const ALLOWLISTED_WARNINGS = [
   /THREE\.Clock: This module has been deprecated/,
@@ -347,6 +347,9 @@ test("the four steps hand one continuous piece of work forward", async ({ page }
   expect(snap.safetyLocked).toBe(true);
   await carryUnitTo(page, "sharps");
   await carryOn(page);
+  // that ended the withdrawal SECTION, and this one is never clean — the
+  // sequence above is deliberately a slow, imperfect one
+  await pastSectionCard(page);
 
   // and it hands straight on to the pressure step, which inherits the puncture
   // this sequence just left — and knows the band was off before the needle was

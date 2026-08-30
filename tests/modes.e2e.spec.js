@@ -108,11 +108,23 @@ test("Make it harder lives in Settings, and locks while a shift is running", asy
    What each mode puts on the screen
    ------------------------------------------------------------------------- */
 
-test("Learn teaches the step, gates the Continue button, and says where you are", async ({ page }) => {
+test("Learn teaches the step, gates it, and says where you are", async ({ page }) => {
   const errors = attachDiagnostics(page);
   await openStep(page, "insert", "learn");
   await expect(page.locator("#vpStage")).toHaveAttribute("data-reveal", "learn");
-  await expect(page.locator(".lesson .modetag")).toContainText("TEACHING");
+
+  /* The teaching used to be a permanent card above the coach, printing the
+     step's tip and its "why it matters" on every frame while the coach said
+     the same thing three more ways underneath. It is the body of the step's
+     own fold now, open on a first meeting and shut after — so what "Learn
+     teaches the step" means is that the tip and the reason are there to read.
+     See venipuncture/stepGuide.js. */
+  const how = page.locator("#vpStage .sg-how");
+  await expect(how).toBeVisible();
+  await expect(how.locator("summary")).toContainText(/How this step works/i);
+  await expect(how).toContainText(/bevel-up at a shallow/i);
+  await expect(how).toContainText(/Why it matters/i);
+
   await expect(page.locator("#vpStage .stg-msg.neutral")).toHaveCount(0);
   await expectStepReady(page, false);
   // the chrome of a lesson: which step, how far through, and what it is called
@@ -132,7 +144,16 @@ test("Play says nothing at all: no lesson, no hint, no counter, no bar", async (
   await expect(page.locator(".vp-hint")).toHaveCount(0);
   await expect(page.locator(".vp-count")).toHaveCount(0);
   await expect(page.locator(".vp-bar")).toHaveCount(0);
-  await expectStepReady(page, true);
+  // no fold either: the teaching is Learn's, and Play has none of it
+  await expect(page.locator("#vpStage .sg-how")).toHaveCount(0);
+  await expect(page.locator("#vpStage .stg-msg")).toHaveCount(0);
+
+  /* The one control Play keeps, and it is not a verdict: nothing else can
+     walk a scored shift on from work that is not right, and this step is not
+     right — nothing has been anchored yet. */
+  await expectStepReady(page, false);
+  await expect(page.locator("#insReady")).toBeEnabled();
+  await expect(page.locator("#insReady")).toHaveText(/Carry on/);
   expect(errors).toEqual([]);
 });
 

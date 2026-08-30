@@ -109,7 +109,7 @@ test("answering correctly with a stop really does end the draw", async ({ page }
   if(await carryOn.count()) await carryOn.click();
   // Stopping ends the draw and puts you at the chair with what you collected.
   // There is no "Draw complete" verdict screen in front of that any more.
-  await expect(page.locator(".lbl-card, .dlg")).toBeVisible({ timeout:8000 });
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:8000 });
   const s = await snapshot(page);
   expect(s.halted).toBe("blownVein");
   expect(s.measurements.managedCount).toBe(1);
@@ -147,7 +147,7 @@ test("stopping the draw says so in the debrief, and the lab judges what was coll
   if(await carryOn.count()) await carryOn.click();
 
   // straight to the chair — label what was collected, route it, and finish
-  await expect(page.locator(".lbl-card, .dlg")).toBeVisible({ timeout:8000 });
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:8000 });
   const match = page.locator("#lblMatch");
   if(await match.count()) await match.click();
   const route = page.locator("[data-route]").first();

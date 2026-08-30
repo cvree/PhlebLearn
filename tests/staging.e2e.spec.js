@@ -314,7 +314,10 @@ test("a scored shift lets you continue whenever you like, with no checkmarks", a
   await expect(page.locator(".stg-checks")).toHaveCount(0);
   await expect(page.locator(".stg-order")).toHaveCount(0);
   await expect(page.locator(".stg-inventory")).toBeVisible();
-  await expect(page.locator(".stg-msg")).not.toContainText(/still need|Not ready/i);
+  // Not "does not say that" — says NOTHING. Play has no verdict box at all
+  // now; the standing note that used to sit here was still being told
+  // something, and a trained phlebotomist does not need telling twice.
+  await expect(page.locator(".stg-msg")).toHaveCount(0);
 
   // and the button is live from the very first frame, with an empty tray
   const ready = page.locator("#stgReady");
@@ -336,7 +339,7 @@ test("a scored shift does not explain why a staged item is wrong", async ({ page
   await mouseDrag(page, await pointFor(page, expired.id), await pointForZone(page, "tray"));
   expect((await snapshot(page)).zones[expired.id]).toBe("tray");
   // the object is on the tray and nothing tells the learner it's expired
-  await expect(page.locator(".stg-msg")).not.toContainText(/expired|expiry/i);
+  await expect(page.locator(".stg-msg")).toHaveCount(0);
   await expect(page.locator(".stg-inspect")).toHaveCount(0);
 });
 
@@ -439,7 +442,10 @@ test("leaving a draw takes two clicks and scores the encounter on what was done"
   await expect(page.locator(".stg-coach")).toBeVisible();
 
   await leave.click();                                    // second click actually leaves
-  await expect(page.getByRole("heading", { name:/Encounter score|Lesson complete/i })).toBeVisible({ timeout:8000 });
+  /* Straight to the debrief, which is four acts and then a breakdown — there
+     has been no "Encounter score" heading since the debrief replaced it. */
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await page.locator("#dbDetails").click();
   await expect(page.locator(".scorecell[data-cat='supplyStaging']")).toBeVisible();
   await expect(page.locator("#fbs")).toContainText(/began the draw with/i);
   expect(errors).toEqual([]);

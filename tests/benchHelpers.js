@@ -142,6 +142,23 @@ export async function carryOn(page, selector){
 }
 
 /**
+ * Dismisses the section card, if the step that just ended raised one.
+ *
+ * Learn stops at the end of a section that is worth another look — below the
+ * clean bar, or with something recorded against it — and offers to replay it.
+ * A test walking a whole section through has to get past that, and it is
+ * NOT folded into `carryOn()`: whether the card appears at all is a claim
+ * `tests/modes.e2e.spec.js` makes on purpose, and a helper that silently
+ * clicked it away would delete that claim everywhere else.
+ */
+export async function pastSectionCard(page){
+  const on = page.locator("#secOn");
+  if(!(await on.count())) return false;
+  await on.click({ timeout: 5000 }).catch(()=>{});
+  return true;
+}
+
+/**
  * Holds the draw on whatever step it is on.
  *
  * Every spec that asserts "this step is now complete" needs this: without it,

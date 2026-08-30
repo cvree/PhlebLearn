@@ -96,7 +96,9 @@ test("the draw cannot be entered until two identifiers are in hand", async ({ pa
   // This is the one gate in the room, and it is the most load-bearing rule in
   // California phlebotomy practice.
   const start = page.locator("#arrStart");
-  await expect(start).toBeDisabled();
+  // The gate is unchanged; a gate you cannot pass shows no button at all now
+  // rather than a full-width disabled bar reading "Identify them first (0/2)".
+  await expect(start).toHaveCount(0);
 
   /* Say whatever is live until the gate opens. The smoke suite deliberately
      runs the shipped page with no test seam on it, so this reads the same
@@ -108,7 +110,7 @@ test("the draw cannot be entered until two identifiers are in hand", async ({ pa
      who answers with a nickname simply leaves that group live and the next
      click asks again — which is why this loop needs no special case for it. */
   for(let i = 0; i < 10; i++){
-    if(await start.isEnabled()) break;
+    if(await start.count()) break;
     const act = page.locator(".arr-act").first();
     if(!(await act.count())) break;
     await act.click();

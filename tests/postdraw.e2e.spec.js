@@ -296,7 +296,7 @@ test("the bandage step inherits the clot the pressure step formed", async ({ pag
 
   await expect(page.locator(".asm-coach")).toBeVisible();
   await page.waitForFunction(async ()=>!!(await window.__phlebTest.postDrawAnchors()), null, { timeout:10000 });
-  await settle(page);
+  await settleBench(page);   // `settle` has never existed in this file
   const snap = await snapshot(page);
   expect(snap.haemostatic).toBe(true);
   expect(snap.checked).toBe(true);

@@ -75,7 +75,7 @@ async function finishDrawIn(page, mode, upTo){
   // no "Draw complete" screen in front of that any more — it was a second
   // verdict on the same encounter, delivered two clicks before the debrief
   // said all of it again.
-  await expect(page.locator(".lbl-card, .dlg")).toBeVisible({ timeout:10000 });
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
 }
 
 /**
@@ -90,6 +90,23 @@ async function reportAtEnd(page, mode, upTo){
   await finishDrawIn(page, mode, upTo);
   await finishLabelling(page);
   await answerAnyQuestion(page);
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await openBreakdown(page);
+}
+
+/**
+ * Opens the debrief's breakdown, which is where the report and the
+ * per-category tiles live.
+ *
+ * The debrief is four acts and then a button; everything a test in this file
+ * asserts is behind that button, deliberately — the acts are the verdict and
+ * the report is the reference under it.
+ */
+async function openBreakdown(page){
+  const body = page.locator("#dbDetailsBody");
+  if(await body.count() && await body.isHidden()){
+    await page.locator("#dbDetails").click();
+  }
   await expect(page.locator(".scoregrid")).toBeVisible({ timeout:10000 });
 }
 
@@ -118,7 +135,7 @@ async function finishLabelling(page){
 /** Walks the post-draw conversation, if this patient had one. */
 async function answerAnyQuestion(page){
   for(let i = 0; i < 8; i++){
-    if(await page.locator(".scoregrid").count()) return;
+    if(await page.locator(".debrief").count()) return;
     const opts = page.locator("#opts .opt");
     if(await opts.count()){ await opts.first().click(); }
     else {
@@ -247,10 +264,11 @@ async function playPalpationThenFinish(page, mode){
   await carryOn(page);
 
   await page.evaluate(()=>window.__phlebTest.finishDraw());
-  // ...and on to the score screen, where the report and its replay are shown
+  // ...and on to the debrief, whose breakdown holds the report and its replay
   await finishLabelling(page);
   await answerAnyQuestion(page);
-  await expect(page.locator(".scoregrid")).toBeVisible({ timeout:10000 });
+  await expect(page.locator(".debrief")).toBeVisible({ timeout:15000 });
+  await openBreakdown(page);
 }
 
 test("the replay is merged from the event logs the steps already kept", async ({ page }) => {
@@ -284,8 +302,7 @@ test("each replay group is shown against the measurement that graded it", async 
 
 test("Learn gets a compact rubric line in the debrief, not the full report", async ({ page }) => {
   for(const mode of ["learn", "practice"]){
-    await reportAtEnd(page, mode);
-    await page.locator("#dbDetails").click();
+    await reportAtEnd(page, mode);   // …which opens the breakdown
     // the compact summary is there…
     await expect(page.locator(".rep-head .rep-chip").first()).toBeVisible();
     // …but not the report's own sections
@@ -322,7 +339,7 @@ test("returning to the report does not count a second attempt", async ({ page })
   await reportAtEnd(page, "final");
   const before = await progress(page);
   await page.evaluate(()=>window.__phlebTest.finishDraw());
-  await expect(page.locator(".lbl-card, .dlg")).toBeVisible({ timeout:10000 });
+  await expect(page.locator(".lbl-card, .dlg").first()).toBeVisible({ timeout:10000 });
   const after = await progress(page);
   expect(after.final.attempts).toBe(before.final.attempts);
 });
