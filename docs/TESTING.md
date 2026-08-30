@@ -398,16 +398,52 @@ fetch used to carry a tube up and the fetch used, moments later, to seat it —
 enough that the seating drag started beside the flange and moved nothing.
 Adding one `await settleBench(page)` at the end of the first gesture, before
 the second one's anchor fetch, took `seatDepth` from `0` to the expected
-`0.0165` with nothing else changed. The same shape of fix went into every
-chained-gesture helper in `collection.e2e.spec.js`, `insert.e2e.spec.js`
-(`dragLimb`, the shared primitive both `anchorDrag` and `approachDrag` funnel
-through), `inversion.e2e.spec.js` (`pickUp`, `rackIt` — whose own `settle()`
-had the SAME broken-async-predicate bug as trap 2 above, independently, and
-now imports the fixed `settleBench` instead of a local copy), `postdraw.e2e.spec.js`
-(same broken-local-`settle()` story, same fix), and `withdrawal.e2e.spec.js`
-(`pullTail`, `gauzeToSite`, `withdrawDrag`, `shieldSlide`, `carryUnitTo` — the
-"release, withdraw, safety, sharps" chain is FOUR of these in a row in one
-test).
+`0.0165` with nothing else changed.
+
+The same shape of fix went into every chained-gesture helper this pattern
+turned up in — with different results, honestly reported:
+
+- **`collection.e2e.spec.js`** (`carryToHolder`, `seatDrag`): confirmed
+  fixed. 19 of 20 passing, up from 12 of 20 — the one remainder is the
+  unrelated `.stg-msg` gap below. This is the file the fix was diagnosed
+  against.
+- **`insert.e2e.spec.js`** (`dragLimb`, the shared primitive both
+  `anchorDrag` and `approachDrag` funnel through): **added, and confirmed
+  NOT sufficient.** The same eight tests still fail — `entryX: null`, the
+  identical symptom — in a clean, uncontended re-run. Whatever breaks the
+  ready-pose-to-mark approach here is not (or not only) the gap this fix
+  closes for collection; it was not root-caused further within this branch's
+  time budget. The fix is left in because it is harmless (four passing tests
+  in this file carry it at no cost beyond the wait) and may still matter for
+  cases this branch did not happen to exercise — but do not read its
+  presence as this file being fixed.
+- **`inversion.e2e.spec.js`** (`pickUp`, `rackIt` — whose own `settle()` had
+  the SAME broken-async-predicate bug as trap 2 above, independently, and
+  now imports the fixed `settleBench` instead of a local copy): partial
+  improvement, not confirmed complete — a clean, uncontended re-run was not
+  finished within this branch's time budget.
+- **`postdraw.e2e.spec.js`** / **`withdrawal.e2e.spec.js`**: same
+  broken-local-`settle()` story for postdraw, same fix, plus the
+  chained-gesture settle added to `pressHoldRelease`, `pullTail`,
+  `gauzeToSite`, `withdrawDrag`, `shieldSlide`, `carryUnitTo` — "release,
+  withdraw, safety, sharps" is four of these in a row in one test. **Not
+  independently confirmed** — every run of these two files in this branch's
+  history ran concurrently with either the `origin/main` baseline comparison
+  or another test process on this single-core machine, and both showed bare
+  `Test timeout of 90000ms exceeded` failures inside `page.mouse.move` under
+  that contention — a resource artifact, not an assertion failure, but one
+  that makes every count from those runs unusable as a verdict on whether
+  the fix works. Left in on the same reasoning as insert's: harmless,
+  plausibly correct by the same mechanism proven on collection, not proven.
+
+**What this means for whoever picks this up next.** Re-run
+`insert.e2e.spec.js`, `inversion.e2e.spec.js`, `postdraw.e2e.spec.js` and
+`withdrawal.e2e.spec.js` ALONE — nothing else contending for the renderer —
+before trusting any pass/fail count from them. `insert.e2e.spec.js`
+specifically still has a real, undiagnosed bug behind its eight failures;
+start from `entryX: null` after `approachDrag`, not from the settle-timing
+story above, which this file's own evidence rules out as the whole
+explanation.
 
 **Confirmed pre-existing, not a regression.** A worktree of pristine
 `origin/main`, built and run through the identical suite, fails
