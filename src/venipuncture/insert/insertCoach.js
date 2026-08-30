@@ -21,6 +21,20 @@ import {
 import {
   wingStatusHTML, infiltrationBannerHTML, wingControlsHTML, postEntryControlsHTML, patchWingLive,
 } from "../butterfly/butterflyCoach.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed — behind the step's disclosure now rather than
+   printed under every frame of it. All three beats at once, because the
+   disclosure is read once, before the hand is on the arm, rather than glanced
+   at mid-gesture. See stepGuide.js. */
+function howHTML(angleWindow){
+  return `<p><b>Press below the marked site and drag further away from it</b> to pull the skin taut.
+    Let go to lock the anchor in.</p>
+    <p><b>Then bring the needle down onto the skin at a shallow angle.</b> ${angleWindow} is the window —
+    much flatter skates over the vein, much steeper drives through it.</p>
+    <p><b>Keep dragging the same way to advance; the other way to ease back.</b> The depth is what you
+    cannot see from here either way — watch for the flash.</p>`;
+}
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function mm(m){ return Math.round((m || 0)*1000); }
@@ -117,6 +131,7 @@ export function renderInsertCoach(host, o){
     result.inVein, result.through, isButterfly,
     bf ? bf.wings : "-", bf ? bf.secured : "-", bf ? (bf.infiltratedMl > 0) : "-", bf ? bf.infiltrationNoticed : "-",
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.insSig === signature){ patchLive(host, state, result, bevelDeg, bf); return; }
@@ -142,30 +157,21 @@ export function renderInsertCoach(host, o){
       ${isButterfly && bf ? infiltrationBannerHTML(bf) : ""}
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>Flash confirmed.</b> The tip is inside the vein at a clean angle. Hold it steady.`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, result))}
-          </div>
-          ${/* Only when the status box above is saying something ELSE. With no
-                issue and not yet ready it falls back to the next action, and
-                printing that action again directly underneath it said the
-                same sentence twice in two different styles. */
-             (ready || issue) ? `<p class="tq-next">${esc(nextAction(state, result))}</p>` : ""}`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Flash confirmed."
+                        : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
+            line: ready ? "The tip is inside the vein at a clean angle. Hold it steady."
+                        : (issue ? issue.message : nextAction(state, result)),
+            how: howHTML(angleWindow),
+          })
+        : stepHintHTML(o.hint)}
 
       ${isButterfly && bf ? wingControlsHTML(bf) : ""}
 
       ${listView
         ? (phase === "anchor" ? anchorControlsHTML(anchorBand) : insertControlsHTML(state, result, angleBand))
-        : `${guided ? `<p class="stg-help">
-            ${phase === "anchor"
-              ? `<b>Press below the marked site and drag further away from it</b> to pull the skin taut. Let go to lock it in.`
-              : state.entryX == null
-                ? `<b>Bring the needle down onto the skin at a shallow angle.</b> ${angleWindow} is the window — much flatter skates over the vein, much steeper drives through it.`
-                : `<b>Keep dragging the same way to advance; the other way to ease back.</b> The depth is what you cannot see from here either way — watch for the flash.`}
-          </p>` : ""}`}
+        : ""}
 
       ${isButterfly && bf ? postEntryControlsHTML(bf) : ""}
 

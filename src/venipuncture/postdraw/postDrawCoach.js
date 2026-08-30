@@ -16,6 +16,22 @@
    ========================================================================= */
 import { nextIssue, nextAction, forceBandFor, SITE_KIND } from "./postDrawRules.js";
 import { secondsRemaining, meanForce } from "./postDrawState.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How each gesture is performed — behind that step's own disclosure now rather
+   than printed under every frame of it. See stepGuide.js. */
+const HOW = {
+  pressure: `<p><b>Press the gauze down onto the puncture and drag downward INTO the arm</b> — how far you
+    push is how hard you are pressing. Keep the arm straight: a bent elbow feels like it helps and does not,
+    because the fascia takes the pressure and the puncture stays open underneath it.</p>
+    <p><b>Then hold it there.</b> Do not lift it to peek — letting go early undoes part of the clot and costs
+    you real seconds. When the time is up, lift the gauze and look: that is the only way you actually know
+    it has stopped.</p>`,
+  bandage: `<p><b>Drag the bandage from the bench squarely over the puncture, then press it down</b> — how far
+    you pull it onto the arm is how tight it ends up.</p>
+    <p>Then tell them how long to keep it on and what to watch for. Aftercare advice is what catches the rare
+    complication early.</p>`,
+};
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function pct(v){ return Math.round((v || 0)*100); }
@@ -129,35 +145,27 @@ function controlsHTML(state){
   return `<div class="asm-controls">${sets.join("")}</div>`;
 }
 
-function helpHTML(state, mode){
+/**
+ * The two numbers this particular puncture turns on: the force that actually
+ * closes a vein at this site, and how long this patient's blood needs. Both
+ * are properties of the patient and the site rather than restatements of the
+ * instruction, which is why they stay on screen when the prose does not.
+ */
+function noteHTML(state){
   const band = forceBandFor(state.siteKind);
-  const holding = state.clotProgress >= 1;
-  if(!holding){
-    if(state.armFlexed){
-      return `<b>Straighten the arm first.</b> Drag their hand back down — a bent elbow feels like it helps and does not: the fascia takes the pressure and the puncture stays open underneath it.`;
-    }
-    if(state.padOffSite){
-      return `<b>The pad is not on the puncture.</b> Drag it back over the site — pressure beside a hole does nothing at all.`;
-    }
-    if(state.force <= 0.02){
-      return `<b>Press the gauze down onto the puncture.</b> Drag downward INTO the arm — how far you push is how hard you are pressing, and you need at least ${pct(band.min)}% for the vein to actually close.${state.siteKind === SITE_KIND.HAND ? " Support the hand from underneath; there is only bone under that vein." : ""}`;
-    }
-    if(state.force < band.min){
-      return `<b>Harder.</b> At ${pct(state.force)}% the vein is not closed, so the clock is running with nothing happening. Push further in.`;
-    }
-    if(state.force > band.discomfort){
-      return `<b>Ease off a little.</b> That is past firm and into painful, and it does not clot any faster.`;
-    }
-    return `<b>Hold it there.</b> Keep the pressure steady and do not lift it to peek — letting go early undoes some of the clot.`;
+  const bits = [];
+  /* Deliberately not gated on the live force: that ticks every frame, and a
+     note that appears and vanishes under the learner's own hand is worse than
+     one that simply states the target. The target is a property of the site. */
+  if(state.clotProgress < 1){
+    bits.push(`Firm enough here is about ${pct(band.min)}% — below that the vein is not closed and the clock runs with nothing happening.`);
   }
-  if(state.checkedAt == null || state.bleedingAtCheck){
-    return `<b>Lift the gauze and look.</b> Let go of the pad to check the site — that is the only way you actually know it has stopped.`;
+  if(state.anticoagulated){
+    bits.push(`This patient is on anticoagulants: about ${Math.round(state.holdSeconds)}s of firm pressure, not the usual half-minute.`);
   }
-  if(state.bandagedAt == null){
-    return `<b>Dress it.</b> Drag the bandage from the bench squarely over the puncture, then press it down — how far you pull it onto the arm is how tight it ends up.`;
-  }
-  return `<b>Tell them how long to keep it on</b> and what to watch for.`;
+  return bits.join(" ");
 }
+
 
 export function renderPostDrawCoach(host, o){
   const { state, result, mode } = o;
@@ -177,6 +185,7 @@ export function renderPostDrawCoach(host, o){
     state.bandagedAt != null, state.aftercareGiven,
     bruiseText(state),
     issue ? issue.code : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.pdSig === signature){ patchLive(host, state, mode); return; }
@@ -196,18 +205,19 @@ export function renderPostDrawCoach(host, o){
       </div>
 
       ${guided
-        ? `<div class="stg-msg ${clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${clean
-              ? `<b>${esc(nextAction(state, mode))}</b>`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, mode))}
-          </div>
-          ${state.anticoagulated ? `<p class="tq-next">This patient is on anticoagulants — this puncture needs about ${Math.round(state.holdSeconds)}s of firm pressure, not the usual half-minute.</p>` : ""}`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            tone: clean ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: clean ? "" : (issue ? (issue.severity === "block" ? "Not yet." : issue.severity === "warn" ? "Worth fixing." : "Now.") : ""),
+            line: clean || !issue ? nextAction(state, mode) : issue.message,
+            /* Facts about THIS puncture that the instruction cannot carry: how
+               hard is hard enough on this site, and how long this patient's
+               blood actually takes. Not a second phrasing of anything. */
+            note: noteHTML(state),
+            how: HOW[mode] || "",
+          })
+        : stepHintHTML(o.hint)}
 
-      ${listView
-        ? controlsHTML(state)
-        : `${guided ? `<p class="stg-help">${helpHTML(state, mode)}</p>` : ""}`}
+      ${listView ? controlsHTML(state) : ""}
 
       <button class="btn vp-tap${guided ? "" : " quiet"}" id="pdReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? esc(READY_LABELS[mode] || "Continue ▶") : "Not finished yet") : "Carry on ▶"}

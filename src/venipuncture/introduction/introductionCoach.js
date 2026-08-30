@@ -18,6 +18,7 @@ import {
   ACT, ACT_DEFS, nextAction, nextIssue,
   HYGIENE_GOOD_S, DRY_MIN_S, REQUIRED_IDENTIFIERS, identifiersObtained,
 } from "./introductionRules.js";
+import { stepGuideHTML, stepHintHTML } from "../stepGuide.js";
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
@@ -129,18 +130,16 @@ export function renderIntroductionCoach(host, o){
       <div class="asm-panel">${idHTML(state)}</div>
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>Identified, informed and gloved.</b> You know who this is, they know what is about to happen, and your hands are clean.`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state))}
-          </div>
-          ${/* Only when the status box above is saying something ELSE. With no
-                issue and not yet ready it falls back to the next action, and
-                printing that action again directly underneath it said the
-                same sentence twice in two different styles. */
-             (ready || issue) ? `<p class="tq-next">${esc(nextAction(state))}</p>` : ""}`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            id: "introduce",
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Identified, informed and gloved."
+                        : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
+            line: ready
+              ? "You know who this is, they know what is about to happen, and your hands are clean."
+              : (issue ? issue.message : nextAction(state)),
+          })
+        : stepHintHTML(o.hint)}
 
       ${actsHTML(state)}
       ${handsHTML(state)}

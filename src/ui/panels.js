@@ -41,6 +41,7 @@ import { closeBench } from "../bench/benchSession.js";
 import { evaluateStaging } from "../venipuncture/staging/stagingRules.js";
 import { measureStaging } from "../venipuncture/staging/stagingScoring.js";
 import { VP_TIPS, VP_ICON } from "../venipuncture/questions.js";
+import { setGuideStep, markStepTaught } from "../venipuncture/stepGuide.js";
 import { startComplicationWatch, finishComplications } from "../venipuncture/complications/complicationRuntime.js";
 import { complicationSummaryHTML } from "../venipuncture/complications/complicationCoach.js";
 import { assessSpecimens, applySpecimenOutcome } from "../venipuncture/specimen/specimenQuality.js";
@@ -328,10 +329,14 @@ function renderReview(){
     "Morning! Hope this is quick.",
   ]);
 
+  /* The teaching card that used to sit here said the same three things the
+     room's own guidance says — ask rather than read, check against the
+     requisition, hold a flawed order. It is the body of the room's one
+     disclosure now. See venipuncture/stepGuide.js. */
+  setGuideStep("introduce");
   panel.innerHTML = `
     <h2>👋 Patient ${SHIFT.index+1} of ${SHIFT.len}</h2>
     ${says(p.first, pEmoji(p), greet, p.mood)}
-    ${guided() ? teach("review") : ""}
     <div class="vp-stage" id="arrivalStage" data-reveal="${MODE}"></div>`;
 
   // The room runs its own frame loop for the hygiene clock, so its cleanup
@@ -343,6 +348,7 @@ function renderReview(){
        actually DID about a flawed order: held it, or did not. deriveChoices()
        reads it for the score screen's "your answer / best answer" card, which
        therefore contains a decision rather than a guess. */
+    markStepTaught("introduce");
     ENC.reqChoice = p.reqIssue ? !!c.reqHeld : !c.reqHeld;
     (ENC.answers = ENC.answers || {}).requisition = {
       your: c.reqHeld ? "Held the draw to clarify the order." : "Read the order and proceeded.",
@@ -451,14 +457,18 @@ function renderCollect(){
   const section = sectionForStep(id);
   const pctDone = Math.round(done/total*100);
   const r = reveal();
-  // Learn teaches the step. Practice is reminded what the step is FOR.
-  // The Final Practical is told the step's name and nothing else — the
-  // examiner does not read you the tip sheet.
-  const lesson = r.instruction
-    ? `<div class="lesson"><span class="modetag">🎓 TEACHING</span><span class="lh">${VP_ICON[id]} ${info.t}</span>${info.tip}<br><span class="why">Why it matters: ${info.why}</span></div>`
-    : r.hints
-      ? `<div class="vp-hint">${VP_ICON[id]} <b>${info.t}.</b> ${info.tip}</div>`
-      : "";
+  /* THE TEACHING CARD IS GONE FROM HERE.
+
+     It used to print the step's tip and its "why it matters" above the coach,
+     permanently, on every frame of every step — and the coach underneath it
+     then said the same thing again as a verdict, again as a next action, and
+     again as a how-to paragraph. Four voices, one instruction.
+
+     The same content is now the body of the step's own disclosure (see
+     venipuncture/stepGuide.js), which opens itself the first time a learner
+     meets a step and is shut after that. Nothing was deleted; it is spent
+     once instead of shouted forever. */
+  setGuideStep(id);
 
   /* THE CHROME IS THE MODE.
 
@@ -476,7 +486,6 @@ function renderCollect(){
     <h2>🩸 ${section ? section.label : "Venipuncture"} <span class="vp-count">step ${done+1}/${total}</span></h2>
     <div class="vp-bar"><div class="vp-bar-fill" style="width:${pctDone}%"></div></div>
     <div class="vp-bar-lab"><span>${VP_ICON[id]} ${info.t}</span><span>${pctDone}%</span></div>
-    ${lesson}
     <div class="vp-stage" id="vpStage" data-reveal="${MODE}" data-verdicts="${r.verdicts?1:0}"></div>
     <button class="btn ghost vp-leave" id="vpLeave">Leave this draw</button>`
   : `
@@ -492,7 +501,13 @@ function renderCollect(){
     hasMidDrawEvent: ()=> !!(ENC.p.drawEvent && ENC.p.drawEvent.when==="mid" && !ENC.drawEventHandled),
     onMidDrawEvent: (resumeStep)=>{ ENC.drawResumeBeat=resumeStep; go("drawresp"); },
     setCleanup: (fn)=>{ ENC._collectCleanup=fn; },
-    onStepFinished: (finishedId, nextId)=> rewardStep(c, finishedId, nextId),
+    onStepFinished: (finishedId, nextId)=>{
+      /* Taught on the way OUT, so the disclosure stays open for the whole of
+         the first attempt — including the part where the learner is stuck,
+         which is when they would actually want it. */
+      markStepTaught(finishedId);
+      rewardStep(c, finishedId, nextId);
+    },
     onCleanup: releaseStepLease,
     // Learn only. The driver asks; the mode decision lives here.
     sectionFeedbackFor: (finishedId, nextId)=>{

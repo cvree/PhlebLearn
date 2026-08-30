@@ -31,6 +31,8 @@ venipuncture/  (procedureState, questions, clinicalRules, steps,
                measurement every runtime frames its camera from,
                stepRuntimes = the table main.js dispatches through,
                autoAdvance = what ends a step in Play,
+               stepGuide = the one guidance line every coach renders, and
+               the disclosure that holds what used to be said four times,
                one directory per converted step —
                staging/*, arm/*, tourniquet/*, palpation/*, cleaning/*,
                assembly/*, insert/*, collection/*, withdrawal/*, postdraw/*,

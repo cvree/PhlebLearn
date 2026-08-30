@@ -9,6 +9,15 @@
    never names it at all.
    ========================================================================= */
 import { FEEL, nextIssue, nextAction, OCCLUDE_PRESS } from "./palpationRules.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed. Behind the disclosure now rather than printed
+   under every frame of it — see stepGuide.js. */
+const HOW = `<p><b>Press a fingertip into the arm and search.</b> Pressure builds while you keep still and eases
+  off as you slide, so a sweep finds shallow veins and lingering reveals what is deeper.</p>
+  <p>A vein gives and comes back. Something that pushes back rhythmically is an artery — never draw from it.
+  Something hard that will not move is a tendon.</p>
+  <p><b>Every spot you press is marked on the skin. Hold on one of your own marks to draw from it.</b></p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
@@ -179,6 +188,7 @@ export function renderPalpationCoach(host, o){
     Object.keys(state.felt).sort().join(","),
     (state.traces || []).length,
     (state.traces || []).map(t=>t.feel).join(""),
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.plpSig === signature){
@@ -199,26 +209,16 @@ export function renderPalpationCoach(host, o){
       ${touchHTML(touch, state, guided)}
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>Good vein.</b> You felt it, it springs back, and it is well anchored. Clean it next.`
-              : issue ? `<b>${issue.severity === "block" ? "Not that one." : "Worth knowing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state))}
-          </div>
-          ${/* Only when the status box above is saying something ELSE. With no
-                issue and not yet ready it falls back to the next action, and
-                printing that action again directly underneath it said the
-                same sentence twice in two different styles. */
-             (ready || issue) ? `<p class="tq-next">${esc(nextAction(state))}</p>` : ""}`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Good vein." : (issue ? (issue.severity === "block" ? "Not that one." : "Worth knowing.") : ""),
+            line: ready ? "It springs back and it is well anchored. Clean it next."
+                        : (issue ? issue.message : nextAction(state)),
+            how: HOW,
+          })
+        : stepHintHTML(o.hint)}
 
-      ${listView ? controlsHTML(state, guided, o.vessels) : `${guided ? `<p class="stg-help">
-        <b>Press a fingertip into the arm and search.</b> Pressure builds while you keep still and eases off as you
-        slide, so a sweep finds shallow veins and lingering reveals what is deeper. A vein gives and comes back.
-        Something that pushes back rhythmically is an artery — never draw from it. Something hard that will not move
-        is a tendon. <b>Every spot you press is marked on the skin.</b>
-        <b>Hold on one of your own marks to draw from it.</b>
-      </p>` : ""}`}
+      ${listView ? controlsHTML(state, guided, o.vessels) : ""}
 
       <button class="btn vp-tap${guided ? "" : " quiet"}" id="plpReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided ? (ready ? "Site chosen — clean it ▶" : "Find a vein first") : "Carry on ▶"}

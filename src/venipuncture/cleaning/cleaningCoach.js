@@ -8,6 +8,15 @@
 import {
   nextIssue, nextAction, COVERAGE_TARGET, OUTWARD_GOOD, DRY_SECONDS,
 } from "./cleaningRules.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed — behind the step's disclosure now rather than
+   printed under every frame of it. See stepGuide.js. */
+const HOW = `<p><b>Open the alcohol pad</b>, then <b>scrub from the puncture point outward, in widening
+  circles.</b> The wet patch on the arm is exactly the skin you have disinfected — cover the whole marked
+  field. Going back inward drags the dirty edge over skin you just cleaned.</p>
+  <p>Then <b>take your hands off and let it air-dry</b> for the full ${DRY_SECONDS} seconds: do not fan it,
+  blot it, or re-palpate it. Build the needle while it dries.</p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
@@ -66,6 +75,7 @@ export function renderCleaningCoach(host, o){
     issue ? issue.code : "-",
     result.coverage >= COVERAGE_TARGET,
     result.dryness >= 1,
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.clnSig === signature){ patchLive(host, state, result); return; }
@@ -83,26 +93,18 @@ export function renderCleaningCoach(host, o){
       ${fieldHTML(state, result)}
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>Clean and dry.</b> The whole field was scrubbed, worked outward, and left the full ${DRY_SECONDS} seconds. Do not touch it again.`
-              : issue ? `<b>${issue.severity === "block" ? "Not yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state, result))}
-          </div>
-          ${/* Only when the status box above is saying something ELSE. With no
-                issue and not yet ready it falls back to the next action, and
-                printing that action again directly underneath it said the
-                same sentence twice in two different styles. */
-             (ready || issue) ? `<p class="tq-next">${esc(nextAction(state, result))}</p>` : ""}`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "Clean and dry."
+                        : (issue ? (issue.severity === "block" ? "Not yet." : "Worth fixing.") : ""),
+            line: ready
+              ? `The whole field was scrubbed, worked outward, and left the full ${DRY_SECONDS} seconds. Do not touch it again.`
+              : (issue ? issue.message : nextAction(state, result)),
+            how: HOW,
+          })
+        : stepHintHTML(o.hint)}
 
-      ${listView ? controlsHTML(state) : `${guided ? `<p class="stg-help">
-        ${!state.swabOpen
-          ? `<b>Open the alcohol pad first.</b>`
-          : `<b>Scrub from the puncture point outward, in widening circles.</b> The wet patch on the arm is exactly the skin
-             you have disinfected — cover the whole marked field. Going back inward drags the dirty edge over skin you just
-             cleaned. Then <b>take your hands off and let it air-dry</b>: do not fan it, blot it, or re-palpate it.`}
-      </p>` : ""}`}
+      ${listView ? controlsHTML(state) : ""}
 
       ${!listView && !state.swabOpen ? `<button class="btn ghost vp-tap" id="clnOpen">Open the alcohol pad</button>` : ""}
 

@@ -13,6 +13,16 @@
 import { metresToInches, TENSION } from "../arm/armAnatomy.js";
 import { PHASE, WRAP, TUCK } from "./tourniquetState.js";
 import { nextIssue, nextAction, TIME } from "./tourniquetRules.js";
+import { stepGuideHTML, stepHintHTML, guideSignature } from "../stepGuide.js";
+
+/* How the gesture is performed — behind the step's disclosure now rather than
+   printed under every frame of it. See stepGuide.js. */
+const HOW = `<p><b>Take an end of the tourniquet and drag it round the arm</b> — underneath and up the far
+  side, about a hand's width above the bend.</p>
+  <p>Then <b>pull that end away from the arm</b> to tighten it, <b>sweep it across</b> the other end, and
+  <b>push a loop back under the band, pointing up the arm</b>. Let go before the loop is under and it will
+  spring off.</p>
+  <p>Watch the veins fill as you pull: enough to raise them, not so much that the hand goes pale.</p>`;
 
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 function inches(m){ return (Math.round(metresToInches(m)*10)/10) + "″"; }
@@ -235,6 +245,7 @@ export function renderTourniquetCoach(host, o){
     issue ? issue.code : "-", result.pulse,
     result.heightAboveSite != null ? inches(result.heightAboveSite) : "-",
     gesture ? `${gesture.kind}:${gesture.direction || ""}:${!!gesture.crossed}:${!!gesture.tuckReady}:${gesture.tuckSide || ""}` : "-",
+    guideSignature(),
   ].join("|");
 
   if(host.dataset.tqSig === signature){
@@ -256,25 +267,18 @@ export function renderTourniquetCoach(host, o){
       ${gestureHTML(gesture, guided)}
 
       ${guided
-        ? `<div class="stg-msg ${ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn")}" role="status" aria-live="polite">
-            ${ready
-              ? `<b>That is a good tourniquet.</b> The veins have filled, the pulse is intact and the tail is clear of the field. The clock is running — keep it under a minute.`
-              : issue ? `<b>${issue.severity === "block" ? "Not right yet." : "Worth fixing."}</b> ${esc(issue.message)}`
-                      : esc(nextAction(state))}
-          </div>
-          ${/* Only when the status box above is saying something ELSE. With no
-                issue and not yet ready it falls back to the next action, and
-                printing that action again directly underneath it said the
-                same sentence twice in two different styles. */
-             (ready || issue) ? `<p class="tq-next">${esc(nextAction(state))}</p>` : ""}`
-        : (o.hint ? `<div class="stg-msg neutral" role="status" aria-live="polite"><b>Reminder.</b> ${esc(o.hint)}</div>` : "")}
+        ? stepGuideHTML({
+            tone: ready ? "ready" : (issue && issue.severity === "block" ? "block" : "warn"),
+            lead: ready ? "That is a good tourniquet."
+                        : (issue ? (issue.severity === "block" ? "Not right yet." : "Worth fixing.") : ""),
+            line: ready
+              ? "Veins filled, pulse intact, tail clear of the field. The clock is running — keep it under a minute."
+              : (issue ? issue.message : nextAction(state)),
+            how: HOW,
+          })
+        : stepHintHTML(o.hint)}
 
-      ${listView ? controlsHTML(state, o.site && o.site.x, o.site && o.site.ideal) : `${guided ? `<p class="stg-help">
-        <b>Take an end of the tourniquet and drag it round the arm</b> — underneath and up the far side, about a hand's width above the bend.
-        Then <b>pull that end away from the arm</b> to tighten it, <b>sweep it across</b> the other end, and
-        <b>push a loop back under the band, pointing up the arm</b>. Let go before the loop is under and it will spring off.
-        Watch the veins fill as you pull: enough to raise them, not so much that the hand goes pale.
-      </p>` : ""}`}
+      ${listView ? controlsHTML(state, o.site && o.site.x, o.site && o.site.ideal) : ""}
 
       <button class="btn vp-tap${guided ? "" : " quiet"}" id="tqReady" ${(guided && !ready) ? "disabled" : ""} style="${(guided && !ready) ? "opacity:.5" : ""}">
         ${guided

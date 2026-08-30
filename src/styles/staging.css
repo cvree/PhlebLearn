@@ -14,7 +14,8 @@
   body[data-staging="on"] .panel{max-height:42vh}
   body[data-staging="on"] .vp-progress,
   body[data-staging="on"] .vp-hint,
-  body[data-staging="on"] .stg-help{display:none}
+  body[data-staging="on"] .stg-help,
+  body[data-staging="on"] .sg-how{display:none}
 }
 /* The meta buttons float over the cart and would sit on top of grabbable
    objects. Recentring does nothing here (staging frames itself), and the shop
@@ -148,3 +149,40 @@ body[data-panel="hidden"] .disclaimer{opacity:.55}
   .stg-chk.ok,.stg-slot.ok{background:#fff}
   .stg-msg,.stg-inspect{border-width:2px;border-color:#000;color:#000}
 }
+
+/* =========================================================================
+   ONE VOICE PER STEP — see venipuncture/stepGuide.js.
+
+   The line is the only thing a learner has to read to keep working. The
+   disclosure under it holds everything the panel used to shout at them
+   permanently: the clinical reason, and how the gesture is performed. It
+   opens itself the first time a step is met and is shut from then on, so the
+   panel gets quieter the more you know rather than staying the same size
+   forever.
+   ========================================================================= */
+.sg{display:flex;flex-direction:column;gap:6px}
+.sg-how{border:1px solid var(--line);border-radius:12px;background:#fbfaff;
+  font-size:12px;line-height:1.5;overflow:hidden}
+.sg-how>summary{cursor:pointer;list-style:none;padding:7px 11px;font-size:11px;
+  font-weight:900;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft);
+  user-select:none}
+.sg-how>summary::-webkit-details-marker{display:none}
+.sg-how>summary::after{content:"▸";float:right;transition:transform .18s ease;display:inline-block}
+.sg-how[open]>summary::after{transform:rotate(90deg)}
+.sg-how>summary:hover{color:var(--plum)}
+.sg-how[open]>summary{border-bottom:1px solid var(--line)}
+.sg-why{margin:0;padding:9px 11px 0;font-weight:700;color:var(--ink-soft)}
+.sg-why b{color:var(--ink)}
+.sg-mat{display:block;margin-top:4px;color:var(--plum)}
+.sg-do{padding:8px 11px 10px;font-weight:700;color:var(--ink-soft)}
+.sg-do b{color:var(--plum)}
+.sg-do p{margin:0}
+.sg-do p+p{margin-top:5px}
+
+@media (prefers-contrast:more){
+  .sg-how{border-width:2px;border-color:#000}
+}
+/* A fact this step needs on screen — the order of draw, the inversion counts.
+   Never a second phrasing of the instruction; that is the thing the one-line
+   rule exists to delete. */
+.sg-note{margin:0;font-size:12px;font-weight:800;color:var(--plum);line-height:1.45}
